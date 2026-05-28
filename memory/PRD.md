@@ -21,14 +21,20 @@ A hyperlocal, video-first social app where users connect by watching short video
 - Profile screen: edit handle / vibes / language / emoji / change video.
 
 ## Implemented (2026-02-28)
-- Backend: FastAPI + MongoDB. Endpoints: `/api/auth/send-otp`, `/api/auth/verify-otp`, `/api/users/onboarding`, `/api/users/me`, `/api/users/location`, `/api/users/video`, `/api/samples`, `/api/feed`, `/api/swipe`, `/api/matches`, `/api/messages/:id` (GET + POST), `/api/translate`.
-- Twilio Verify integrated with graceful DEV/mock OTP fallback.
+- Backend: FastAPI + MongoDB. Endpoints: `/api/auth/session` (exchange Google OAuth session_id), `/api/auth/me`, `/api/auth/logout`, `/api/users/onboarding`, `/api/users/me`, `/api/users/location`, `/api/users/video`, `/api/samples`, `/api/feed`, `/api/swipe`, `/api/matches`, `/api/messages/:id` (GET + POST), `/api/translate`.
+- Auth: **Emergent-managed Google OAuth** (replaced earlier Twilio phone-OTP). `current_user` reads `session_token` cookie first, then `Authorization: Bearer` header as fallback. Sessions in `user_sessions` collection with 7-day TTL.
 - OpenAI gpt-4o-mini translation via `emergentintegrations` + Emergent LLM Key.
-- Demo users (6) auto-seeded with curated Mixkit portrait videos + transcripts in EN/ES/FR.
-- Frontend: single-page App.js with 9 screens (Splash, Phone, OTP, Onboarding, Video-Pick, Feed, Matches, Chat, Profile) + Match celebration overlay.
+- Demo users (6) auto-seeded with curated portrait videos + transcripts in EN/ES/FR.
+- Frontend: single-page App.js with 9 screens (Splash, SignIn, AuthCallback, Onboarding, Video-pick, Feed, Matches, Chat, Profile) + Match celebration overlay. URL fragment `#session_id=` detected synchronously on mount to avoid auth race.
 - TikTok-style vertical scroll-snap feed with auto-play of in-view item, like/pass, translation overlay with typewriter animation.
 - Bottom nav (Feed / Matches / You) with active state.
-- Design: Unbounded display + Manrope body fonts, red (#FF4D4D) + cyan (#00E5FF) on near-black palette, mobile-first 480px phone frame with desktop framing.
+- Design: Unbounded display + Manrope body fonts, red `#FF4D4D` × cyan `#00E5FF` palette on near-black, mobile-first 480px phone frame with desktop framing.
+
+## Updated (2026-02-28 part 2)
+- **Auth migrated from Twilio phone-OTP → Emergent Google OAuth.** No phone numbers or SMS keys needed; users sign in with their Google account.
+- Backend: removed `/api/auth/send-otp` and `/api/auth/verify-otp`; added `/api/auth/session`, `/api/auth/me`, `/api/auth/logout`.
+- Frontend: replaced PhoneScreen + OtpScreen with `SignInScreen` (Google button) and `AuthCallback` (handles `#session_id=` URL fragment).
+- Code-review fixes applied: `secrets` module for cryptographically secure RNG (codename + demo seed + OTP-era); empty catch blocks now log; stable React keys instead of array indexes; nested ternary flattened.
 
 ## Prioritized backlog
 - **P1** Plug live Twilio Verify keys (currently DEV mock).
