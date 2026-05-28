@@ -1,18 +1,20 @@
-import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import axios from "axios";
 import { Toaster, toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Heart, X, MapPin, Languages, Phone, ArrowRight, ArrowLeft, Sparkles,
-  Send, MessageCircle, User as UserIcon, Video as VideoIcon, Play, Camera,
-  Globe, Check, ChevronDown, LogOut, Pause,
+  Heart, X, MapPin, Languages, ArrowRight, ArrowLeft, Sparkles,
+  Send, MessageCircle, User as UserIcon, Video as VideoIcon, Camera,
+  Globe, Check, LogOut, Pause,
 } from "lucide-react";
 import "@/App.css";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
-const api = axios.create({ baseURL: API });
+// withCredentials so the session cookie is sent on every request; Bearer header is also sent
+// as a fallback (useful for automated testing playbook)
+const api = axios.create({ baseURL: API, withCredentials: true });
 api.interceptors.request.use((config) => {
   const t = localStorage.getItem("n2m_token");
   if (t) config.headers.Authorization = `Bearer ${t}`;
@@ -63,30 +65,69 @@ async function translate(text, target_lang, source_lang) {
 }
 
 // ---------- Top-level App ----------
+// REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 export default function App() {
-  const [screen, setScreen] = useState("splash"); // splash | phone | otp | onboarding | video-pick | feed | matches | profile | chat
-  const [user, setUser] = useState(null);
-  const [matchState, setMatchState] = useState(null); // {match_id, matched_user}
-  const [activeChat, setActiveChat] = useState(null);
+  // Detect Google OAuth session_id in URL fragment SYNCHRONOUSLY (before any render decisions)
+  // to avoid races between AuthCallback and the splash/signin screens.
+  const initialHasSessionId =
+    typeof window !== "undefined" && window.location.hash?.includes("session_id=");
 
-  // hydrate auth on mount only
+  const [screen, setScreen] = useState(initialHasSessionId ? "auth-callback" : "splash");
+  const [user, setUser] = useState(null);
+  const [matchState, setMatchState] = useState(null);
+  const [activeChat, setActiveChat] = useState(null);
+  const callbackProcessed = useRef(false);
+
+  // Decide where to send the user based on their profile completeness
+  const routeToNext = useCallback((u) => {
+    if (!u) return setScreen("signin");
+    if (!u.handle) setScreen("onboarding");
+    else if (!u.video_url) setScreen("video-pick");
+    else setScreen("feed");
+  }, []);
+
+  // Handle the OAuth callback (one-time: exchange session_id → session_token cookie)
   useEffect(() => {
-    const t = localStorage.getItem("n2m_token");
-    if (!t) {
-      setTimeout(() => setScreen("phone"), 1600);
+    if (!initialHasSessionId) return;
+    if (callbackProcessed.current) return;
+    callbackProcessed.current = true;
+
+    const hash = window.location.hash || "";
+    const params = new URLSearchParams(hash.replace(/^#/, ""));
+    const sessionId = params.get("session_id");
+    // Clean the URL immediately so the token is never visible to user / history
+    window.history.replaceState(null, "", window.location.pathname);
+
+    if (!sessionId) {
+      setScreen("signin");
       return;
     }
     (async () => {
       try {
-        const { data } = await api.get("/users/me");
+        const { data } = await api.post("/auth/session", { session_id: sessionId });
+        if (data.token) localStorage.setItem("n2m_token", data.token); // fallback for non-cookie envs
         setUser(data.user);
-        if (!data.user.handle) setScreen("onboarding");
-        else if (!data.user.video_url) setScreen("video-pick");
-        else setScreen("feed");
+        routeToNext(data.user);
       } catch (err) {
-        console.error("auth hydrate failed", err);
-        localStorage.removeItem("n2m_token");
-        setScreen("phone");
+        console.error("session exchange failed", err);
+        toast.error("Sign-in failed. Try again.");
+        setScreen("signin");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Standard mount-time hydration when NOT coming back from OAuth callback
+  useEffect(() => {
+    if (initialHasSessionId) return; // AuthCallback flow handles auth instead
+    (async () => {
+      try {
+        const { data } = await api.get("/auth/me");
+        setUser(data.user);
+        routeToNext(data.user);
+      } catch (err) {
+        // not authenticated yet → show splash briefly, then sign-in
+        setTimeout(() => setScreen("signin"), 1500);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -112,10 +153,11 @@ export default function App() {
     );
   }, [user]);
 
-  const logout = () => {
+  const logout = async () => {
+    try { await api.post("/auth/logout"); } catch (e) { console.error(e); }
     localStorage.removeItem("n2m_token");
     setUser(null);
-    setScreen("phone");
+    setScreen("signin");
   };
 
   return (
@@ -124,18 +166,8 @@ export default function App() {
       <div className="n2m-phone" data-testid="app-shell">
         <AnimatePresence mode="wait">
           {screen === "splash" && <Splash key="splash" />}
-          {screen === "phone" && <PhoneScreen key="phone" onNext={() => setScreen("otp")} setUser={setUser} />}
-          {screen === "otp" && (
-            <OtpScreen key="otp"
-              onBack={() => setScreen("phone")}
-              onSuccess={(u, onboarded) => {
-                setUser(u);
-                if (!onboarded || !u.handle) setScreen("onboarding");
-                else if (!u.video_url) setScreen("video-pick");
-                else setScreen("feed");
-              }}
-            />
-          )}
+          {screen === "auth-callback" && <AuthCallback key="auth-callback" />}
+          {screen === "signin" && <SignInScreen key="signin" />}
           {screen === "onboarding" && user && (
             <Onboarding key="onb" user={user} onDone={(u) => { setUser(u); setScreen("video-pick"); }} />
           )}
@@ -169,7 +201,6 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        {/* Match celebration overlay */}
         <AnimatePresence>
           {matchState && (
             <MatchCelebration
@@ -213,77 +244,38 @@ function Splash() {
   );
 }
 
-// ---------- Phone ----------
-function PhoneScreen({ onNext }) {
-  const [country, setCountry] = useState("+1");
-  const [phone, setPhone] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const submit = async (e) => {
-    e?.preventDefault?.();
-    const fullPhone = `${country}${phone.replace(/\D/g, "")}`;
-    if (fullPhone.length < 8) return toast.error("Enter a valid phone number");
-    setLoading(true);
-    try {
-      const { data } = await api.post("/auth/send-otp", { phone: fullPhone });
-      sessionStorage.setItem("n2m_pending_phone", fullPhone);
-      if (data.dev_mode && data.dev_code) {
-        sessionStorage.setItem("n2m_dev_code", data.dev_code);
-        toast.success(`DEV mode — code: ${data.dev_code}`, { duration: 8000 });
-      } else {
-        toast.success("Code sent. Check your SMS.");
-      }
-      onNext();
-    } catch (err) {
-      toast.error(err?.response?.data?.detail || "Failed to send code");
-    } finally {
-      setLoading(false);
-    }
+// ---------- Google Sign-In ----------
+// REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+function SignInScreen() {
+  const startGoogle = () => {
+    const redirectUrl = window.location.origin + "/";
+    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
   };
 
   return (
     <motion.div
       className="absolute inset-0 flex flex-col px-7 pt-16 pb-8 bg-grain"
       initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-      data-testid="phone-screen"
+      data-testid="signin-screen"
     >
-      <div className="font-display text-3xl font-black leading-tight">
-        What's your<br />number<span style={{ color: "#FF4D4D" }}>?</span>
+      <div className="font-display text-4xl font-black leading-[0.95] tracking-tighter">
+        Nice<span style={{ color: "#FF4D4D" }}>2</span>
+        <br />Meechu<span style={{ color: "#00E5FF" }}>.</span>
       </div>
-      <p className="mt-3 text-sm text-white/55 font-medium leading-relaxed">
-        We use it for sign-in. Nobody on the app ever sees it.
+      <p className="mt-4 text-sm text-white/55 font-medium leading-relaxed max-w-[280px]">
+        Hyperlocal. Video-first. Anonymous until the spark.
       </p>
 
-      <form onSubmit={submit} className="mt-10 flex gap-3">
-        <input
-          aria-label="country code"
-          className="n2m-input"
-          style={{ width: 96, textAlign: "center" }}
-          value={country}
-          onChange={(e) => setCountry(e.target.value.startsWith("+") ? e.target.value : "+" + e.target.value.replace(/\D/g, ""))}
-          data-testid="phone-country-input"
-        />
-        <input
-          aria-label="phone number"
-          className="n2m-input"
-          placeholder="555 010 7777"
-          inputMode="numeric"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          data-testid="phone-number-input"
-        />
-      </form>
-
-      <div className="mt-auto">
+      <div className="mt-auto flex flex-col gap-3">
         <button
-          className="btn-primary w-full flex items-center justify-center gap-2 text-base"
-          onClick={submit}
-          disabled={loading}
-          data-testid="phone-send-otp-button"
+          className="w-full flex items-center justify-center gap-3 rounded-full px-6 py-4 font-bold text-base bg-white text-black hover:bg-white/90 active:scale-[0.98] transition"
+          onClick={startGoogle}
+          data-testid="signin-google-button"
         >
-          {loading ? "Sending…" : (<><span>Send my code</span><ArrowRight size={18} /></>)}
+          <GoogleGlyph />
+          <span>Continue with Google</span>
         </button>
-        <p className="mt-4 text-center text-[11px] text-white/40 font-medium uppercase tracking-widest">
+        <p className="text-center text-[11px] text-white/40 font-medium uppercase tracking-widest">
           By continuing you agree to be Nice
         </p>
       </div>
@@ -291,109 +283,30 @@ function PhoneScreen({ onNext }) {
   );
 }
 
-// ---------- OTP ----------
-function OtpScreen({ onBack, onSuccess }) {
-  const phone = sessionStorage.getItem("n2m_pending_phone") || "";
-  const devCode = sessionStorage.getItem("n2m_dev_code") || "";
-  const [digits, setDigits] = useState(Array(6).fill(""));
-  const refs = useRef([]);
-  const [loading, setLoading] = useState(false);
+function GoogleGlyph() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true">
+      <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303C33.973 32.91 29.413 36 24 36c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/>
+      <path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/>
+      <path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.193l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.392 0-9.94-3.066-11.283-7.357l-6.54 5.036C9.51 39.556 16.227 44 24 44z"/>
+      <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-.793 2.237-2.231 4.166-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/>
+    </svg>
+  );
+}
 
-  const focus = (i) => refs.current[i]?.focus();
-
-  const setAt = (i, v) => {
-    const clean = v.replace(/\D/g, "");
-    if (clean.length > 1) {
-      // paste handling
-      const arr = clean.slice(0, 6).split("");
-      const next = [...digits];
-      arr.forEach((c, idx) => { next[idx] = c; });
-      setDigits(next);
-      focus(Math.min(5, arr.length));
-      if (next.every((d) => d)) submit(next.join(""));
-      return;
-    }
-    const next = [...digits];
-    next[i] = clean;
-    setDigits(next);
-    if (clean && i < 5) focus(i + 1);
-    if (next.every((d) => d)) submit(next.join(""));
-  };
-
-  const onKey = (i, e) => {
-    if (e.key === "Backspace" && !digits[i] && i > 0) focus(i - 1);
-  };
-
-  const submit = async (code) => {
-    if (loading) return;
-    setLoading(true);
-    try {
-      const { data } = await api.post("/auth/verify-otp", { phone, code });
-      localStorage.setItem("n2m_token", data.token);
-      sessionStorage.removeItem("n2m_dev_code");
-      sessionStorage.removeItem("n2m_pending_phone");
-      onSuccess(data.user, data.onboarded);
-    } catch (err) {
-      toast.error(err?.response?.data?.detail || "Invalid code");
-      setDigits(Array(6).fill(""));
-      focus(0);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { focus(0); }, []);
-
-  const autofill = () => {
-    if (!devCode) return;
-    const arr = devCode.split("");
-    setDigits(arr);
-    submit(devCode);
-  };
-
+// ---------- Auth Callback (processes #session_id from URL fragment) ----------
+function AuthCallback() {
   return (
     <motion.div
-      className="absolute inset-0 flex flex-col px-7 pt-12 pb-8 bg-grain"
-      initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }}
-      data-testid="otp-screen"
+      className="absolute inset-0 flex items-center justify-center bg-grain"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      data-testid="auth-callback-screen"
     >
-      <button className="self-start text-white/60 mb-6 flex items-center gap-1" onClick={onBack} data-testid="otp-back-button">
-        <ArrowLeft size={18} /> <span className="text-sm font-medium">back</span>
-      </button>
-
-      <div className="font-display text-3xl font-black leading-tight">
-        Drop the<br />6 digits<span style={{ color: "#00E5FF" }}>.</span>
-      </div>
-      <p className="mt-3 text-sm text-white/55 font-medium">Sent to {phone}</p>
-
-      <div className="mt-10 flex gap-2 justify-between">
-        {digits.map((d, i) => (
-          <input
-            key={`otp-cell-${i}`}
-            ref={(el) => (refs.current[i] = el)}
-            className="otp-cell"
-            inputMode="numeric"
-            maxLength={6}
-            value={d}
-            onChange={(e) => setAt(i, e.target.value)}
-            onKeyDown={(e) => onKey(i, e)}
-            data-testid={`otp-cell-${i}`}
-          />
-        ))}
-      </div>
-
-      {devCode && (
-        <button
-          onClick={autofill}
-          className="mt-6 self-start text-xs font-bold uppercase tracking-widest text-[#00E5FF] glass-dark px-3 py-2 rounded-full"
-          data-testid="otp-autofill-dev"
-        >
-          DEV ⚡ autofill {devCode}
-        </button>
-      )}
-
-      <div className="mt-auto text-center text-xs text-white/40 font-medium">
-        {loading ? "Verifying…" : "Code auto-submits when all 6 digits are entered"}
+      <div className="text-center px-6">
+        <div className="font-display text-3xl font-black tracking-tighter splash-pulse">
+          signing you in<span style={{ color: "#FF4D4D" }}>…</span>
+        </div>
+        <p className="mt-3 text-sm text-white/50">one sec</p>
       </div>
     </motion.div>
   );

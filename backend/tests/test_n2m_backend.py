@@ -1,20 +1,29 @@
-"""Nice2Meechu backend test suite."""
+"""Nice2Meechu backend test suite (Google-OAuth / Emergent auth).
+
+Auth is now Emergent-managed Google OAuth. For tests we seed a user + session
+directly into MongoDB (per /app/auth_testing.md) and authenticate via Bearer.
+"""
 import os
 import time
+import uuid
+from datetime import datetime, timedelta, timezone
+
 import pytest
 import requests
+from pymongo import MongoClient
 
 BASE = os.environ["REACT_APP_BACKEND_URL"].rstrip("/") if os.environ.get("REACT_APP_BACKEND_URL") else None
 if not BASE:
-    # load from frontend/.env
     with open("/app/frontend/.env") as f:
         for ln in f:
             if ln.startswith("REACT_APP_BACKEND_URL="):
                 BASE = ln.split("=", 1)[1].strip().strip('"').rstrip("/")
 API = f"{BASE}/api"
 
+MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+DB_NAME = os.environ.get("DB_NAME", "test_database")
 
-# ---------- module-level shared state ----------
+
 @pytest.fixture(scope="module")
 def session():
     s = requests.Session()
@@ -23,29 +32,50 @@ def session():
 
 
 @pytest.fixture(scope="module")
-def auth(session):
-    """Sign up a fresh user and onboard them. Returns dict with token, user, headers."""
-    phone = f"+1415555{int(time.time()) % 10000:04d}"
-    r = session.post(f"{API}/auth/send-otp", json={"phone": phone})
-    assert r.status_code == 200, r.text
-    code = r.json()["dev_code"]
-    r = session.post(f"{API}/auth/verify-otp", json={"phone": phone, "code": code})
-    assert r.status_code == 200
-    data = r.json()
-    headers = {"Authorization": f"Bearer {data['token']}"}
-    # onboard
+def mongo():
+    mc = MongoClient(MONGO_URL)
+    yield mc[DB_NAME]
+    mc.close()
+
+
+@pytest.fixture(scope="module")
+def auth(session, mongo):
+    """Seed a fresh user + session directly into Mongo (mocks Google OAuth)."""
+    uid = f"test-user-{uuid.uuid4().hex[:8]}"
+    token = f"test_session_{uuid.uuid4().hex}"
+    email = f"TEST_{uid}@example.com"
+    mongo.users.insert_one({
+        "id": uid, "email": email, "name": "Test User", "picture": None,
+        "codename": "Velvet Fox", "handle": None, "vibes": [], "language": "en",
+        "avatar_emoji": "🌙", "lat": None, "lng": None,
+        "video_url": None, "transcript": None, "source_lang": None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    mongo.user_sessions.insert_one({
+        "user_id": uid, "session_token": token,
+        "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
+        "created_at": datetime.now(timezone.utc),
+    })
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Onboard
     r = session.post(
         f"{API}/users/onboarding",
-        json={"handle": f"test_{int(time.time())%10000}", "vibes": ["Coffee", "Vinyl"], "language": "en", "avatar_emoji": "🌙"},
+        json={"handle": f"test_{int(time.time())%10000}", "vibes": ["Coffee", "Vinyl"],
+              "language": "en", "avatar_emoji": "🌙"},
         headers=headers,
     )
-    assert r.status_code == 200
+    assert r.status_code == 200, r.text
     user = r.json()["user"]
-    # set location
     session.post(f"{API}/users/location", json={"lat": 40.71, "lng": -74.00}, headers=headers)
-    # set video
     session.post(f"{API}/users/video", json={"sample_index": 0}, headers=headers)
-    return {"phone": phone, "token": data["token"], "user": user, "headers": headers}
+
+    yield {"user_id": uid, "token": token, "user": user, "headers": headers}
+
+    # Cleanup
+    mongo.user_sessions.delete_many({"user_id": uid})
+    mongo.users.delete_many({"id": uid})
+    mongo.swipes.delete_many({"user_id": uid})
 
 
 # ---------- root ----------
@@ -55,46 +85,44 @@ class TestRoot:
         assert r.status_code == 200
         d = r.json()
         assert d["app"] == "Nice2Meechu"
-        assert "twilio_enabled" in d
+        assert d["auth"] == "google-emergent"
 
 
 # ---------- auth ----------
 class TestAuth:
-    def test_send_otp_valid(self, session):
-        r = session.post(f"{API}/auth/send-otp", json={"phone": "+14155550199"})
+    def test_me_unauth(self, session):
+        r = session.get(f"{API}/auth/me")
+        assert r.status_code == 401
+
+    def test_session_exchange_bogus(self, session):
+        r = session.post(f"{API}/auth/session", json={"session_id": "bogus-not-real-xyz"})
+        assert r.status_code in (401, 502)
+
+    def test_me_with_bearer(self, session, auth):
+        r = session.get(f"{API}/auth/me", headers=auth["headers"])
         assert r.status_code == 200
         d = r.json()
-        assert d["dev_mode"] is True
-        assert "dev_code" in d and len(d["dev_code"]) == 6
+        assert d["user"]["id"] == auth["user_id"]
+        assert d["onboarded"] is True
 
-    def test_send_otp_invalid_no_plus(self, session):
-        r = session.post(f"{API}/auth/send-otp", json={"phone": "14155550199"})
-        assert r.status_code == 400
-
-    def test_send_otp_too_short(self, session):
-        r = session.post(f"{API}/auth/send-otp", json={"phone": "+1234"})
-        assert r.status_code == 400
-
-    def test_verify_otp_wrong_code(self, session):
-        session.post(f"{API}/auth/send-otp", json={"phone": "+14155550299"})
-        r = session.post(f"{API}/auth/verify-otp", json={"phone": "+14155550299", "code": "000000"})
-        # Wrong code (extremely unlikely match): should be 400
-        # Note: tiny chance of accidental match. Retry with explicitly wrong code.
-        if r.status_code == 200:
-            r = session.post(f"{API}/auth/verify-otp", json={"phone": "+14155550299", "code": "111111"})
-        assert r.status_code == 400
-
-    def test_verify_otp_correct_creates_user(self, session):
-        phone = f"+1415555{(int(time.time())+1) % 10000:04d}"
-        r = session.post(f"{API}/auth/send-otp", json={"phone": phone})
-        code = r.json()["dev_code"]
-        r = session.post(f"{API}/auth/verify-otp", json={"phone": phone, "code": code})
+    def test_logout_deletes_session(self, session, mongo):
+        # Seed a throwaway session
+        uid = f"test-user-{uuid.uuid4().hex[:8]}"
+        token = f"test_session_{uuid.uuid4().hex}"
+        mongo.users.insert_one({"id": uid, "email": f"TEST_{uid}@x.com", "handle": None,
+                                "vibes": [], "language": "en"})
+        mongo.user_sessions.insert_one({
+            "user_id": uid, "session_token": token,
+            "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
+            "created_at": datetime.now(timezone.utc),
+        })
+        r = session.post(f"{API}/auth/logout", headers={"Authorization": f"Bearer {token}"})
         assert r.status_code == 200
-        d = r.json()
-        assert "token" in d and len(d["token"]) > 10
-        assert "user" in d
-        assert d["onboarded"] is False
-        assert d["user"]["phone"] == phone
+        assert r.json() == {"ok": True}
+        # session should be gone
+        assert mongo.user_sessions.find_one({"session_token": token}) is None
+        # cleanup user
+        mongo.users.delete_many({"id": uid})
 
 
 # ---------- protected endpoints require auth ----------
@@ -107,13 +135,15 @@ class TestAuthGuard:
         ("GET", "/feed", None),
         ("POST", "/swipe", {"target_user_id": "x", "action": "like"}),
         ("GET", "/matches", None),
+        ("POST", "/messages", {"match_id": "x", "text": "hi"}),
+        ("GET", "/messages/some-id", None),
     ])
     def test_requires_bearer(self, session, method, path, body):
         if method == "GET":
             r = session.get(f"{API}{path}")
         else:
             r = session.post(f"{API}{path}", json=body)
-        assert r.status_code == 401, f"{path} should require auth"
+        assert r.status_code == 401, f"{path} should require auth, got {r.status_code}"
 
 
 # ---------- onboarding / profile / video ----------
@@ -122,18 +152,16 @@ class TestProfile:
         r = session.get(f"{API}/users/me", headers=auth["headers"])
         assert r.status_code == 200
         u = r.json()["user"]
-        assert u["id"] == auth["user"]["id"]
+        assert u["id"] == auth["user_id"]
         assert u["handle"] == auth["user"]["handle"]
 
     def test_onboarding_persisted(self, session, auth):
-        # update via onboarding
         r = session.post(
             f"{API}/users/onboarding",
             json={"handle": auth["user"]["handle"], "vibes": ["Foodie"], "language": "es", "avatar_emoji": "🔥"},
             headers=auth["headers"],
         )
         assert r.status_code == 200
-        # verify via /me
         r = session.get(f"{API}/users/me", headers=auth["headers"])
         u = r.json()["user"]
         assert u["language"] == "es"
@@ -154,7 +182,6 @@ class TestProfile:
         d = r.json()
         assert d["video_url"].startswith("/videos/") or d["video_url"].startswith("https://")
         assert d["transcript"]
-        # persist check
         r = session.get(f"{API}/users/me", headers=auth["headers"])
         u = r.json()["user"]
         assert u["video_url"] == d["video_url"]
@@ -184,22 +211,19 @@ class TestFeedSwipeMatch:
         first = feed[0]
         for k in ("id", "codename", "avatar_emoji", "vibes", "video_url", "transcript", "source_lang", "distance_km"):
             assert k in first
-        # self must not appear
-        assert all(c["id"] != auth["user"]["id"] for c in feed)
+        assert all(c["id"] != auth["user_id"] for c in feed)
 
     def test_swipe_pass(self, session, auth):
         r = session.get(f"{API}/feed", headers=auth["headers"])
         feed = r.json()["feed"]
-        # pick a demo
         target = next((c for c in feed if c["id"].startswith("demo-")), feed[0])
         r = session.post(f"{API}/swipe", json={"target_user_id": target["id"], "action": "pass"}, headers=auth["headers"])
         assert r.status_code == 200
         assert r.json() == {"match": False}
 
     def test_swipe_like_attempts_match_and_messages(self, session, auth):
-        # Like demo users until we get a match (70% chance each)
         match_data = None
-        for attempt in range(15):
+        for _ in range(20):
             r = session.get(f"{API}/feed", headers=auth["headers"])
             feed = r.json()["feed"]
             demos = [c for c in feed if c["id"].startswith("demo-")]
@@ -214,30 +238,25 @@ class TestFeedSwipeMatch:
                 assert "match_id" in d
                 assert d["matched_user"]["id"] == target["id"]
                 break
-        assert match_data is not None, "Expected at least one match after 15 like attempts"
+        assert match_data is not None, "Expected at least one match after 20 like attempts"
 
-        # /matches lists it
         r = session.get(f"{API}/matches", headers=auth["headers"])
         assert r.status_code == 200
         matches = r.json()["matches"]
         assert any(m["match_id"] == match_data["match_id"] for m in matches)
 
-        # Send a message and verify demo reply
         mid = match_data["match_id"]
         r = session.post(f"{API}/messages", json={"match_id": mid, "text": "hi there!"}, headers=auth["headers"])
         assert r.status_code == 200
-        time.sleep(0.5)
+        time.sleep(0.6)
         r = session.get(f"{API}/messages/{mid}", headers=auth["headers"])
         assert r.status_code == 200
         msgs = r.json()["messages"]
-        # Expect our message + a demo reply (demo user is_demo=True)
         assert len(msgs) >= 2
-        # ordered by at ascending
         ats = [m["at"] for m in msgs]
         assert ats == sorted(ats)
-        # first message is ours
         assert msgs[0]["text"] == "hi there!"
-        assert msgs[0]["from_user_id"] == auth["user"]["id"]
+        assert msgs[0]["from_user_id"] == auth["user_id"]
 
     def test_messages_invalid_match(self, session, auth):
         r = session.post(f"{API}/messages", json={"match_id": "does-not-exist", "text": "hi"}, headers=auth["headers"])
@@ -251,7 +270,6 @@ class TestTranslate:
         assert r.status_code == 200
         out = r.json()["translation"].strip().lower()
         assert out
-        # Loose check - should contain typical Spanish hello variants
         assert any(s in out for s in ["hola", "buen"]) or out != "hello"
 
     def test_translate_same_lang_unchanged(self, session):

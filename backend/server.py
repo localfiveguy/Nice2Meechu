@@ -1,18 +1,19 @@
-"""Nice2Meechu backend - phone OTP auth, anonymous video feed, AI translation."""
+"""Nice2Meechu backend - Google OAuth (Emergent), anonymous video feed, AI translation."""
 import logging
 import os
 import random
 import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional
 
+import httpx
 from dotenv import load_dotenv
 from emergentintegrations.llm.chat import LlmChat, UserMessage
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
+from fastapi import APIRouter, Cookie, Depends, FastAPI, Header, HTTPException, Request, Response
 from motor.motor_asyncio import AsyncIOMotorClient
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from starlette.middleware.cors import CORSMiddleware
 
 ROOT_DIR = Path(__file__).parent
@@ -26,23 +27,8 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
 
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
-TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
-TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
-TWILIO_VERIFY_SERVICE_SID = os.environ.get("TWILIO_VERIFY_SERVICE_SID", "")
-TWILIO_ENABLED = bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_VERIFY_SERVICE_SID)
-
-twilio_client = None
-if TWILIO_ENABLED:
-    try:
-        from twilio.rest import Client as TwilioClient
-
-        twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-    except Exception:  # noqa: BLE001
-        twilio_client = None
-        TWILIO_ENABLED = False
-
-# In-memory store for dev OTP codes (only used when Twilio not configured)
-DEV_OTP_STORE: dict[str, str] = {}
+EMERGENT_AUTH_SESSION_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
+SESSION_TTL = timedelta(days=7)
 
 app = FastAPI()
 api = APIRouter(prefix="/api")
@@ -52,39 +38,15 @@ logger = logging.getLogger("nice2meechu")
 
 
 # ---------------------------------------------------------------------------
-# Sample seed data (curated portrait videos + transcripts)
+# Sample seed data
 # ---------------------------------------------------------------------------
 SAMPLE_VIDEOS = [
-    {
-        "url": "/videos/v1.mp4",
-        "transcript": "Hey there! I love grabbing oat lattes at the corner cafe. Anyone up for a coffee crawl?",
-        "lang": "en",
-    },
-    {
-        "url": "/videos/v2.mp4",
-        "transcript": "Just wrapped a long studio session. Looking for someone to grab late-night ramen with.",
-        "lang": "en",
-    },
-    {
-        "url": "/videos/v3.mp4",
-        "transcript": "I run a tiny vinyl shop down the street. If you love jazz, slide into the feed.",
-        "lang": "en",
-    },
-    {
-        "url": "/videos/v4.mp4",
-        "transcript": "Hola! New in town. Show me your favourite spots and I will share mine.",
-        "lang": "es",
-    },
-    {
-        "url": "/videos/v5.mp4",
-        "transcript": "I bike everywhere. Hidden parks, weird ramen joints, rooftop sunsets. Tag along?",
-        "lang": "en",
-    },
-    {
-        "url": "/videos/v6.mp4",
-        "transcript": "Bonjour! Just moved here for art school. Looking for gallery buddies and study cafes.",
-        "lang": "fr",
-    },
+    {"url": "/videos/v1.mp4", "transcript": "Hey there! I love grabbing oat lattes at the corner cafe. Anyone up for a coffee crawl?", "lang": "en"},
+    {"url": "/videos/v2.mp4", "transcript": "Just wrapped a long studio session. Looking for someone to grab late-night ramen with.", "lang": "en"},
+    {"url": "/videos/v3.mp4", "transcript": "I run a tiny vinyl shop down the street. If you love jazz, slide into the feed.", "lang": "en"},
+    {"url": "/videos/v4.mp4", "transcript": "Hola! New in town. Show me your favourite spots and I will share mine.", "lang": "es"},
+    {"url": "/videos/v5.mp4", "transcript": "I bike everywhere. Hidden parks, weird ramen joints, rooftop sunsets. Tag along?", "lang": "en"},
+    {"url": "/videos/v6.mp4", "transcript": "Bonjour! Just moved here for art school. Looking for gallery buddies and study cafes.", "lang": "fr"},
 ]
 
 VIBES_POOL = ["Coffee", "Vinyl", "Skater", "Foodie", "Bookworm", "Gamer", "Hiker", "Artist", "Runner", "Night Owl"]
@@ -93,31 +55,26 @@ CODENAME_NOUN = ["Fox", "Comet", "Drift", "Echo", "Lynx", "Mirage", "Orbit", "Ph
 
 
 def generate_codename() -> str:
-    return f"{random.choice(CODENAME_ADJ)} {random.choice(CODENAME_NOUN)}"
+    return f"{secrets.choice(CODENAME_ADJ)} {secrets.choice(CODENAME_NOUN)}"
 
 
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
-class SendOtpReq(BaseModel):
-    phone: str
-
-
-class VerifyOtpReq(BaseModel):
-    phone: str
-    code: str
+class SessionExchangeReq(BaseModel):
+    session_id: str
 
 
 class OnboardingReq(BaseModel):
     handle: str
     vibes: List[str]
-    language: str  # e.g. "en", "es"
+    language: str
     avatar_emoji: Optional[str] = "🌙"
 
 
 class VideoUploadReq(BaseModel):
-    sample_index: Optional[int] = None  # if user picks a sample
-    video_url: Optional[str] = None  # if recorded/external
+    sample_index: Optional[int] = None
+    video_url: Optional[str] = None
     transcript: Optional[str] = None
     source_lang: str = "en"
 
@@ -144,96 +101,144 @@ class LocationUpdate(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Auth helper
+# Auth helpers
 # ---------------------------------------------------------------------------
-async def current_user(authorization: Optional[str] = Header(None)):
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(401, "Missing token")
-    token = authorization.split(" ", 1)[1].strip()
-    user = await db.users.find_one({"token": token}, {"_id": 0})
+def _extract_token(authorization: Optional[str], session_token_cookie: Optional[str]) -> Optional[str]:
+    if session_token_cookie:
+        return session_token_cookie
+    if authorization and authorization.startswith("Bearer "):
+        return authorization.split(" ", 1)[1].strip()
+    return None
+
+
+async def _resolve_user_from_token(token: str) -> Optional[dict]:
+    sess = await db.user_sessions.find_one({"session_token": token}, {"_id": 0})
+    if not sess:
+        return None
+    expires_at = sess.get("expires_at")
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    if expires_at and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at and expires_at < datetime.now(timezone.utc):
+        return None
+    return await db.users.find_one({"id": sess["user_id"]}, {"_id": 0})
+
+
+async def current_user(
+    authorization: Optional[str] = Header(None),
+    session_token: Optional[str] = Cookie(None),
+):
+    token = _extract_token(authorization, session_token)
+    if not token:
+        raise HTTPException(401, "Not authenticated")
+    user = await _resolve_user_from_token(token)
     if not user:
-        raise HTTPException(401, "Invalid token")
+        raise HTTPException(401, "Invalid or expired session")
     return user
 
 
 # ---------------------------------------------------------------------------
-# Routes - auth
+# Routes - meta + Google Auth (Emergent)
 # ---------------------------------------------------------------------------
 @api.get("/")
 async def root():
-    return {"app": "Nice2Meechu", "twilio_enabled": TWILIO_ENABLED}
+    return {"app": "Nice2Meechu", "auth": "google-emergent"}
 
 
-@api.post("/auth/send-otp")
-async def send_otp(req: SendOtpReq):
-    phone = req.phone.strip()
-    if not phone.startswith("+") or len(phone) < 8:
-        raise HTTPException(400, "Phone must be in E.164 format (e.g. +14155551234)")
-
-    if TWILIO_ENABLED and twilio_client is not None:
+@api.post("/auth/session")
+async def auth_session_exchange(req: SessionExchangeReq, response: Response):
+    """Exchange a one-time session_id (from URL fragment) for a persistent session_token."""
+    async with httpx.AsyncClient(timeout=15) as http:
         try:
-            twilio_client.verify.v2.services(TWILIO_VERIFY_SERVICE_SID).verifications.create(
-                to=phone, channel="sms"
-            )
-            return {"status": "sent", "dev_mode": False}
+            r = await http.get(EMERGENT_AUTH_SESSION_URL, headers={"X-Session-ID": req.session_id})
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Twilio send failed: %s -- falling back to DEV mode", exc)
+            logger.exception("Emergent auth call failed")
+            raise HTTPException(502, f"Auth provider unreachable: {exc}")
 
-    code = f"{secrets.randbelow(1000000):06d}"
-    DEV_OTP_STORE[phone] = code
-    logger.info("DEV OTP for %s -> %s", phone, code)
-    return {"status": "sent", "dev_mode": True, "dev_code": code}
+    if r.status_code != 200:
+        logger.warning("Emergent auth returned %s: %s", r.status_code, r.text)
+        raise HTTPException(401, "Invalid session_id")
 
+    data = r.json()
+    email = data.get("email")
+    name = data.get("name")
+    picture = data.get("picture")
+    session_token = data.get("session_token")
+    if not (email and session_token):
+        raise HTTPException(500, "Malformed auth response")
 
-@api.post("/auth/verify-otp")
-async def verify_otp(req: VerifyOtpReq):
-    phone = req.phone.strip()
-    code = req.code.strip()
-
-    approved = False
-    if TWILIO_ENABLED and twilio_client is not None and phone not in DEV_OTP_STORE:
-        try:
-            check = twilio_client.verify.v2.services(TWILIO_VERIFY_SERVICE_SID).verification_checks.create(
-                to=phone, code=code
-            )
-            approved = check.status == "approved"
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Twilio verify error: %s", exc)
-            approved = False
+    # Upsert user by email
+    existing = await db.users.find_one({"email": email}, {"_id": 0})
+    if existing:
+        await db.users.update_one(
+            {"id": existing["id"]},
+            {"$set": {"name": name, "picture": picture}},
+        )
+        user = await db.users.find_one({"id": existing["id"]}, {"_id": 0})
     else:
-        approved = DEV_OTP_STORE.get(phone) == code
-        if approved:
-            DEV_OTP_STORE.pop(phone, None)
+        new_user = {
+            "id": str(uuid.uuid4()),
+            "email": email,
+            "name": name,
+            "picture": picture,
+            "codename": generate_codename(),
+            "handle": None,
+            "vibes": [],
+            "language": "en",
+            "avatar_emoji": "🌙",
+            "lat": None,
+            "lng": None,
+            "video_url": None,
+            "transcript": None,
+            "source_lang": None,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.users.insert_one(new_user.copy())
+        user = await db.users.find_one({"id": new_user["id"]}, {"_id": 0})
 
-    if not approved:
-        raise HTTPException(400, "Invalid code")
+    expires_at = datetime.now(timezone.utc) + SESSION_TTL
+    await db.user_sessions.update_one(
+        {"session_token": session_token},
+        {"$set": {
+            "user_id": user["id"],
+            "session_token": session_token,
+            "expires_at": expires_at,
+            "created_at": datetime.now(timezone.utc),
+        }},
+        upsert=True,
+    )
 
-    user = await db.users.find_one({"phone": phone}, {"_id": 0})
-    token = str(uuid.uuid4())
-    if user:
-        await db.users.update_one({"phone": phone}, {"$set": {"token": token}})
-        user["token"] = token
-        return {"token": token, "user": user, "onboarded": bool(user.get("handle"))}
+    # Set httpOnly cookie
+    response.set_cookie(
+        key="session_token",
+        value=session_token,
+        max_age=int(SESSION_TTL.total_seconds()),
+        path="/",
+        httponly=True,
+        secure=True,
+        samesite="none",
+    )
 
-    new_user = {
-        "id": str(uuid.uuid4()),
-        "phone": phone,
-        "token": token,
-        "codename": generate_codename(),
-        "handle": None,
-        "vibes": [],
-        "language": "en",
-        "avatar_emoji": "🌙",
-        "lat": None,
-        "lng": None,
-        "video_url": None,
-        "transcript": None,
-        "source_lang": None,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-    await db.users.insert_one(new_user.copy())
-    new_user.pop("_id", None)
-    return {"token": token, "user": new_user, "onboarded": False}
+    return {"token": session_token, "user": user, "onboarded": bool(user.get("handle"))}
+
+
+@api.get("/auth/me")
+async def auth_me(user=Depends(current_user)):
+    return {"user": user, "onboarded": bool(user.get("handle"))}
+
+
+@api.post("/auth/logout")
+async def auth_logout(
+    response: Response,
+    authorization: Optional[str] = Header(None),
+    session_token: Optional[str] = Cookie(None),
+):
+    token = _extract_token(authorization, session_token)
+    if token:
+        await db.user_sessions.delete_one({"session_token": token})
+    response.delete_cookie("session_token", path="/", samesite="none", secure=True)
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
@@ -254,9 +259,7 @@ async def onboarding(req: OnboardingReq, user=Depends(current_user)):
 
 @api.post("/users/location")
 async def update_location(req: LocationUpdate, user=Depends(current_user)):
-    await db.users.update_one(
-        {"id": user["id"]}, {"$set": {"lat": req.lat, "lng": req.lng}}
-    )
+    await db.users.update_one({"id": user["id"]}, {"$set": {"lat": req.lat, "lng": req.lng}})
     return {"ok": True}
 
 
@@ -300,20 +303,20 @@ def haversine_km(lat1, lng1, lat2, lng2) -> float:
 
 
 async def seed_demo_users():
-    """Ensure ~6 demo users exist so the feed is never empty."""
     count = await db.users.count_documents({"is_demo": True})
     if count >= len(SAMPLE_VIDEOS):
         return
     await db.users.delete_many({"is_demo": True})
     demo_handles = ["luna", "kai", "rumi", "sol", "indie", "noa"]
-    base_lat, base_lng = 40.7128, -74.0060  # NYC default
+    base_lat, base_lng = 40.7128, -74.0060
     for i, sample in enumerate(SAMPLE_VIDEOS):
         await db.users.insert_one(
             {
                 "id": f"demo-{i}",
                 "is_demo": True,
-                "phone": f"+10000000{i:03d}",
-                "token": None,
+                "email": f"demo{i}@example.com",
+                "name": demo_handles[i % len(demo_handles)].title(),
+                "picture": None,
                 "handle": demo_handles[i % len(demo_handles)],
                 "codename": generate_codename(),
                 "vibes": random.sample(VIBES_POOL, 3),
@@ -332,7 +335,6 @@ async def seed_demo_users():
 @api.get("/feed")
 async def feed(user=Depends(current_user)):
     await seed_demo_users()
-    # exclude self + already-swiped
     swiped = await db.swipes.find({"user_id": user["id"]}, {"_id": 0, "target_user_id": 1}).to_list(2000)
     swiped_ids = {s["target_user_id"] for s in swiped}
     cursor = db.users.find(
@@ -340,7 +342,7 @@ async def feed(user=Depends(current_user)):
             "id": {"$ne": user["id"], "$nin": list(swiped_ids)},
             "video_url": {"$ne": None, "$exists": True},
         },
-        {"_id": 0, "phone": 0, "token": 0},
+        {"_id": 0, "email": 0},
     )
     candidates = await cursor.to_list(50)
     out = []
@@ -364,6 +366,19 @@ async def feed(user=Depends(current_user)):
     return {"feed": out[:20]}
 
 
+def _is_demo_user(target: dict) -> bool:
+    return bool(target.get("is_demo"))
+
+
+async def _check_mutual_match(target: dict, viewer_id: str) -> bool:
+    if _is_demo_user(target):
+        return random.random() < 0.7
+    rev = await db.swipes.find_one(
+        {"user_id": target["id"], "target_user_id": viewer_id, "action": "like"}
+    )
+    return bool(rev)
+
+
 @api.post("/swipe")
 async def swipe(req: SwipeReq, user=Depends(current_user)):
     await db.swipes.insert_one(
@@ -378,22 +393,8 @@ async def swipe(req: SwipeReq, user=Depends(current_user)):
     if req.action != "like":
         return {"match": False}
 
-    # For demo users, auto-match on like with 70% chance to make app feel alive
     target = await db.users.find_one({"id": req.target_user_id}, {"_id": 0})
-    if not target:
-        return {"match": False}
-
-    is_demo = target.get("is_demo", False)
-    mutual = False
-    if is_demo:
-        mutual = random.random() < 0.7
-    else:
-        rev = await db.swipes.find_one(
-            {"user_id": req.target_user_id, "target_user_id": user["id"], "action": "like"}
-        )
-        mutual = bool(rev)
-
-    if not mutual:
+    if not target or not await _check_mutual_match(target, user["id"]):
         return {"match": False}
 
     match_id = str(uuid.uuid4())
@@ -426,7 +427,7 @@ async def matches(user=Depends(current_user)):
     out = []
     for row in rows:
         other = [uid for uid in row["user_ids"] if uid != user["id"]][0]
-        u = await db.users.find_one({"id": other}, {"_id": 0, "phone": 0, "token": 0})
+        u = await db.users.find_one({"id": other}, {"_id": 0, "email": 0})
         if not u:
             continue
         out.append(
@@ -473,7 +474,6 @@ async def send_message(req: MessageReq, user=Depends(current_user)):
     await db.messages.insert_one(msg.copy())
     msg.pop("_id", None)
 
-    # Simulate a demo reply
     other_id = [uid for uid in match["user_ids"] if uid != user["id"]][0]
     other = await db.users.find_one({"id": other_id}, {"_id": 0})
     if other and other.get("is_demo"):
@@ -497,21 +497,12 @@ async def send_message(req: MessageReq, user=Depends(current_user)):
 
 
 # ---------------------------------------------------------------------------
-# Translation (OpenAI via emergentintegrations)
+# Translation
 # ---------------------------------------------------------------------------
 LANG_NAMES = {
-    "en": "English",
-    "es": "Spanish",
-    "fr": "French",
-    "de": "German",
-    "pt": "Portuguese",
-    "it": "Italian",
-    "ja": "Japanese",
-    "ko": "Korean",
-    "zh": "Chinese",
-    "hi": "Hindi",
-    "ar": "Arabic",
-    "ru": "Russian",
+    "en": "English", "es": "Spanish", "fr": "French", "de": "German", "pt": "Portuguese",
+    "it": "Italian", "ja": "Japanese", "ko": "Korean", "zh": "Chinese", "hi": "Hindi",
+    "ar": "Arabic", "ru": "Russian",
 }
 
 
