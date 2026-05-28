@@ -2,6 +2,7 @@
 import logging
 import os
 import random
+import secrets
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -178,7 +179,7 @@ async def send_otp(req: SendOtpReq):
         except Exception as exc:  # noqa: BLE001
             logger.warning("Twilio send failed: %s -- falling back to DEV mode", exc)
 
-    code = f"{random.randint(0, 999999):06d}"
+    code = f"{secrets.randbelow(1000000):06d}"
     DEV_OTP_STORE[phone] = code
     logger.info("DEV OTP for %s -> %s", phone, code)
     return {"status": "sent", "dev_mode": True, "dev_code": code}

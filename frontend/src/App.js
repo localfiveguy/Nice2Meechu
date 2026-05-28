@@ -69,7 +69,7 @@ export default function App() {
   const [matchState, setMatchState] = useState(null); // {match_id, matched_user}
   const [activeChat, setActiveChat] = useState(null);
 
-  // hydrate auth
+  // hydrate auth on mount only
   useEffect(() => {
     const t = localStorage.getItem("n2m_token");
     if (!t) {
@@ -83,11 +83,13 @@ export default function App() {
         if (!data.user.handle) setScreen("onboarding");
         else if (!data.user.video_url) setScreen("video-pick");
         else setScreen("feed");
-      } catch {
+      } catch (err) {
+        console.error("auth hydrate failed", err);
         localStorage.removeItem("n2m_token");
         setScreen("phone");
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // capture geolocation once logged in
@@ -101,7 +103,9 @@ export default function App() {
         try {
           await api.post("/users/location", { lat, lng });
           setUser((u) => ({ ...u, lat, lng }));
-        } catch {}
+        } catch (err) {
+          console.error("location update failed", err);
+        }
       },
       () => {},
       { enableHighAccuracy: false, timeout: 6000 }
@@ -365,7 +369,7 @@ function OtpScreen({ onBack, onSuccess }) {
       <div className="mt-10 flex gap-2 justify-between">
         {digits.map((d, i) => (
           <input
-            key={i}
+            key={`otp-cell-${i}`}
             ref={(el) => (refs.current[i] = el)}
             className="otp-cell"
             inputMode="numeric"
@@ -428,7 +432,11 @@ function Onboarding({ user, onDone }) {
   };
 
   const toggleVibe = (v) => {
-    setVibes((arr) => (arr.includes(v) ? arr.filter((x) => x !== v) : arr.length >= 5 ? arr : [...arr, v]));
+    setVibes((arr) => {
+      if (arr.includes(v)) return arr.filter((x) => x !== v);
+      if (arr.length >= 5) return arr;
+      return [...arr, v];
+    });
   };
 
   return (
@@ -440,7 +448,7 @@ function Onboarding({ user, onDone }) {
       {/* progress */}
       <div className="flex gap-1.5 mb-6">
         {Array.from({ length: total }).map((_, i) => (
-          <div key={i} className="flex-1 h-1 rounded-full bg-white/8" data-testid={`onboarding-progress-${i}`}>
+          <div key={`progress-${i}`} className="flex-1 h-1 rounded-full bg-white/8" data-testid={`onboarding-progress-${i}`}>
             <div
               className="h-full rounded-full transition-all duration-500"
               style={{ width: i <= step ? "100%" : "0%", background: "linear-gradient(90deg,#FF4D4D,#00E5FF)" }}
@@ -562,7 +570,7 @@ function VideoPick({ onDone }) {
   const recorderRef = useRef(null);
 
   useEffect(() => {
-    api.get("/samples").then(({ data }) => setSamples(data.samples)).catch(() => {});
+    api.get("/samples").then(({ data }) => setSamples(data.samples)).catch((e) => console.error(e));
   }, []);
 
   const save = async () => {
@@ -662,7 +670,7 @@ function VideoPick({ onDone }) {
         <div className="mt-5 grid grid-cols-2 gap-3 flex-1 overflow-y-auto no-scrollbar pb-4" data-testid="sample-grid">
           {samples.map((s, i) => (
             <button
-              key={i}
+              key={s.url}
               onClick={() => setSelectedIdx(i)}
               className={`relative aspect-[3/4] rounded-2xl overflow-hidden border-2 ${selectedIdx === i ? "border-[#FF4D4D]" : "border-white/8"}`}
               data-testid={`sample-card-${i}`}
@@ -972,7 +980,7 @@ function MatchesScreen({ onTab, onOpenChat }) {
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    api.get("/matches").then(({ data }) => setMatches(data.matches)).catch(() => {}).finally(() => setLoading(false));
+    api.get("/matches").then(({ data }) => setMatches(data.matches)).catch((e) => console.error(e)).finally(() => setLoading(false));
   }, []);
 
   return (
@@ -1031,7 +1039,7 @@ function ChatScreen({ me, match, onBack }) {
       setMessages(data.messages);
     } finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 99999, behavior: "smooth" });
