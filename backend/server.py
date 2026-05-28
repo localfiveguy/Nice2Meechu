@@ -456,7 +456,27 @@ async def get_messages(match_id: str, user=Depends(current_user)):
     if not match:
         raise HTTPException(404, "Match not found")
     msgs = await db.messages.find({"match_id": match_id}, {"_id": 0}).sort("at", 1).to_list(500)
-    return {"messages": msgs}
+
+    reader_lang = (user.get("language") or "en")
+    out = []
+    for m in msgs:
+        translated_text = None
+        source_lang = m.get("source_lang") or "en"
+        is_own = m.get("from_user_id") == user["id"]
+        # Translate ONLY incoming messages whose source language differs from reader's language
+        if not is_own and source_lang != reader_lang:
+            cached = (m.get("translations") or {}).get(reader_lang)
+            if cached:
+                translated_text = cached
+            else:
+                translated_text = await _translate_text(m["text"], reader_lang, source_lang)
+                # persist translation so we don't re-call the LLM on subsequent loads
+                await db.messages.update_one(
+                    {"id": m["id"]},
+                    {"$set": {f"translations.{reader_lang}": translated_text}},
+                )
+        out.append({**m, "translated_text": translated_text, "source_lang": source_lang})
+    return {"messages": out}
 
 
 @api.post("/messages")
@@ -469,6 +489,8 @@ async def send_message(req: MessageReq, user=Depends(current_user)):
         "match_id": req.match_id,
         "from_user_id": user["id"],
         "text": req.text,
+        "source_lang": user.get("language") or "en",
+        "translations": {},
         "at": datetime.now(timezone.utc).isoformat(),
     }
     await db.messages.insert_one(msg.copy())
@@ -490,6 +512,8 @@ async def send_message(req: MessageReq, user=Depends(current_user)):
                 "match_id": req.match_id,
                 "from_user_id": other_id,
                 "text": random.choice(replies),
+                "source_lang": "en",  # reply strings are English regardless of demo user's profile lang
+                "translations": {},
                 "at": datetime.now(timezone.utc).isoformat(),
             }
         )
@@ -506,16 +530,16 @@ LANG_NAMES = {
 }
 
 
-@api.post("/translate")
-async def translate(req: TranslateReq):
-    target = LANG_NAMES.get(req.target_lang, req.target_lang)
-    src = LANG_NAMES.get(req.source_lang or "", "the source language")
+async def _translate_text(text: str, target_lang: str, source_lang: Optional[str]) -> str:
+    """Translate text via Emergent LLM. Returns original on same-language or LLM failure."""
+    if not text:
+        return ""
+    if (source_lang or "") == target_lang:
+        return text
     if not EMERGENT_LLM_KEY:
-        raise HTTPException(500, "EMERGENT_LLM_KEY not configured")
-
-    if (req.source_lang or "") == req.target_lang:
-        return {"translation": req.text, "target_lang": req.target_lang}
-
+        return text
+    target = LANG_NAMES.get(target_lang, target_lang)
+    src = LANG_NAMES.get(source_lang or "", "the source language")
     try:
         chat = LlmChat(
             api_key=EMERGENT_LLM_KEY,
@@ -525,12 +549,19 @@ async def translate(req: TranslateReq):
                 "Return ONLY the translated text, no quotes, no preface, no explanation."
             ),
         ).with_model("openai", "gpt-4o-mini")
-        msg = UserMessage(text=req.text)
-        out = await chat.send_message(msg)
-        return {"translation": (out or "").strip(), "target_lang": req.target_lang}
+        out = await chat.send_message(UserMessage(text=text))
+        return (out or text).strip()
     except Exception as exc:  # noqa: BLE001
         logger.exception("translate failed: %s", exc)
-        raise HTTPException(500, f"Translation failed: {exc}")
+        return text
+
+
+@api.post("/translate")
+async def translate(req: TranslateReq):
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(500, "EMERGENT_LLM_KEY not configured")
+    out = await _translate_text(req.text, req.target_lang, req.source_lang)
+    return {"translation": out, "target_lang": req.target_lang}
 
 
 @api.get("/samples")

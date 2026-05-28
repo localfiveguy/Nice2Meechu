@@ -997,12 +997,30 @@ function ChatScreen({ me, match, onBack }) {
         )}
         {messages.map((m) => {
           const mine = m.from_user_id === me.id;
+          const hasTranslation = !mine && m.translated_text && m.translated_text !== m.text;
           return (
             <div
               key={m.id}
-              className={`max-w-[78%] px-4 py-2.5 rounded-2xl text-[15px] font-medium leading-snug ${mine ? "self-end bg-[#FF4D4D] text-white rounded-br-md" : "self-start bg-white/10 text-white rounded-bl-md"}`}
+              className={`max-w-[78%] flex flex-col gap-1 ${mine ? "self-end items-end" : "self-start items-start"}`}
               data-testid={`chat-msg-${m.id}`}
-            >{m.text}</div>
+            >
+              <div
+                className={`px-4 py-2.5 rounded-2xl text-[15px] font-medium leading-snug ${mine ? "bg-[#FF4D4D] text-white rounded-br-md" : "bg-white/10 text-white rounded-bl-md"}`}
+              >
+                {hasTranslation ? m.translated_text : m.text}
+              </div>
+              {hasTranslation && (
+                <div
+                  className="px-3 py-1 rounded-xl bg-white/4 border border-white/8 flex flex-col gap-0.5"
+                  data-testid={`chat-msg-original-${m.id}`}
+                >
+                  <span className="inline-flex w-fit items-center gap-1 text-[9px] font-bold uppercase tracking-widest text-[#00E5FF]">
+                    <Languages size={9} /> {m.source_lang}→{me.language || "en"}
+                  </span>
+                  <span className="text-[11px] italic text-white/50 leading-tight">{m.text}</span>
+                </div>
+              )}
+            </div>
           );
         })}
       </div>
