@@ -1,0 +1,160 @@
+{
+  "project_name": "Nice2Meechu",
+  "theme": {
+    "mode": "dark",
+    "archetype": "Archetype 5 (Luxury) mixed with Gen-Z cinematic neons",
+    "rationale": "Video-first content requires a dark backdrop to pop. The dark theme reduces eye strain, frames the full-bleed videos perfectly, and sets a 'night market/secret connection' emotional tone."
+  },
+  "typography": {
+    "fonts": [
+      {
+        "role": "heading",
+        "family": "'Unbounded', sans-serif",
+        "url": "https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600;800&display=swap",
+        "rationale": "Distinctive, wide, playful, and slightly street-style. Perfectly captures the tongue-in-cheek 'Nice2Meechu' branding and breaks away from default tech fonts."
+      },
+      {
+        "role": "body",
+        "family": "'Manrope', sans-serif",
+        "url": "https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap",
+        "rationale": "Highly legible in small sizes, neutral enough not to clash with the expressive headings, perfect for UI overlays on top of videos."
+      }
+    ],
+    "scale": {
+      "h1": "text-4xl sm:text-5xl font-black tracking-tighter",
+      "h2": "text-2xl sm:text-3xl font-bold tracking-tight",
+      "h3": "text-xl font-semibold tracking-tight",
+      "body": "text-base font-medium",
+      "small": "text-sm font-medium",
+      "tiny": "text-xs font-bold uppercase tracking-widest"
+    }
+  },
+  "colors": {
+    "css_variables": {
+      "--background": "240 10% 4%",
+      "--foreground": "0 0% 98%",
+      "--primary": "0 100% 65%",
+      "--primary-foreground": "0 0% 98%",
+      "--secondary": "240 5% 15%",
+      "--secondary-foreground": "0 0% 98%",
+      "--accent": "180 100% 50%",
+      "--accent-foreground": "240 10% 4%",
+      "--muted": "240 5% 26%",
+      "--muted-foreground": "240 5% 65%",
+      "--destructive": "0 84% 60%",
+      "--destructive-foreground": "0 0% 98%",
+      "--border": "240 5% 15%",
+      "--input": "240 5% 15%",
+      "--ring": "0 100% 65%",
+      "--radius": "1.5rem"
+    },
+    "palette": {
+      "base_bg": "#0A0A0C",
+      "primary_brand": "#FF4D4D",
+      "translation_accent": "#00E5FF",
+      "glass_surface": "rgba(255, 255, 255, 0.08)",
+      "glass_border": "rgba(255, 255, 255, 0.1)"
+    }
+  },
+  "layout_and_spacing": {
+    "container": "max-w-md mx-auto w-full h-[100dvh] relative overflow-hidden bg-background shadow-2xl sm:border sm:border-white/10 sm:rounded-[2.5rem] flex flex-col",
+    "paddings": {
+      "screen": "p-6",
+      "section": "py-8",
+      "element": "p-4"
+    },
+    "border_radius": {
+      "button": "rounded-full",
+      "card": "rounded-3xl",
+      "pill": "rounded-full",
+      "input": "rounded-2xl"
+    }
+  },
+  "surfaces_and_effects": {
+    "glass_panel": "bg-white/10 backdrop-blur-2xl border border-white/10 shadow-lg",
+    "dark_gradient_overlay": "bg-gradient-to-t from-black/80 via-black/30 to-transparent pointer-events-none",
+    "anonymity_blur": "backdrop-blur-xl bg-black/40 filter blur-[8px] saturate-150"
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-primary text-primary-foreground font-bold rounded-full py-4 px-8 hover:opacity-90 active:scale-95 transition-all shadow-[0_0_20px_rgba(255,77,77,0.4)]",
+      "secondary": "bg-white/10 text-white font-semibold rounded-full py-4 px-8 backdrop-blur-md border border-white/10 hover:bg-white/20 active:scale-95 transition-all",
+      "icon_action": "w-16 h-16 rounded-full flex items-center justify-center backdrop-blur-xl bg-white/10 border border-white/20 active:scale-90 transition-transform"
+    },
+    "inputs": {
+      "text": "w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all",
+      "otp": "w-14 h-16 text-center text-2xl font-bold bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-primary"
+    },
+    "video_card": {
+      "wrapper": "absolute inset-0 w-full h-full",
+      "video": "w-full h-full object-cover rounded-[2.5rem] sm:rounded-none"
+    },
+    "translation_overlay": {
+      "wrapper": "absolute bottom-32 left-4 right-20 bg-black/40 backdrop-blur-md border border-white/10 p-4 rounded-2xl flex flex-col gap-2",
+      "indicator": "inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/10 text-[10px] font-bold text-[#00E5FF] uppercase tracking-wider w-fit",
+      "original_text": "text-white/60 text-sm line-clamp-1 italic",
+      "translated_text": "text-white text-base font-medium leading-snug"
+    },
+    "anonymity_badge": {
+      "wrapper": "absolute top-6 left-6 flex items-center gap-3 bg-black/30 backdrop-blur-xl border border-white/10 px-4 py-2 rounded-full",
+      "avatar": "w-8 h-8 rounded-full overflow-hidden relative",
+      "avatar_blur": "absolute inset-0 backdrop-blur-lg bg-black/20 z-10",
+      "name": "text-white font-bold text-sm tracking-wide font-heading"
+    },
+    "distance_badge": {
+      "wrapper": "absolute top-6 right-6 flex items-center gap-1.5 bg-primary/20 text-primary border border-primary/30 px-3 py-1.5 rounded-full text-xs font-bold backdrop-blur-md"
+    }
+  },
+  "states_and_screens": {
+    "Splash": "Full bleed '#0A0A0C' background. 'Nice2Meechu' in Unbounded font, dead center, pulsing with a subtle neon drop shadow.",
+    "PhoneEntry": "Clean typography, large keypad area, minimalist text input. 'What's your number?' H2 heading.",
+    "OTPEntry": "4-6 massive input boxes. Auto-focusing. Clean, high contrast.",
+    "Onboarding": "Step-by-step full-screen flow. 'Choose your codename' -> 'Select 3 Vibes (Pill tags)' -> 'Native Language'. Uses a progress bar at the top.",
+    "Permissions": "Bottom drawer/sheet rising over a blurred background. Friendly messaging: 'We need your camera to see your vibe, and location to find locals.'",
+    "RecordIntro": "Full camera view. Ghost outline for face placement. Large recording button at bottom with a red glowing ring. Max 10s timer.",
+    "FeedSwipeCard": "Full-bleed video taking the entire screen. Gradient overlay at top/bottom. Right side: Like/Pass floating action buttons. Bottom: Live translation overlay. Top left: Anonymity codename badge. Top right: Distance badge.",
+    "MatchCelebration": "Explosion of primary/accent colors. The blurred avatar slowly comes into focus, revealing the real handle. 'It's a Match!' text. Action to 'Chat Now'.",
+    "Chat": "Minimalist thread. Dark background. User bubbles in primary color, matched user bubbles in dark grey. Sticky header with their unblurred video playing silently in a small circle.",
+    "Profile": "Your own video intro playing in an infinite loop as the background. Glassmorphic cards overlaying to edit Vibes, Handle, Language."
+  },
+  "motion_and_interactions": {
+    "page_transitions": "Slide up for new screens, fade for modals.",
+    "swipe_feed": "Vertical snap scrolling (like TikTok) using scroll-snap-y mandatory.",
+    "translation_reveal": "Typewriter effect or smooth fade-up for translated subtitles to simulate real-time AI processing.",
+    "like_pass": "Tinder/Hinge style micro-interactions. Heart icon scales up and pulses on Like. Screen shifts slightly.",
+    "match_reveal": "Blur value animates from 20px to 0px over 1.5 seconds with an easing curve, accompanied by a subtle scale-up."
+  },
+  "media_assets": {
+    "curated_video_thumbnails": [
+      {
+        "url": "https://images.unsplash.com/photo-1655373325205-bbae7ede0e21?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MjJ8MHwxfHNlYXJjaHwyfHx5b3VuZyUyMHBlcnNvbiUyMHBvcnRyYWl0JTIwbG9va2luZyUyMGF0JTIwY2FtZXJhJTIwbmVvbiUyMG5pZ2h0fGVufDB8fHx8MTc3OTk5OTEyMXww&ixlib=rb-4.1.0&q=85",
+        "description": "Feed Example 1 - Neon portrait",
+        "category": "feed_mockup"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1584359018585-82fb9b6b710d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MjJ8MHwxfHNlYXJjaHwzfHx5b3VuZyUyMHBlcnNvbiUyMHBvcnRyYWl0JTIwbG9va2luZyUyMGF0JTIwY2FtZXJhJTIwbmVvbiUyMG5pZ2h0fGVufDB8fHx8MTc3OTk5OTEyMXww&ixlib=rb-4.1.0&q=85",
+        "description": "Feed Example 2 - Pink light portrait",
+        "category": "feed_mockup"
+      }
+    ],
+    "background_gradients": [
+      {
+        "url": "https://images.unsplash.com/photo-1523821741446-edb2b68bb7a0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1ODR8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGJsdXJyZWQlMjBncmFpbnklMjBuaWdodCUyMGdyYWRpZW50fGVufDB8fHx8MTc3OTk5OTEyMXww&ixlib=rb-4.1.0&q=85",
+        "description": "Abstract blur for Match Screen Celebration",
+        "category": "backgrounds"
+      }
+    ]
+  },
+  "testing": {
+    "data_testid_rules": "All interactive and key informational elements MUST include a data-testid attribute formatted as kebab-case and role-based. Examples: 'login-phone-input', 'otp-submit-button', 'feed-like-button', 'match-chat-button'."
+  },
+  "instructions_to_main_agent": [
+    "Ensure global layout is strictly mobile-first: max-w-md mx-auto with 100dvh.",
+    "Do NOT use default shadcn styles for the main video feed, build it bespoke using Tailwind absolute positioning and scroll snapping.",
+    "For the translation overlay, layer it elegantly over the video using the 'translation_overlay' specs. Ensure it reads clearly.",
+    "Hide real identities using CSS blur filters on images until the 'matched' state is true.",
+    "Use Phosphor Icons or Lucide-react for UI actions (Like, Pass, Settings, Chat).",
+    "Load Google Fonts 'Unbounded' and 'Manrope' in the main HTML/CSS.",
+    "Enforce data-testid attributes extensively as per the testing rules."
+  ]
+}
