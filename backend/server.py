@@ -55,32 +55,32 @@ logger = logging.getLogger("nice2meechu")
 # ---------------------------------------------------------------------------
 SAMPLE_VIDEOS = [
     {
-        "url": "https://assets.mixkit.co/videos/4787/4787-720.mp4",
+        "url": "/videos/v1.mp4",
         "transcript": "Hey there! I love grabbing oat lattes at the corner cafe. Anyone up for a coffee crawl?",
         "lang": "en",
     },
     {
-        "url": "https://assets.mixkit.co/videos/39765/39765-720.mp4",
+        "url": "/videos/v2.mp4",
         "transcript": "Just wrapped a long studio session. Looking for someone to grab late-night ramen with.",
         "lang": "en",
     },
     {
-        "url": "https://assets.mixkit.co/videos/51564/51564-720.mp4",
+        "url": "/videos/v3.mp4",
         "transcript": "I run a tiny vinyl shop down the street. If you love jazz, slide into the feed.",
         "lang": "en",
     },
     {
-        "url": "https://assets.mixkit.co/videos/4790/4790-720.mp4",
+        "url": "/videos/v4.mp4",
         "transcript": "Hola! New in town. Show me your favourite spots and I will share mine.",
         "lang": "es",
     },
     {
-        "url": "https://assets.mixkit.co/videos/52302/52302-720.mp4",
+        "url": "/videos/v5.mp4",
         "transcript": "I bike everywhere. Hidden parks, weird ramen joints, rooftop sunsets. Tag along?",
         "lang": "en",
     },
     {
-        "url": "https://assets.mixkit.co/videos/39767/39767-720.mp4",
+        "url": "/videos/v6.mp4",
         "transcript": "Bonjour! Just moved here for art school. Looking for gallery buddies and study cafes.",
         "lang": "fr",
     },

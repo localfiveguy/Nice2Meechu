@@ -36,6 +36,16 @@ const LANG_OPTIONS = [
 const VIBES_POOL = ["Coffee", "Vinyl", "Skater", "Foodie", "Bookworm", "Gamer", "Hiker", "Artist", "Runner", "Night Owl"];
 const EMOJIS = ["🌙", "✨", "🔥", "🌊", "🌸", "🪐", "🌈", "💫", "🍓", "🌶️"];
 
+const VideoEl = React.forwardRef(function VideoEl({ src, className, ...rest }, ref) {
+  const webm = src && src.endsWith(".mp4") ? src.replace(".mp4", ".webm") : null;
+  return (
+    <video ref={ref} className={className} {...rest} key={src}>
+      {webm && <source src={webm} type="video/webm" />}
+      <source src={src} type={src?.endsWith(".webm") ? "video/webm" : "video/mp4"} />
+    </video>
+  );
+});
+
 // ---------- helpers ----------
 const translationCache = new Map();
 async function translate(text, target_lang, source_lang) {
@@ -657,7 +667,7 @@ function VideoPick({ onDone }) {
               className={`relative aspect-[3/4] rounded-2xl overflow-hidden border-2 ${selectedIdx === i ? "border-[#FF4D4D]" : "border-white/8"}`}
               data-testid={`sample-card-${i}`}
             >
-              <video
+              <VideoEl
                 src={s.url}
                 muted
                 loop
@@ -818,11 +828,13 @@ function FeedCard({ item, isActive, myLang, onLike, onPass }) {
   const [translated, setTranslated] = useState("");
   const [showCaption, setShowCaption] = useState(false);
   const [revealed, setRevealed] = useState(false);
+  const [muted, setMuted] = useState(true);
 
   useEffect(() => {
     if (!vidRef.current) return;
     if (isActive) {
       vidRef.current.currentTime = 0;
+      vidRef.current.muted = muted;
       vidRef.current.play().catch(() => {});
       // start translation
       setShowCaption(false);
@@ -836,21 +848,26 @@ function FeedCard({ item, isActive, myLang, onLike, onPass }) {
     } else {
       vidRef.current.pause();
     }
-  }, [isActive, item.transcript, item.source_lang, myLang]);
+  }, [isActive, item.transcript, item.source_lang, myLang, muted]);
 
   return (
     <div className="absolute inset-0">
       <video
         ref={vidRef}
-        src={item.video_url}
         loop
         playsInline
-        muted={false}
+        muted
         preload="metadata"
         className="w-full h-full object-cover bg-black"
-        onError={(e) => { e.currentTarget.poster = ""; }}
+        onClick={() => setMuted((m) => !m)}
         data-testid="feed-card-video"
-      />
+        key={item.video_url}
+      >
+        {item.video_url && item.video_url.endsWith(".mp4") && (
+          <source src={item.video_url.replace(".mp4", ".webm")} type="video/webm" />
+        )}
+        <source src={item.video_url} type={item.video_url?.endsWith(".webm") ? "video/webm" : "video/mp4"} />
+      </video>
       {/* gradient overlays */}
       <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-transparent to-transparent pointer-events-none" />
       <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent pointer-events-none" />
@@ -878,7 +895,7 @@ function FeedCard({ item, isActive, myLang, onLike, onPass }) {
 
       {/* translation overlay */}
       {showCaption && (
-        <div className="absolute bottom-28 left-4 right-24 glass-dark rounded-2xl p-3 flex flex-col gap-1.5" data-testid="translation-overlay">
+        <div className="absolute bottom-32 left-4 right-24 glass-dark rounded-2xl p-3 flex flex-col gap-1.5" data-testid="translation-overlay">
           <span className="inline-flex w-fit items-center gap-1 px-2 py-0.5 rounded-md bg-[#00E5FF]/15 text-[#00E5FF] text-[10px] font-bold uppercase tracking-widest">
             <Languages size={10} /> translated · {item.source_lang}→{myLang}
           </span>
@@ -892,7 +909,7 @@ function FeedCard({ item, isActive, myLang, onLike, onPass }) {
       )}
 
       {/* action stack right */}
-      <div className="absolute bottom-28 right-4 flex flex-col gap-3 items-center">
+      <div className="absolute bottom-32 right-4 flex flex-col gap-3 items-center">
         <button className="btn-icon" style={{ background: "rgba(255,255,255,0.12)" }} onClick={onPass} data-testid="feed-pass-button">
           <X size={22} />
         </button>
@@ -932,7 +949,7 @@ function MatchCelebration({ data, onClose, onChat }) {
       </div>
 
       <div className="mt-8 w-44 h-44 rounded-full overflow-hidden relative ring-4 ring-white/10">
-        <video src={data.matched_user?.video_url} autoPlay muted loop playsInline className={`w-full h-full object-cover ${reveal ? "identity-clear" : "identity-blur"}`} />
+        <VideoEl src={data.matched_user?.video_url} autoPlay muted loop playsInline className={`w-full h-full object-cover ${reveal ? "identity-clear" : "identity-blur"}`} />
       </div>
 
       <div className={`mt-5 transition-all duration-700 ${reveal ? "opacity-100" : "opacity-0"}`}>
@@ -960,7 +977,7 @@ function MatchesScreen({ onTab, onOpenChat }) {
 
   return (
     <motion.div
-      className="absolute inset-0 flex flex-col px-6 pt-12 pb-24 bg-grain"
+      className="absolute inset-0 flex flex-col px-6 pt-12 pb-32 bg-grain"
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       data-testid="matches-screen"
     >
@@ -984,7 +1001,7 @@ function MatchesScreen({ onTab, onOpenChat }) {
             data-testid={`match-row-${m.match_id}`}
           >
             <div className="w-14 h-14 rounded-2xl overflow-hidden bg-black">
-              <video src={m.user.video_url} autoPlay loop muted playsInline className="w-full h-full object-cover" />
+              <VideoEl src={m.user.video_url} autoPlay loop muted playsInline className="w-full h-full object-cover" />
             </div>
             <div className="flex-1">
               <div className="font-display font-bold">@{m.user.handle || m.user.codename}</div>
@@ -1044,7 +1061,7 @@ function ChatScreen({ me, match, onBack }) {
           <ArrowLeft size={20} />
         </button>
         <div className="w-9 h-9 rounded-full overflow-hidden bg-black ring-1 ring-white/10">
-          <video src={match.user.video_url} autoPlay loop muted playsInline className="w-full h-full object-cover" />
+          <VideoEl src={match.user.video_url} autoPlay loop muted playsInline className="w-full h-full object-cover" />
         </div>
         <div>
           <div className="font-display font-bold leading-none">@{match.user.handle || match.user.codename}</div>
@@ -1069,7 +1086,7 @@ function ChatScreen({ me, match, onBack }) {
         })}
       </div>
 
-      <div className="p-3 border-t border-white/8 flex gap-2">
+      <div className="p-3 pb-14 border-t border-white/8 flex gap-2 relative z-40 bg-background">
         <input
           className="n2m-input flex-1"
           placeholder="say something nice…"
@@ -1122,13 +1139,13 @@ function ProfileScreen({ user, setUser, onTab, onLogout, onChangeVideo }) {
       data-testid="profile-screen"
     >
       {user.video_url ? (
-        <video src={user.video_url} autoPlay loop muted playsInline className="absolute inset-0 w-full h-full object-cover" />
+        <VideoEl src={user.video_url} autoPlay loop muted playsInline className="absolute inset-0 w-full h-full object-cover" />
       ) : (
         <div className="absolute inset-0 bg-gradient-to-br from-[#1a0a0a] to-[#0a0a1a]" />
       )}
       <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/20 to-black/90 pointer-events-none" />
 
-      <div className="relative z-10 flex-1 flex flex-col px-6 pt-12 pb-28 overflow-y-auto no-scrollbar">
+      <div className="relative z-10 flex-1 flex flex-col px-6 pt-12 pb-36 overflow-y-auto no-scrollbar">
         <div className="flex items-center justify-between">
           <h2 className="font-display text-3xl font-black">You.</h2>
           <button className="text-white/60 text-sm font-bold uppercase tracking-widest" onClick={() => setEditing((v) => !v)} data-testid="profile-edit-toggle">
@@ -1222,7 +1239,7 @@ function BottomNav({ active, onTab }) {
     </button>
   );
   return (
-    <div className="absolute bottom-0 left-0 right-0 z-20 glass-dark border-t border-white/8 flex pb-2 pt-1 px-4" data-testid="bottom-nav">
+    <div className="absolute bottom-0 left-0 right-0 z-40 glass-dark border-t border-white/8 flex pb-10 pt-1 px-4" data-testid="bottom-nav">
       <Item id="feed" icon={VideoIcon} label="Feed" />
       <Item id="matches" icon={Heart} label="Matches" />
       <Item id="profile" icon={UserIcon} label="You" />

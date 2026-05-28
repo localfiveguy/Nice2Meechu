@@ -152,7 +152,7 @@ class TestProfile:
         r = session.post(f"{API}/users/video", json={"sample_index": 2}, headers=auth["headers"])
         assert r.status_code == 200
         d = r.json()
-        assert d["video_url"].startswith("https://")
+        assert d["video_url"].startswith("/videos/") or d["video_url"].startswith("https://")
         assert d["transcript"]
         # persist check
         r = session.get(f"{API}/users/me", headers=auth["headers"])
