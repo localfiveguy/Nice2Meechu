@@ -1,7 +1,6 @@
 """Nice2Meechu backend - Google OAuth (Emergent), anonymous video feed, AI translation."""
 import logging
 import os
-import random
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -11,10 +10,16 @@ from typing import List, Optional
 import httpx
 from dotenv import load_dotenv
 from emergentintegrations.llm.chat import LlmChat, UserMessage
-from fastapi import APIRouter, Cookie, Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Cookie, Depends, FastAPI, Header, HTTPException, Response
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
 from starlette.middleware.cors import CORSMiddleware
+
+# Cryptographically-secure RNG used for ALL random choices in the app.
+# `random` (Mersenne Twister) is predictable and unsuitable even for demo data
+# we don't want guessable. `secrets.SystemRandom` is a drop-in with the same
+# .sample / .shuffle / .choice / .random API.
+_rng = secrets.SystemRandom()
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -55,7 +60,7 @@ CODENAME_NOUN = ["Fox", "Comet", "Drift", "Echo", "Lynx", "Mirage", "Orbit", "Ph
 
 
 def generate_codename() -> str:
-    return f"{secrets.choice(CODENAME_ADJ)} {secrets.choice(CODENAME_NOUN)}"
+    return f"{_rng.choice(CODENAME_ADJ)} {_rng.choice(CODENAME_NOUN)}"
 
 
 # ---------------------------------------------------------------------------
@@ -319,11 +324,11 @@ async def seed_demo_users():
                 "picture": None,
                 "handle": demo_handles[i % len(demo_handles)],
                 "codename": generate_codename(),
-                "vibes": random.sample(VIBES_POOL, 3),
+                "vibes": _rng.sample(VIBES_POOL, 3),
                 "language": sample["lang"],
-                "avatar_emoji": random.choice(["🌙", "✨", "🔥", "🌊", "🌸", "🪐"]),
-                "lat": base_lat + (random.random() - 0.5) * 0.06,
-                "lng": base_lng + (random.random() - 0.5) * 0.06,
+                "avatar_emoji": _rng.choice(["🌙", "✨", "🔥", "🌊", "🌸", "🪐"]),
+                "lat": base_lat + (_rng.random() - 0.5) * 0.06,
+                "lng": base_lng + (_rng.random() - 0.5) * 0.06,
                 "video_url": sample["url"],
                 "transcript": sample["transcript"],
                 "source_lang": sample["lang"],
@@ -362,7 +367,7 @@ async def feed(user=Depends(current_user)):
                 "distance_km": haversine_km(user.get("lat"), user.get("lng"), c.get("lat"), c.get("lng")),
             }
         )
-    random.shuffle(out)
+    _rng.shuffle(out)
     return {"feed": out[:20]}
 
 
@@ -372,7 +377,7 @@ def _is_demo_user(target: dict) -> bool:
 
 async def _check_mutual_match(target: dict, viewer_id: str) -> bool:
     if _is_demo_user(target):
-        return random.random() < 0.7
+        return _rng.random() < 0.7
     rev = await db.swipes.find_one(
         {"user_id": target["id"], "target_user_id": viewer_id, "action": "like"}
     )
@@ -511,7 +516,7 @@ async def send_message(req: MessageReq, user=Depends(current_user)):
                 "id": str(uuid.uuid4()),
                 "match_id": req.match_id,
                 "from_user_id": other_id,
-                "text": random.choice(replies),
+                "text": _rng.choice(replies),
                 "source_lang": "en",  # reply strings are English regardless of demo user's profile lang
                 "translations": {},
                 "at": datetime.now(timezone.utc).isoformat(),
