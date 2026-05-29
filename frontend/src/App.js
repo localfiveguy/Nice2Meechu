@@ -747,6 +747,9 @@ function VideoPick({ user, onDone }) {
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [mode, setMode] = useState("record"); // record-first; sample is fallback
   const [loading, setLoading] = useState(false);
+  // null | 'verifying' | 'saving'  → drives the button label so users know the
+  // AI is actively reviewing their video (builds trust in the safety promise)
+  const [phase, setPhase] = useState(null);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const [recording, setRecording] = useState(false);
@@ -798,6 +801,7 @@ function VideoPick({ user, onDone }) {
     try {
       if (mode === "record" && recordedBlob) {
         // AI face / safety check on a captured frame BEFORE we accept the video
+        setPhase("verifying");
         try {
           const b64 = await captureFrameBase64(recordedBlob);
           const { data: check } = await api.post("/video/face-check", { image_base64: b64 });
@@ -806,6 +810,7 @@ function VideoPick({ user, onDone }) {
             const why = check.reason || "Please record a clearer video of just your face.";
             toast.error(`Video rejected: ${why}`);
             setLoading(false);
+            setPhase(null);
             return;
           }
         } catch (err) {
@@ -813,6 +818,7 @@ function VideoPick({ user, onDone }) {
           // Fail-open — if we can't extract a frame, allow save (rare)
         }
 
+        setPhase("saving");
         const blobUrl = URL.createObjectURL(recordedBlob);
         await api.post("/users/video", {
           video_url: blobUrl,
@@ -823,6 +829,7 @@ function VideoPick({ user, onDone }) {
         const me = await api.get("/users/me");
         onDone(me.data.user);
       } else {
+        setPhase("saving");
         await api.post("/users/video", { sample_index: selectedIdx });
         track("video_intro_set", { source: "sample", sample_index: selectedIdx });
         const me = await api.get("/users/me");
@@ -832,6 +839,7 @@ function VideoPick({ user, onDone }) {
       toast.error("Couldn't save your intro");
     } finally {
       setLoading(false);
+      setPhase(null);
     }
   };
 
@@ -972,13 +980,28 @@ function VideoPick({ user, onDone }) {
         </div>
       )}
 
+      {phase === "verifying" && (
+        <div className="mt-4 rounded-2xl glass-dark border border-[#00E5FF]/30 px-4 py-3 flex items-center gap-3" data-testid="face-check-status">
+          <div className="relative w-5 h-5">
+            <div className="absolute inset-0 rounded-full border-2 border-[#00E5FF]/30" />
+            <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-[#00E5FF] animate-spin" />
+          </div>
+          <div className="flex-1">
+            <div className="text-sm font-bold text-white">✨ Verifying your video…</div>
+            <div className="text-[11px] text-white/55">AI is checking it's just your face. Takes ~2 seconds.</div>
+          </div>
+        </div>
+      )}
+
       <button
         className="btn-primary mt-4 flex items-center justify-center gap-2"
         onClick={save}
         disabled={loading || (mode === "record" && !recordedBlob)}
         data-testid="video-save-button"
       >
-        {loading ? "Saving…" : (<>Continue <ArrowRight size={18} /></>)}
+        {phase === "verifying" ? "Verifying your video…"
+          : phase === "saving" ? "Saving…"
+          : (<>Continue <ArrowRight size={18} /></>)}
       </button>
     </motion.div>
   );
