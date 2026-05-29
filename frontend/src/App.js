@@ -93,7 +93,9 @@ export default function App() {
       const search = new URLSearchParams(window.location.search);
       const ref = search.get("ref");
       if (ref) {
-        localStorage.setItem("n2m_ref", ref.toLowerCase().trim());
+        // Validate: only allow handle-safe chars and cap length to prevent localStorage abuse
+        const safe = ref.toLowerCase().trim().replace(/[^a-z0-9._-]/g, "").slice(0, 32);
+        if (safe) localStorage.setItem("n2m_ref", safe);
         // strip ?ref from URL so it doesn't pollute later navigation
         const url = new URL(window.location.href);
         url.searchParams.delete("ref");

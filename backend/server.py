@@ -277,6 +277,11 @@ async def onboarding(req: OnboardingReq, user=Depends(current_user)):
     }
     await db.users.update_one({"id": user["id"]}, {"$set": update})
     user.update(update)
+    # Invalidate cached share-cards for the user's old + new handle so updates
+    # (e.g. avatar emoji change) are reflected on next /api/og/<handle> fetch.
+    for h in {user.get("handle"), update["handle"]}:
+        if h:
+            _OG_CACHE.pop(h.lower(), None)
     return {"user": user}
 
 
@@ -622,6 +627,15 @@ _FONT_REG_PATH = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.tt
 _OG_CACHE: dict[str, bytes] = {}
 
 
+def _safe_font(path: str, size: int):
+    """Return ImageFont.truetype(path, size), or PIL default if path unavailable."""
+    from PIL import ImageFont
+    try:
+        return ImageFont.truetype(path, size)
+    except (OSError, IOError):  # noqa: UP024
+        return ImageFont.load_default()
+
+
 def _render_share_card(codename: str, emoji: str, handle: str | None) -> bytes:
     """Render a 1200x630 share card PNG with codename + emoji + tagline."""
     from PIL import Image, ImageDraw, ImageFont  # local import keeps cold-start fast
@@ -648,23 +662,23 @@ def _render_share_card(codename: str, emoji: str, handle: str | None) -> bytes:
     draw = ImageDraw.Draw(img)
 
     # Small brand mark top-left
-    brand_font = ImageFont.truetype(_FONT_BOLD_PATH, 30)
+    brand_font = _safe_font(_FONT_BOLD_PATH, 30)
     draw.text((64, 56), "NICE2MEECHU", fill="#FFFFFF", font=brand_font)
     draw.text((64 + 290, 56), ".", fill="#FF4D4D", font=brand_font)
 
     # Big "joins you on" prefix
-    pref_font = ImageFont.truetype(_FONT_REG_PATH, 36)
+    pref_font = _safe_font(_FONT_REG_PATH, 36)
     draw.text((64, 200), "Nice2Meechu invite from", fill="#FFFFFF80", font=pref_font)
 
     # Codename — large bold
-    name_font = ImageFont.truetype(_FONT_BOLD_PATH, 110)
+    name_font = _safe_font(_FONT_BOLD_PATH, 110)
     safe_name = (codename or "Anon").strip()[:24]
     draw.text((64, 256), safe_name, fill="#FFFFFF", font=name_font)
 
     # Emoji rendered via pilmoji (uses Twitter color emoji)
     if emoji:
         with Pilmoji(img) as p:
-            emoji_font = ImageFont.truetype(_FONT_BOLD_PATH, 96)
+            emoji_font = _safe_font(_FONT_BOLD_PATH, 96)
             try:
                 p.text((64, 384), emoji[:2], font=emoji_font)
             except Exception:  # noqa: BLE001
@@ -672,14 +686,14 @@ def _render_share_card(codename: str, emoji: str, handle: str | None) -> bytes:
         draw = ImageDraw.Draw(img)
 
     # Tagline at the bottom
-    tag_font = ImageFont.truetype(_FONT_REG_PATH, 32)
+    tag_font = _safe_font(_FONT_REG_PATH, 32)
     tag = "video-first  ·  hyperlocal  ·  anonymous until the spark"
     draw.text((64, H - 120), tag, fill="#FFFFFFB0", font=tag_font)
 
     # Handle pill, bottom-right
     if handle:
         h_text = f"@{handle}"
-        hf = ImageFont.truetype(_FONT_BOLD_PATH, 28)
+        hf = _safe_font(_FONT_BOLD_PATH, 28)
         bbox = draw.textbbox((0, 0), h_text, font=hf)
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
         px, py = W - tw - 96, H - 96
