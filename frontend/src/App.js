@@ -8,6 +8,7 @@ import {
   Globe, Check, LogOut, Pause, Share2, Copy,
 } from "lucide-react";
 import "@/App.css";
+import { initAnalytics, pageview, track } from "./analytics";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -89,13 +90,18 @@ export default function App() {
   // Capture ?ref=<handle> from URL on first load (referral attribution) and persist it
   // so it survives the round-trip through Google OAuth.
   useEffect(() => {
+    // Initialise GA4 (no-op if REACT_APP_GA4_MEASUREMENT_ID isn't set)
+    initAnalytics();
     try {
       const search = new URLSearchParams(window.location.search);
       const ref = search.get("ref");
       if (ref) {
         // Validate: only allow handle-safe chars and cap length to prevent localStorage abuse
         const safe = ref.toLowerCase().trim().replace(/[^a-z0-9._-]/g, "").slice(0, 32);
-        if (safe) localStorage.setItem("n2m_ref", safe);
+        if (safe) {
+          localStorage.setItem("n2m_ref", safe);
+          track("referral_landed", { ref: safe });
+        }
         // strip ?ref from URL so it doesn't pollute later navigation
         const url = new URL(window.location.href);
         url.searchParams.delete("ref");
@@ -105,6 +111,11 @@ export default function App() {
       console.error("ref capture failed", e);
     }
   }, []);
+
+  // Fire a GA pageview whenever the screen state changes
+  useEffect(() => {
+    if (screen) pageview(screen);
+  }, [screen]);
 
   // Handle the OAuth callback (one-time: exchange session_id → session_token cookie)
   useEffect(() => {
@@ -128,10 +139,12 @@ export default function App() {
         const { data } = await api.post("/auth/session", { session_id: sessionId, ref });
         if (data.token) localStorage.setItem("n2m_token", data.token); // fallback for non-cookie envs
         localStorage.removeItem("n2m_ref"); // ref consumed
+        track("sign_in_completed", { onboarded: !!data.onboarded, referred: !!ref });
         setUser(data.user);
         routeToNext(data.user);
       } catch (err) {
         console.error("session exchange failed", err);
+        track("sign_in_failed");
         toast.error("Sign-in failed. Try again.");
         setScreen("signin");
       }
@@ -270,6 +283,7 @@ function Splash() {
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 function SignInScreen() {
   const startGoogle = () => {
+    track("sign_in_started", { method: "google" });
     const redirectUrl = window.location.origin + "/";
     window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
   };
@@ -357,9 +371,11 @@ function Onboarding({ user, onDone }) {
       const { data } = await api.post("/users/onboarding", {
         handle: handle.trim(), vibes, language, avatar_emoji: emoji,
       });
+      track("onboarding_completed", { vibes_count: vibes.length, language });
       toast.success(`Hey ${data.user.handle} ✨`);
       onDone(data.user);
     } catch (e) {
+      track("onboarding_failed");
       toast.error("Couldn't save profile");
     } finally {
       setLoading(false);
@@ -513,15 +529,17 @@ function VideoPick({ onDone }) {
     try {
       if (mode === "record" && recordedBlob) {
         const blobUrl = URL.createObjectURL(recordedBlob);
-        const { data } = await api.post("/users/video", {
+        await api.post("/users/video", {
           video_url: blobUrl,
           transcript: "Hey there! I just recorded my intro on Nice2Meechu.",
           source_lang: "en",
         });
+        track("video_intro_set", { source: "recorded" });
         const me = await api.get("/users/me");
         onDone(me.data.user);
       } else {
         await api.post("/users/video", { sample_index: selectedIdx });
+        track("video_intro_set", { source: "sample", sample_index: selectedIdx });
         const me = await api.get("/users/me");
         onDone(me.data.user);
       }
@@ -708,9 +726,11 @@ function FeedScreen({ user, onMatch, onTab }) {
     if (!item) return;
     try {
       const { data } = await api.post("/swipe", { target_user_id: item.id, action });
+      track(`swipe_${action}`, { target_lang: item.source_lang });
       // remove from feed
       setFeed((f) => f.filter((x) => x.id !== item.id));
       if (data.match) {
+        track("match_made");
         onMatch(data);
       } else if (action === "like") {
         toast("👋 Liked.", { duration: 1200 });
@@ -985,6 +1005,7 @@ function ChatScreen({ me, match, onBack }) {
     setSending(true);
     try {
       await api.post("/messages", { match_id: match.match_id, text: text.trim() });
+      track("chat_message_sent", { length: text.trim().length });
       setText("");
       await load();
     } catch {
@@ -1081,9 +1102,11 @@ function ShareCard({ user }) {
     try {
       if (navigator.share) {
         await navigator.share({ title: "Nice2Meechu", text: shareText, url: shareUrl });
+        track("share_started", { method: "web_share_api" });
         return;
       }
       await navigator.clipboard.writeText(shareUrl);
+      track("share_started", { method: "clipboard_fallback" });
       setCopied(true);
       toast.success("Invite link copied");
       setTimeout(() => setCopied(false), 1800);
@@ -1098,6 +1121,7 @@ function ShareCard({ user }) {
   const onCopy = async () => {
     try {
       await navigator.clipboard.writeText(shareUrl);
+      track("referral_link_copied");
       setCopied(true);
       toast.success("Link copied");
       setTimeout(() => setCopied(false), 1800);
