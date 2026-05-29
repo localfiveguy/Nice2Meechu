@@ -492,30 +492,67 @@ async def matches(user=Depends(current_user)):
 # ---------------------------------------------------------------------------
 @api.get("/messages/{match_id}")
 async def get_messages(match_id: str, user=Depends(current_user)):
+    import asyncio
+    from pymongo import UpdateOne
+
     match = await db.matches.find_one({"id": match_id, "user_ids": user["id"]}, {"_id": 0})
     if not match:
         raise HTTPException(404, "Match not found")
     msgs = await db.messages.find({"match_id": match_id}, {"_id": 0}).sort("at", 1).to_list(500)
 
     reader_lang = (user.get("language") or "en")
-    out = []
-    for m in msgs:
-        translated_text = None
+
+    # First pass — pull cached translations and collect un-cached ones to translate
+    needs_translation = []  # list of indices in msgs
+    translations_out: dict[int, Optional[str]] = {}
+    for i, m in enumerate(msgs):
         source_lang = m.get("source_lang") or "en"
         is_own = m.get("from_user_id") == user["id"]
-        # Translate ONLY incoming messages whose source language differs from reader's language
-        if not is_own and source_lang != reader_lang:
-            cached = (m.get("translations") or {}).get(reader_lang)
-            if cached:
-                translated_text = cached
-            else:
-                translated_text = await _translate_text(m["text"], reader_lang, source_lang)
-                # persist translation so we don't re-call the LLM on subsequent loads
-                await db.messages.update_one(
-                    {"id": m["id"]},
-                    {"$set": {f"translations.{reader_lang}": translated_text}},
+        if is_own or source_lang == reader_lang:
+            translations_out[i] = None
+            continue
+        cached = (m.get("translations") or {}).get(reader_lang)
+        if cached:
+            translations_out[i] = cached
+        else:
+            needs_translation.append(i)
+
+    # Translate all uncached messages in parallel via asyncio.gather
+    if needs_translation:
+        results = await asyncio.gather(
+            *[
+                _translate_text(
+                    msgs[i]["text"], reader_lang, msgs[i].get("source_lang") or "en"
                 )
-        out.append({**m, "translated_text": translated_text, "source_lang": source_lang})
+                for i in needs_translation
+            ],
+            return_exceptions=True,
+        )
+        bulk_ops = []
+        for i, res in zip(needs_translation, results):
+            if isinstance(res, Exception):
+                translations_out[i] = None
+                continue
+            translations_out[i] = res
+            bulk_ops.append(
+                UpdateOne(
+                    {"id": msgs[i]["id"]},
+                    {"$set": {f"translations.{reader_lang}": res}},
+                )
+            )
+        # Persist all new translations in one round-trip
+        if bulk_ops:
+            await db.messages.bulk_write(bulk_ops, ordered=False)
+
+    out = []
+    for i, m in enumerate(msgs):
+        out.append(
+            {
+                **m,
+                "translated_text": translations_out.get(i),
+                "source_lang": m.get("source_lang") or "en",
+            }
+        )
     return {"messages": out}
 
 
