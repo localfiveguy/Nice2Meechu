@@ -82,7 +82,8 @@ export default function App() {
   // Decide where to send the user based on their profile completeness
   const routeToNext = useCallback((u) => {
     if (!u) return setScreen("signin");
-    if (!u.handle) setScreen("onboarding");
+    if (!u.handle || !u.first_name || !u.city || !u.age) setScreen("onboarding");
+    else if (!u.agreed_to_rules_at) setScreen("community-rules");
     else if (!u.video_url) setScreen("video-pick");
     else setScreen("feed");
   }, []);
@@ -204,10 +205,13 @@ export default function App() {
           {screen === "auth-callback" && <AuthCallback key="auth-callback" />}
           {screen === "signin" && <SignInScreen key="signin" />}
           {screen === "onboarding" && user && (
-            <Onboarding key="onb" user={user} onDone={(u) => { setUser(u); setScreen("video-pick"); }} />
+            <Onboarding key="onb" user={user} onDone={(u) => { setUser(u); setScreen("community-rules"); }} />
+          )}
+          {screen === "community-rules" && user && (
+            <CommunityRulesScreen key="rules" onDone={(u) => { setUser(u); setScreen("video-pick"); }} />
           )}
           {screen === "video-pick" && user && (
-            <VideoPick key="vid" onDone={(u) => { setUser(u); setScreen("feed"); }} />
+            <VideoPick key="vid" user={user} onDone={(u) => { setUser(u); setScreen("feed"); }} />
           )}
           {screen === "feed" && user && (
             <FeedScreen key="feed"
@@ -348,46 +352,44 @@ function AuthCallback() {
   );
 }
 
-// ---------- Onboarding (3 mini-steps) ----------
+// ---------- Onboarding (Name → City → Age) ----------
 function Onboarding({ user, onDone }) {
   const [step, setStep] = useState(0);
-  const [handle, setHandle] = useState(user.handle || "");
-  const [vibes, setVibes] = useState(user.vibes || []);
-  const [language, setLanguage] = useState(user.language || "en");
-  const [emoji, setEmoji] = useState(user.avatar_emoji || "🌙");
+  const [firstName, setFirstName] = useState(user.first_name || "");
+  const [city, setCity] = useState(user.city || "");
+  const [age, setAge] = useState(user.age ? String(user.age) : "");
   const [loading, setLoading] = useState(false);
 
   const total = 3;
   const next = () => setStep((s) => Math.min(total - 1, s + 1));
   const back = () => setStep((s) => Math.max(0, s - 1));
+  const ageNum = parseInt(age, 10);
   const canNext =
-    (step === 0 && handle.trim().length >= 2) ||
-    (step === 1 && vibes.length >= 1) ||
-    (step === 2 && !!language);
+    (step === 0 && firstName.trim().length >= 1) ||
+    (step === 1 && city.trim().length >= 2) ||
+    (step === 2 && !isNaN(ageNum) && ageNum >= 13 && ageNum <= 120);
+
+  // detect browser language for auto-translation
+  const browserLang = (typeof navigator !== "undefined" && navigator.language?.slice(0, 2)) || "en";
 
   const submit = async () => {
     setLoading(true);
     try {
       const { data } = await api.post("/users/onboarding", {
-        handle: handle.trim(), vibes, language, avatar_emoji: emoji,
+        first_name: firstName.trim(),
+        city: city.trim(),
+        age: ageNum,
+        language: browserLang,
       });
-      track("onboarding_completed", { vibes_count: vibes.length, language });
-      toast.success(`Hey ${data.user.handle} ✨`);
+      track("onboarding_completed", { age: ageNum, language: browserLang });
+      toast.success(`Hey ${data.user.first_name} ✨`);
       onDone(data.user);
     } catch (e) {
       track("onboarding_failed");
-      toast.error("Couldn't save profile");
+      toast.error(e?.response?.data?.detail || "Couldn't save profile");
     } finally {
       setLoading(false);
     }
-  };
-
-  const toggleVibe = (v) => {
-    setVibes((arr) => {
-      if (arr.includes(v)) return arr.filter((x) => x !== v);
-      if (arr.length >= 5) return arr;
-      return [...arr, v];
-    });
   };
 
   return (
@@ -396,7 +398,6 @@ function Onboarding({ user, onDone }) {
       initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
       data-testid="onboarding-screen"
     >
-      {/* progress */}
       <div className="flex gap-1.5 mb-6">
         {Array.from({ length: total }).map((_, i) => (
           <div key={`progress-${i}`} className="flex-1 h-1 rounded-full bg-white/8" data-testid={`onboarding-progress-${i}`}>
@@ -408,74 +409,48 @@ function Onboarding({ user, onDone }) {
         ))}
       </div>
 
+      <div>
+        <h2 className="font-display text-3xl font-black leading-tight">Create your<br/>profile<span style={{ color: "#FF4D4D" }}>.</span></h2>
+        <p className="mt-3 text-sm text-white/55">Just the basics. Your name stays hidden until you match.</p>
+      </div>
+
       {step === 0 && (
-        <>
-          <h2 className="font-display text-3xl font-black leading-tight">Choose a<br/>codename<span style={{ color: "#FF4D4D" }}>.</span></h2>
-          <p className="mt-3 text-sm text-white/55">Stays hidden until you match.</p>
-
-          <div className="mt-8">
-            <input
-              className="n2m-input"
-              placeholder="moon.crab, sunset.kid…"
-              value={handle}
-              maxLength={20}
-              onChange={(e) => setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9._]/g, ""))}
-              data-testid="onboarding-handle-input"
-            />
-          </div>
-
-          <div className="mt-8">
-            <p className="text-xs uppercase tracking-widest font-bold text-white/45 mb-3">Pick your aura</p>
-            <div className="flex flex-wrap gap-2">
-              {EMOJIS.map((e) => (
-                <button
-                  key={e}
-                  onClick={() => setEmoji(e)}
-                  className={`w-12 h-12 rounded-2xl text-xl flex items-center justify-center ${emoji === e ? "ring-2 ring-[#FF4D4D] bg-white/10" : "bg-white/5"}`}
-                  data-testid={`onboarding-emoji-${e}`}
-                >{e}</button>
-              ))}
-            </div>
-          </div>
-        </>
+        <div className="mt-8">
+          <p className="text-xs uppercase tracking-widest font-bold text-[#FF4D4D] mb-2">First name</p>
+          <input
+            autoFocus
+            className="n2m-input"
+            placeholder="e.g. Steven"
+            value={firstName}
+            maxLength={40}
+            onChange={(e) => setFirstName(e.target.value)}
+            data-testid="onboarding-name-input"
+          />
+        </div>
       )}
 
       {step === 1 && (
-        <>
-          <h2 className="font-display text-3xl font-black leading-tight">Tag your<br/>vibes<span style={{ color: "#00E5FF" }}>.</span></h2>
-          <p className="mt-3 text-sm text-white/55">Pick 1-5. Helps us find your people.</p>
-          <div className="mt-8 flex flex-wrap gap-2">
-            {VIBES_POOL.map((v) => (
-              <button
-                key={v}
-                className="vibe-pill"
-                data-active={vibes.includes(v)}
-                onClick={() => toggleVibe(v)}
-                data-testid={`onboarding-vibe-${v}`}
-              >{v}</button>
-            ))}
-          </div>
-        </>
+        <div className="mt-8">
+          <p className="text-xs uppercase tracking-widest font-bold text-[#FF4D4D] mb-2">City</p>
+          <CityAutocomplete value={city} onChange={setCity} />
+        </div>
       )}
 
       {step === 2 && (
-        <>
-          <h2 className="font-display text-3xl font-black leading-tight">Your native<br/>language<span style={{ color: "#FF4D4D" }}>.</span></h2>
-          <p className="mt-3 text-sm text-white/55">We'll auto-translate intros into this for you.</p>
-          <div className="mt-8 grid grid-cols-2 gap-2 max-h-[55vh] overflow-y-auto no-scrollbar">
-            {LANG_OPTIONS.map((l) => (
-              <button
-                key={l.code}
-                className={`px-4 py-4 rounded-2xl text-left ${language === l.code ? "bg-white/15 border border-[#FF4D4D]" : "bg-white/5 border border-white/8"}`}
-                onClick={() => setLanguage(l.code)}
-                data-testid={`onboarding-lang-${l.code}`}
-              >
-                <span className="text-xs uppercase tracking-widest text-white/40 block">{l.code}</span>
-                <span className="font-semibold">{l.name}</span>
-              </button>
-            ))}
-          </div>
-        </>
+        <div className="mt-8">
+          <p className="text-xs uppercase tracking-widest font-bold text-[#FF4D4D] mb-2">Age</p>
+          <input
+            autoFocus
+            className="n2m-input"
+            inputMode="numeric"
+            placeholder="18+"
+            value={age}
+            maxLength={3}
+            onChange={(e) => setAge(e.target.value.replace(/\D/g, ""))}
+            data-testid="onboarding-age-input"
+          />
+          <p className="mt-3 text-xs text-white/40">You must be at least 13 to use Nice2Meechu.</p>
+        </div>
       )}
 
       <div className="mt-auto flex gap-3 pt-6">
@@ -491,7 +466,7 @@ function Onboarding({ user, onDone }) {
             onClick={next}
             data-testid="onboarding-next"
           >
-            Next <ArrowRight size={18} />
+            Continue <ArrowRight size={18} />
           </button>
         ) : (
           <button
@@ -500,7 +475,7 @@ function Onboarding({ user, onDone }) {
             onClick={submit}
             data-testid="onboarding-finish"
           >
-            {loading ? "Saving…" : (<>Let's go <Sparkles size={18} /></>)}
+            {loading ? "Saving…" : (<>Continue <ArrowRight size={18} /></>)}
           </button>
         )}
       </div>
@@ -508,17 +483,267 @@ function Onboarding({ user, onDone }) {
   );
 }
 
+// ---------- City Autocomplete (Photon / OpenStreetMap) ----------
+function CityAutocomplete({ value, onChange }) {
+  const [suggestions, setSuggestions] = useState([]);
+  const [open, setOpen] = useState(false);
+  const debounceRef = useRef(null);
+
+  const onInput = (e) => {
+    const v = e.target.value;
+    onChange(v);
+    setOpen(true);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!v || v.trim().length < 2) { setSuggestions([]); return; }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(v)}&limit=5&osm_tag=place:city&osm_tag=place:town&osm_tag=place:village&osm_tag=place:suburb&osm_tag=place:hamlet`;
+        const r = await fetch(url);
+        const data = await r.json();
+        const items = (data?.features || []).map((f) => {
+          const p = f.properties || {};
+          const parts = [p.name, p.state, p.country].filter(Boolean);
+          return { label: parts.join(", "), value: p.name };
+        });
+        setSuggestions(items);
+      } catch (err) {
+        console.error("city autocomplete failed", err);
+      }
+    }, 280);
+  };
+
+  const pick = (item) => {
+    onChange(item.value || item.label);
+    setSuggestions([]);
+    setOpen(false);
+  };
+
+  return (
+    <div className="relative" data-testid="city-autocomplete">
+      <input
+        autoFocus
+        className="n2m-input"
+        placeholder="Start typing your city…"
+        value={value}
+        onChange={onInput}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        data-testid="onboarding-city-input"
+      />
+      {open && suggestions.length > 0 && (
+        <div className="absolute z-30 left-0 right-0 mt-2 rounded-2xl border border-white/10 bg-[#0c0c10] overflow-hidden shadow-2xl">
+          {suggestions.map((s, i) => (
+            <button
+              key={`${s.label}-${i}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => pick(s)}
+              className="w-full text-left px-4 py-3 hover:bg-white/8 active:bg-white/10 border-b border-white/5 last:border-none"
+              data-testid={`city-suggestion-${i}`}
+            >
+              <div className="font-semibold text-sm">{s.value}</div>
+              <div className="text-xs text-white/45 truncate">{s.label}</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Community Rules screen ----------
+const COMMUNITY_RULES = [
+  "I confirm I am 18 years of age or older.",
+  "I will not impersonate another person on my video or profile.",
+  "I will treat every user with respect — no harassment or hate.",
+  "I will not share illegal, sexual, or violent content.",
+  "I will not use this app for spam, scams, or commercial solicitation.",
+  "I understand my video may be reviewed for safety verification.",
+  "I accept Nice2Meechu's full Terms of Service & Privacy Policy.",
+];
+
+function CommunityRulesScreen({ onDone }) {
+  const [checked, setChecked] = useState(() => COMMUNITY_RULES.map(() => false));
+  const [loading, setLoading] = useState(false);
+  const [hasSig, setHasSig] = useState(false);
+  const sigRef = useRef(null);
+
+  const allChecked = checked.every(Boolean);
+
+  const toggle = (i) => setChecked((arr) => arr.map((v, j) => (j === i ? !v : v)));
+
+  const submit = async () => {
+    if (!allChecked) return toast.error("Please check every box");
+    if (!hasSig) return toast.error("Please sign to continue");
+    setLoading(true);
+    try {
+      const dataUrl = sigRef.current.toDataURL("image/png");
+      const { data } = await api.post("/users/community-rules", {
+        accepted_items: COMMUNITY_RULES,
+        signature_data_url: dataUrl,
+      });
+      track("community_rules_accepted");
+      onDone(data.user);
+    } catch (e) {
+      track("community_rules_failed");
+      toast.error(e?.response?.data?.detail || "Couldn't accept rules");
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <motion.div
+      className="absolute inset-0 flex flex-col px-6 pt-10 pb-6 bg-grain overflow-y-auto no-scrollbar"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      data-testid="community-rules-screen"
+    >
+      <h2 className="font-display text-3xl font-black leading-tight">Community<br/>rules<span style={{ color: "#FF4D4D" }}>.</span></h2>
+      <p className="mt-3 text-sm text-white/55">Check every box and sign below to continue.</p>
+
+      <div className="mt-6 glass-dark rounded-2xl divide-y divide-white/8" data-testid="rules-list">
+        {COMMUNITY_RULES.map((rule, i) => (
+          <button
+            key={`rule-${i}`}
+            onClick={() => toggle(i)}
+            className="w-full flex gap-3 items-start text-left px-4 py-4"
+            data-testid={`rule-checkbox-${i}`}
+          >
+            <span
+              className={`mt-0.5 w-6 h-6 flex-none rounded-md border flex items-center justify-center transition-colors ${checked[i] ? "bg-[#FF4D4D] border-[#FF4D4D]" : "border-white/25"}`}
+            >
+              {checked[i] && <Check size={14} className="text-white" />}
+            </span>
+            <span className="text-sm text-white/90 leading-snug">{rule}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-5 glass-dark rounded-2xl px-4 py-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs uppercase tracking-widest font-bold text-[#FF4D4D]">Sign here</span>
+          <button
+            onClick={() => { sigRef.current?.clear(); setHasSig(false); }}
+            className="text-xs font-bold uppercase tracking-widest text-white/55 underline"
+            data-testid="signature-clear-button"
+          >
+            Clear
+          </button>
+        </div>
+        <SignaturePad ref={sigRef} onChange={(v) => setHasSig(v)} />
+        <p className="mt-2 text-[11px] text-white/35 italic text-center">Draw your signature above</p>
+      </div>
+
+      <button
+        className="btn-primary mt-5 w-full flex items-center justify-center gap-2"
+        disabled={!allChecked || !hasSig || loading}
+        onClick={submit}
+        data-testid="rules-accept-button"
+      >
+        {loading ? "Saving…" : "Accept & Continue"}
+      </button>
+    </motion.div>
+  );
+}
+
+// ---------- Signature Pad ----------
+const SignaturePad = React.forwardRef(function SignaturePad({ onChange }, ref) {
+  const canvasRef = useRef(null);
+  const drawingRef = useRef(false);
+  const dirtyRef = useRef(false);
+
+  React.useImperativeHandle(ref, () => ({
+    toDataURL: (type) => canvasRef.current?.toDataURL(type || "image/png"),
+    clear: () => {
+      const c = canvasRef.current;
+      if (!c) return;
+      const ctx = c.getContext("2d");
+      ctx.clearRect(0, 0, c.width, c.height);
+      dirtyRef.current = false;
+      onChange?.(false);
+    },
+  }));
+
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    // Crisp on retina
+    const dpr = window.devicePixelRatio || 1;
+    const rect = c.getBoundingClientRect();
+    c.width = rect.width * dpr;
+    c.height = rect.height * dpr;
+    const ctx = c.getContext("2d");
+    ctx.scale(dpr, dpr);
+    ctx.strokeStyle = "#FF4D4D";
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    const pos = (e) => {
+      const r = c.getBoundingClientRect();
+      const t = e.touches?.[0];
+      const x = (t ? t.clientX : e.clientX) - r.left;
+      const y = (t ? t.clientY : e.clientY) - r.top;
+      return { x, y };
+    };
+    const start = (e) => {
+      e.preventDefault();
+      drawingRef.current = true;
+      const { x, y } = pos(e);
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+    };
+    const move = (e) => {
+      if (!drawingRef.current) return;
+      e.preventDefault();
+      const { x, y } = pos(e);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      if (!dirtyRef.current) { dirtyRef.current = true; onChange?.(true); }
+    };
+    const end = () => { drawingRef.current = false; };
+
+    c.addEventListener("mousedown", start);
+    c.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", end);
+    c.addEventListener("touchstart", start, { passive: false });
+    c.addEventListener("touchmove", move, { passive: false });
+    c.addEventListener("touchend", end);
+
+    return () => {
+      c.removeEventListener("mousedown", start);
+      c.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", end);
+      c.removeEventListener("touchstart", start);
+      c.removeEventListener("touchmove", move);
+      c.removeEventListener("touchend", end);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      data-testid="signature-canvas"
+      className="w-full h-32 rounded-xl border-2 border-dashed border-[#FF4D4D]/40 bg-white/5 touch-none"
+    />
+  );
+});
+
 // ---------- Video Pick / Record ----------
-function VideoPick({ onDone }) {
+function VideoPick({ user, onDone }) {
   const [samples, setSamples] = useState([]);
   const [selectedIdx, setSelectedIdx] = useState(0);
-  const [mode, setMode] = useState("pick"); // pick | record
+  const [mode, setMode] = useState("record"); // record-first; sample is fallback
   const [loading, setLoading] = useState(false);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const [recording, setRecording] = useState(false);
   const [recordedBlob, setRecordedBlob] = useState(null);
   const recorderRef = useRef(null);
+
+  const firstName = user?.first_name || "there";
+  const city = user?.city || "your city";
+  // Dynamic script — pulls in entered name + city
+  const scriptText = `"Hello, my name is ${firstName}, and I live in ${city}. Nice to meet you!"`;
+  const scriptTranscript = `Hello, my name is ${firstName}, and I live in ${city}. Nice to meet you!`;
 
   useEffect(() => {
     api.get("/samples").then(({ data }) => setSamples(data.samples)).catch((e) => console.error(e));
@@ -531,8 +756,8 @@ function VideoPick({ onDone }) {
         const blobUrl = URL.createObjectURL(recordedBlob);
         await api.post("/users/video", {
           video_url: blobUrl,
-          transcript: "Hey there! I just recorded my intro on Nice2Meechu.",
-          source_lang: "en",
+          transcript: scriptTranscript,
+          source_lang: (user?.language || "en"),
         });
         track("video_intro_set", { source: "recorded" });
         const me = await api.get("/users/me");
@@ -585,6 +810,7 @@ function VideoPick({ onDone }) {
       r.start();
       recorderRef.current = r;
       setRecording(true);
+      // auto-stop at 10 seconds
       setTimeout(() => {
         if (recorderRef.current?.state === "recording") {
           recorderRef.current.stop();
@@ -599,28 +825,40 @@ function VideoPick({ onDone }) {
 
   return (
     <motion.div
-      className="absolute inset-0 flex flex-col px-6 pt-10 pb-6 bg-grain"
+      className="absolute inset-0 flex flex-col px-6 pt-10 pb-6 bg-grain overflow-y-auto no-scrollbar"
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       data-testid="video-pick-screen"
     >
-      <h2 className="font-display text-3xl font-black leading-tight">Your<br/>video intro<span style={{ color: "#FF4D4D" }}>.</span></h2>
-      <p className="mt-3 text-sm text-white/55">10-second clip. Make it weird, make it warm.</p>
+      <h2 className="font-display text-3xl font-black leading-tight">Intro<br/>video<span style={{ color: "#FF4D4D" }}>.</span></h2>
+      <p className="mt-3 text-sm text-white/55">Keep it under 10 seconds. Use the script below word-for-word, or remix it.</p>
 
-      <div className="mt-5 flex gap-2">
-        <button
-          className={`flex-1 px-4 py-2 rounded-full text-sm font-bold ${mode === "pick" ? "bg-white text-black" : "bg-white/5 text-white/80"}`}
-          onClick={() => setMode("pick")}
-          data-testid="video-mode-pick"
-        >Pick a sample</button>
+      {/* Dynamic script panel */}
+      <div className="mt-5 rounded-2xl glass-dark border border-[#FF4D4D]/25 p-4" data-testid="intro-script">
+        <p className="text-[10px] uppercase tracking-widest font-bold text-[#FF4D4D] flex items-center gap-1">
+          <span aria-hidden="true">📜</span> Script for your 7-second intro video
+        </p>
+        <p className="mt-2 text-base italic font-medium leading-snug text-white">{scriptText}</p>
+        <div className="mt-3 pt-3 border-t border-white/8 flex gap-2 items-start text-xs text-white/75 leading-snug">
+          <span aria-hidden="true" className="text-base">⚠️</span>
+          <span><span className="font-bold text-white">Keep it appropriate.</span> No nudity, hate speech, or harmful content. Videos that violate our community rules will be removed and may result in a ban.</span>
+        </div>
+      </div>
+
+      <div className="mt-4 flex gap-2">
         <button
           className={`flex-1 px-4 py-2 rounded-full text-sm font-bold ${mode === "record" ? "bg-white text-black" : "bg-white/5 text-white/80"}`}
           onClick={() => setMode("record")}
           data-testid="video-mode-record"
         >Record now</button>
+        <button
+          className={`flex-1 px-4 py-2 rounded-full text-sm font-bold ${mode === "pick" ? "bg-white text-black" : "bg-white/5 text-white/80"}`}
+          onClick={() => setMode("pick")}
+          data-testid="video-mode-pick"
+        >Use a sample</button>
       </div>
 
       {mode === "pick" ? (
-        <div className="mt-5 grid grid-cols-2 gap-3 flex-1 overflow-y-auto no-scrollbar pb-4" data-testid="sample-grid">
+        <div className="mt-4 grid grid-cols-2 gap-3 pb-2" data-testid="sample-grid">
           {samples.map((s, i) => (
             <button
               key={s.url}
@@ -649,8 +887,13 @@ function VideoPick({ onDone }) {
           ))}
         </div>
       ) : (
-        <div className="mt-5 relative aspect-[3/4] rounded-3xl overflow-hidden bg-black flex-1">
+        <div className="mt-4 relative aspect-[3/4] rounded-3xl overflow-hidden bg-black">
           <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
+          {!streamRef.current && !recordedBlob && (
+            <div className="absolute inset-0 flex items-center justify-center text-white/40 text-sm">
+              Press record to start
+            </div>
+          )}
           <div className="absolute bottom-5 left-0 right-0 flex justify-center">
             <button
               className={`btn-icon ${recording ? "record-ring" : ""}`}
@@ -675,7 +918,7 @@ function VideoPick({ onDone }) {
         disabled={loading || (mode === "record" && !recordedBlob)}
         data-testid="video-save-button"
       >
-        {loading ? "Saving…" : (<>Use this intro <ArrowRight size={18} /></>)}
+        {loading ? "Saving…" : (<>Continue <ArrowRight size={18} /></>)}
       </button>
     </motion.div>
   );

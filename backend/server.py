@@ -72,10 +72,18 @@ class SessionExchangeReq(BaseModel):
 
 
 class OnboardingReq(BaseModel):
-    handle: str
-    vibes: List[str]
-    language: str
+    # New simplified profile: first name + city + age. Vibes/language stay optional.
+    first_name: str
+    city: str
+    age: int
+    vibes: List[str] = []
+    language: str = "en"
     avatar_emoji: Optional[str] = "🌙"
+
+
+class RulesAcceptReq(BaseModel):
+    accepted_items: List[str]
+    signature_data_url: str  # base64-encoded PNG of the drawn signature
 
 
 class VideoUploadReq(BaseModel):
@@ -269,19 +277,50 @@ async def auth_logout(
 # ---------------------------------------------------------------------------
 @api.post("/users/onboarding")
 async def onboarding(req: OnboardingReq, user=Depends(current_user)):
+    first_name = req.first_name.strip()[:40]
+    if not first_name:
+        raise HTTPException(400, "First name is required")
+    if not 13 <= req.age <= 120:
+        raise HTTPException(400, "Age must be between 13 and 120")
+
+    # Auto-generate a handle from first_name + 3-char suffix if user doesn't already have one
+    handle = user.get("handle")
+    if not handle:
+        suffix = "".join(_rng.choices("abcdefghjkmnpqrstuvwxyz23456789", k=3))
+        base = "".join(c for c in first_name.lower() if c.isalnum()) or "user"
+        handle = f"{base}.{suffix}"
+
     update = {
-        "handle": req.handle.strip(),
-        "vibes": req.vibes[:5],
-        "language": req.language,
+        "handle": handle,
+        "first_name": first_name,
+        "city": req.city.strip()[:120],
+        "age": req.age,
+        "vibes": (req.vibes or [])[:5],
+        "language": req.language or "en",
         "avatar_emoji": req.avatar_emoji or "🌙",
     }
     await db.users.update_one({"id": user["id"]}, {"$set": update})
     user.update(update)
-    # Invalidate cached share-cards for the user's old + new handle so updates
-    # (e.g. avatar emoji change) are reflected on next /api/og/<handle> fetch.
     for h in {user.get("handle"), update["handle"]}:
         if h:
             _OG_CACHE.pop(h.lower(), None)
+    return {"user": user}
+
+
+@api.post("/users/community-rules")
+async def accept_rules(req: RulesAcceptReq, user=Depends(current_user)):
+    # Require at least 7 items checked (matches the 7 community-rule lines)
+    if len(req.accepted_items) < 7:
+        raise HTTPException(400, "All community rules must be accepted")
+    if not req.signature_data_url or not req.signature_data_url.startswith("data:image/"):
+        raise HTTPException(400, "Signature is required")
+    update = {
+        "agreed_to_rules_at": datetime.now(timezone.utc).isoformat(),
+        "agreed_rules_items": req.accepted_items,
+        "signature_data_url": req.signature_data_url[:200_000],  # safety cap
+    }
+    await db.users.update_one({"id": user["id"]}, {"$set": update})
+    user.update(update)
     return {"user": user}
 
 
