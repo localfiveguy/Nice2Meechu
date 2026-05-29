@@ -9,7 +9,7 @@ from typing import List, Optional
 
 import httpx
 from dotenv import load_dotenv
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from emergentintegrations.llm.chat import ImageContent, LlmChat, UserMessage
 from fastapi import APIRouter, Cookie, Depends, FastAPI, Header, HTTPException, Response
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
@@ -76,6 +76,10 @@ class OnboardingReq(BaseModel):
     first_name: str
     city: str
     age: int
+    # Optional city coordinates (from Photon autocomplete) so we can power
+    # hyperlocal distance immediately, without waiting for browser geolocation.
+    city_lat: Optional[float] = None
+    city_lng: Optional[float] = None
     vibes: List[str] = []
     language: str = "en"
     avatar_emoji: Optional[str] = "🌙"
@@ -102,6 +106,10 @@ class TranslateReq(BaseModel):
     text: str
     target_lang: str
     source_lang: Optional[str] = None
+
+
+class FaceCheckReq(BaseModel):
+    image_base64: str  # raw base64 (no data: prefix) of a single frame from the video
 
 
 class MessageReq(BaseModel):
@@ -206,6 +214,8 @@ async def auth_session_exchange(req: SessionExchangeReq, response: Response):
             "picture": picture,
             "codename": generate_codename(),
             "handle": None,
+            # Pre-fill first_name from Google "name" — user can still edit on onboarding
+            "first_name": (name or "").strip().split(" ")[0] if name else None,
             "vibes": [],
             "language": "en",
             "avatar_emoji": "🌙",
@@ -299,6 +309,15 @@ async def onboarding(req: OnboardingReq, user=Depends(current_user)):
         "language": req.language or "en",
         "avatar_emoji": req.avatar_emoji or "🌙",
     }
+    # If city coordinates were supplied (Photon pick) AND we don't already have
+    # device-geolocation lat/lng, seed lat/lng from the city for distance calcs.
+    if req.city_lat is not None and req.city_lng is not None:
+        if not user.get("lat") or not user.get("lng"):
+            update["lat"] = req.city_lat
+            update["lng"] = req.city_lng
+        # Always keep the city's canonical coordinates separately
+        update["city_lat"] = req.city_lat
+        update["city_lng"] = req.city_lng
     await db.users.update_one({"id": user["id"]}, {"$set": update})
     user.update(update)
     for h in {user.get("handle"), update["handle"]}:
@@ -678,6 +697,62 @@ async def translate(req: TranslateReq):
         raise HTTPException(500, "EMERGENT_LLM_KEY not configured")
     out = await _translate_text(req.text, req.target_lang, req.source_lang)
     return {"translation": out, "target_lang": req.target_lang}
+
+
+# ---------------------------------------------------------------------------
+# Video safety check — verifies the frame shows ONE human face & is safe
+# ---------------------------------------------------------------------------
+@api.post("/video/face-check")
+async def face_check(req: FaceCheckReq, user=Depends(current_user)):
+    """Use GPT-4o vision to confirm the frame is one human face and content-safe.
+
+    Returns: {ok: bool, reason: str}.
+    If EMERGENT_LLM_KEY isn't configured we fail-open with ok=true so onboarding
+    is never blocked by a misconfigured server.
+    """
+    img = (req.image_base64 or "").strip()
+    if img.startswith("data:"):
+        # strip data URL prefix if the client sent it
+        img = img.split(",", 1)[-1]
+    if not img or len(img) < 200:
+        raise HTTPException(400, "Image is required")
+    if not EMERGENT_LLM_KEY:
+        return {"ok": True, "reason": "skipped (no key)"}
+
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"facecheck-{uuid.uuid4()}",
+            system_message=(
+                "You are a strict content-safety reviewer for an intro-video social app. "
+                "Look at the supplied image (one frame from a user's intro video) and decide if it's acceptable. "
+                "Acceptable = exactly ONE clearly visible human face looking roughly at the camera, fully clothed, "
+                "no other people, no nudity / sexual content / hate symbols / weapons / illegal content / minors / blank screen. "
+                'Reply ONLY with strict JSON of the form {"ok": true|false, "reason": "<one short sentence>"}. '
+                "No prose outside the JSON."
+            ),
+        ).with_model("openai", "gpt-4o-mini")
+        msg = UserMessage(
+            text="Is this intro-video frame acceptable per the rules?",
+            file_contents=[ImageContent(image_base64=img)],
+        )
+        raw = (await chat.send_message(msg)) or ""
+        import json as _json
+        # Extract JSON even if the model wrapped it in code fences
+        s = raw.strip()
+        if "```" in s:
+            s = s.split("```", 2)[1]
+            if s.lower().startswith("json"):
+                s = s[4:]
+            s = s.strip()
+        parsed = _json.loads(s)
+        ok = bool(parsed.get("ok"))
+        reason = str(parsed.get("reason") or "")[:300]
+        return {"ok": ok, "reason": reason}
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("face-check failed: %s", exc)
+        # Fail-open so users aren't blocked by transient model issues
+        return {"ok": True, "reason": f"check unavailable ({exc.__class__.__name__})"}
 
 
 @api.get("/samples")

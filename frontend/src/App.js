@@ -357,6 +357,7 @@ function Onboarding({ user, onDone }) {
   const [step, setStep] = useState(0);
   const [firstName, setFirstName] = useState(user.first_name || "");
   const [city, setCity] = useState(user.city || "");
+  const [cityCoords, setCityCoords] = useState(null); // {lat, lng} when picked from autocomplete
   const [age, setAge] = useState(user.age ? String(user.age) : "");
   const [loading, setLoading] = useState(false);
 
@@ -380,8 +381,10 @@ function Onboarding({ user, onDone }) {
         city: city.trim(),
         age: ageNum,
         language: browserLang,
+        city_lat: cityCoords?.lat ?? null,
+        city_lng: cityCoords?.lng ?? null,
       });
-      track("onboarding_completed", { age: ageNum, language: browserLang });
+      track("onboarding_completed", { age: ageNum, language: browserLang, has_city_coords: !!cityCoords });
       toast.success(`Hey ${data.user.first_name} ✨`);
       onDone(data.user);
     } catch (e) {
@@ -432,7 +435,11 @@ function Onboarding({ user, onDone }) {
       {step === 1 && (
         <div className="mt-8">
           <p className="text-xs uppercase tracking-widest font-bold text-[#FF4D4D] mb-2">City</p>
-          <CityAutocomplete value={city} onChange={setCity} />
+          <CityAutocomplete
+            value={city}
+            onChange={(v) => { setCity(v); setCityCoords(null); }}
+            onPick={(item) => { setCity(item.value || ""); setCityCoords({ lat: item.lat, lng: item.lng }); }}
+          />
         </div>
       )}
 
@@ -484,7 +491,7 @@ function Onboarding({ user, onDone }) {
 }
 
 // ---------- City Autocomplete (Photon / OpenStreetMap) ----------
-function CityAutocomplete({ value, onChange }) {
+function CityAutocomplete({ value, onChange, onPick }) {
   const [suggestions, setSuggestions] = useState([]);
   const [open, setOpen] = useState(false);
   const debounceRef = useRef(null);
@@ -503,7 +510,13 @@ function CityAutocomplete({ value, onChange }) {
         const items = (data?.features || []).map((f) => {
           const p = f.properties || {};
           const parts = [p.name, p.state, p.country].filter(Boolean);
-          return { label: parts.join(", "), value: p.name };
+          const coords = f.geometry?.coordinates || []; // [lng, lat]
+          return {
+            label: parts.join(", "),
+            value: p.name,
+            lat: coords[1] ?? null,
+            lng: coords[0] ?? null,
+          };
         });
         setSuggestions(items);
       } catch (err) {
@@ -514,6 +527,7 @@ function CityAutocomplete({ value, onChange }) {
 
   const pick = (item) => {
     onChange(item.value || item.label);
+    if (onPick) onPick(item);
     setSuggestions([]);
     setOpen(false);
   };
@@ -749,10 +763,56 @@ function VideoPick({ user, onDone }) {
     api.get("/samples").then(({ data }) => setSamples(data.samples)).catch((e) => console.error(e));
   }, []);
 
+  // Extract a single JPEG frame from the recorded blob via off-screen video + canvas.
+  // Returns base64 (without the data: prefix) for the backend face-check.
+  const captureFrameBase64 = (blob) => new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const v = document.createElement("video");
+    v.src = url;
+    v.muted = true;
+    v.playsInline = true;
+    v.onloadeddata = () => {
+      // seek slightly past the start so we don't grab a black frame
+      try { v.currentTime = Math.min(0.6, (v.duration || 1) / 2); } catch { /* noop */ }
+    };
+    v.onseeked = () => {
+      try {
+        const c = document.createElement("canvas");
+        c.width = Math.min(640, v.videoWidth || 480);
+        c.height = Math.round(c.width * ((v.videoHeight || 360) / (v.videoWidth || 640)));
+        const ctx = c.getContext("2d");
+        ctx.drawImage(v, 0, 0, c.width, c.height);
+        const dataUrl = c.toDataURL("image/jpeg", 0.72);
+        URL.revokeObjectURL(url);
+        resolve(dataUrl.split(",", 2)[1]);
+      } catch (err) {
+        URL.revokeObjectURL(url);
+        reject(err);
+      }
+    };
+    v.onerror = (err) => { URL.revokeObjectURL(url); reject(err); };
+  });
+
   const save = async () => {
     setLoading(true);
     try {
       if (mode === "record" && recordedBlob) {
+        // AI face / safety check on a captured frame BEFORE we accept the video
+        try {
+          const b64 = await captureFrameBase64(recordedBlob);
+          const { data: check } = await api.post("/video/face-check", { image_base64: b64 });
+          track("face_check_done", { ok: !!check.ok });
+          if (!check.ok) {
+            const why = check.reason || "Please record a clearer video of just your face.";
+            toast.error(`Video rejected: ${why}`);
+            setLoading(false);
+            return;
+          }
+        } catch (err) {
+          console.error("face check error", err);
+          // Fail-open — if we can't extract a frame, allow save (rare)
+        }
+
         const blobUrl = URL.createObjectURL(recordedBlob);
         await api.post("/users/video", {
           video_url: blobUrl,
