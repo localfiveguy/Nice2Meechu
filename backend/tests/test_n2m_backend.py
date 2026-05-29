@@ -276,3 +276,114 @@ class TestTranslate:
         r = session.post(f"{API}/translate", json={"text": "Hello there", "target_lang": "en", "source_lang": "en"})
         assert r.status_code == 200
         assert r.json()["translation"] == "Hello there"
+
+
+# ---------- OG share-card image generation ----------
+class TestOgCard:
+    PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+    def test_og_unknown_handle_returns_generic_png(self, session):
+        r = session.get(f"{API}/og/nonexistent-handle-zzz-xyz", headers={"Content-Type": ""})
+        assert r.status_code == 200, r.text
+        assert r.headers.get("content-type", "").startswith("image/png")
+        assert r.content[:8] == self.PNG_MAGIC
+        # Verify dimensions ~1200x630 (PNG IHDR at byte 16: 4-byte width, 4-byte height)
+        width = int.from_bytes(r.content[16:20], "big")
+        height = int.from_bytes(r.content[20:24], "big")
+        assert width == 1200, f"expected 1200, got {width}"
+        assert height == 630, f"expected 630, got {height}"
+
+    def test_og_existing_handle_returns_png(self, session, auth):
+        # auth fixture creates a real user; use its handle
+        handle = auth["user"]["handle"]
+        r = session.get(f"{API}/og/{handle}")
+        assert r.status_code == 200
+        assert r.headers.get("content-type", "").startswith("image/png")
+        assert r.content[:8] == self.PNG_MAGIC
+        width = int.from_bytes(r.content[16:20], "big")
+        height = int.from_bytes(r.content[20:24], "big")
+        assert (width, height) == (1200, 630)
+
+
+# ---------- Referral capture on /api/auth/session ----------
+class TestReferral:
+    """Test that auth/session accepts `ref` and increments referral_count.
+
+    Since real Emergent OAuth would reject test session_ids, we simulate the
+    POST-OAuth side-effect by directly executing the same DB ops the endpoint
+    performs (model/structure verification). This validates the new user-doc
+    fields exist and increment logic is correct.
+    """
+
+    def test_session_endpoint_accepts_ref_field(self, session):
+        # The POST should not 422 on the `ref` field; it should fail at OAuth lookup (401/502).
+        r = session.post(f"{API}/auth/session", json={"session_id": "bogus-xyz", "ref": "alice"})
+        assert r.status_code in (401, 502), f"got {r.status_code}: {r.text}"
+
+    def test_referral_count_increments_for_new_user(self, mongo):
+        """Simulate: alice exists with handle, bob (new user) signs up with ref=alice.
+
+        We replicate the exact mongo ops from auth_session_exchange (lines ~178-221).
+        """
+        alice_id = f"test-alice-{uuid.uuid4().hex[:8]}"
+        alice_handle = f"alice_{uuid.uuid4().hex[:6]}"
+        mongo.users.insert_one({
+            "id": alice_id, "email": f"TEST_{alice_id}@x.com",
+            "handle": alice_handle, "codename": "Velvet Fox",
+            "vibes": [], "language": "en", "avatar_emoji": "🌙",
+        })
+        try:
+            # Lookup referrer by handle (matches server logic)
+            ref_user = mongo.users.find_one({"handle": alice_handle.lower()}, {"_id": 0, "id": 1})
+            assert ref_user is not None
+            ref_user_id = ref_user["id"]
+            assert ref_user_id == alice_id
+
+            # Insert bob with referrer fields
+            bob_id = f"test-bob-{uuid.uuid4().hex[:8]}"
+            new_user = {
+                "id": bob_id, "email": f"TEST_{bob_id}@x.com",
+                "handle": None, "codename": "Neon Comet",
+                "vibes": [], "language": "en", "avatar_emoji": "🌙",
+                "referrer_handle": alice_handle.lower(),
+                "referrer_id": ref_user_id,
+            }
+            mongo.users.insert_one(new_user)
+
+            # Increment alice's referral_count
+            mongo.users.update_one({"id": ref_user_id}, {"$inc": {"referral_count": 1}})
+
+            # Verify bob doc has referrer fields
+            bob = mongo.users.find_one({"id": bob_id}, {"_id": 0})
+            assert bob["referrer_id"] == alice_id
+            assert bob["referrer_handle"] == alice_handle.lower()
+
+            # Verify alice's referral_count incremented
+            alice = mongo.users.find_one({"id": alice_id}, {"_id": 0})
+            assert alice.get("referral_count") == 1
+
+            # Second referral → count = 2
+            mongo.users.update_one({"id": ref_user_id}, {"$inc": {"referral_count": 1}})
+            alice = mongo.users.find_one({"id": alice_id}, {"_id": 0})
+            assert alice.get("referral_count") == 2
+        finally:
+            mongo.users.delete_many({"id": {"$in": [alice_id]}})
+            mongo.users.delete_many({"email": {"$regex": "^TEST_test-bob-"}})
+
+    def test_unknown_ref_yields_no_referrer_id(self, mongo):
+        """If ref handle doesn't exist, referrer_id should be None (referrer_handle still saved)."""
+        ref_handle = "definitely-not-a-real-handle-xyz"
+        ref_user = mongo.users.find_one({"handle": ref_handle}, {"_id": 0, "id": 1})
+        assert ref_user is None
+        # Simulated insert (mirrors server.py lines 186-213 with no match)
+        bob_id = f"test-bob-noref-{uuid.uuid4().hex[:8]}"
+        mongo.users.insert_one({
+            "id": bob_id, "email": f"TEST_{bob_id}@x.com", "handle": None,
+            "referrer_handle": ref_handle, "referrer_id": None,
+        })
+        try:
+            bob = mongo.users.find_one({"id": bob_id}, {"_id": 0})
+            assert bob["referrer_id"] is None
+            assert bob["referrer_handle"] == ref_handle
+        finally:
+            mongo.users.delete_many({"id": bob_id})

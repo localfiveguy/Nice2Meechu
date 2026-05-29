@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Heart, X, MapPin, Languages, ArrowRight, ArrowLeft, Sparkles,
   Send, MessageCircle, User as UserIcon, Video as VideoIcon, Camera,
-  Globe, Check, LogOut, Pause,
+  Globe, Check, LogOut, Pause, Share2, Copy,
 } from "lucide-react";
 import "@/App.css";
 
@@ -86,6 +86,24 @@ export default function App() {
     else setScreen("feed");
   }, []);
 
+  // Capture ?ref=<handle> from URL on first load (referral attribution) and persist it
+  // so it survives the round-trip through Google OAuth.
+  useEffect(() => {
+    try {
+      const search = new URLSearchParams(window.location.search);
+      const ref = search.get("ref");
+      if (ref) {
+        localStorage.setItem("n2m_ref", ref.toLowerCase().trim());
+        // strip ?ref from URL so it doesn't pollute later navigation
+        const url = new URL(window.location.href);
+        url.searchParams.delete("ref");
+        window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+      }
+    } catch (e) {
+      console.error("ref capture failed", e);
+    }
+  }, []);
+
   // Handle the OAuth callback (one-time: exchange session_id → session_token cookie)
   useEffect(() => {
     if (!initialHasSessionId) return;
@@ -104,8 +122,10 @@ export default function App() {
     }
     (async () => {
       try {
-        const { data } = await api.post("/auth/session", { session_id: sessionId });
+        const ref = localStorage.getItem("n2m_ref") || undefined;
+        const { data } = await api.post("/auth/session", { session_id: sessionId, ref });
         if (data.token) localStorage.setItem("n2m_token", data.token); // fallback for non-cookie envs
+        localStorage.removeItem("n2m_ref"); // ref consumed
         setUser(data.user);
         routeToNext(data.user);
       } catch (err) {
@@ -1048,6 +1068,82 @@ function ChatScreen({ me, match, onBack }) {
   );
 }
 
+// ---------- Share card (referral) ----------
+function ShareCard({ user }) {
+  const [copied, setCopied] = useState(false);
+  const handle = user.handle || user.codename?.toLowerCase().replace(/\s+/g, ".");
+  const shareUrl = `${window.location.origin}/?ref=${encodeURIComponent(handle)}`;
+  const shareText = `${user.codename} just invited you to Nice2Meechu — video-first, hyperlocal, anonymous until the spark.`;
+
+  const onShare = async () => {
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "Nice2Meechu", text: shareText, url: shareUrl });
+        return;
+      }
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      toast.success("Invite link copied");
+      setTimeout(() => setCopied(false), 1800);
+    } catch (e) {
+      if (e?.name !== "AbortError") {
+        console.error("share failed", e);
+        toast.error("Couldn't share — copy from the link below");
+      }
+    }
+  };
+
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      toast.success("Link copied");
+      setTimeout(() => setCopied(false), 1800);
+    } catch (e) {
+      console.error("copy failed", e);
+    }
+  };
+
+  const referralCount = user.referral_count || 0;
+
+  return (
+    <div className="mt-5 rounded-3xl overflow-hidden border border-white/10" data-testid="profile-share-card">
+      {/* Preview strip */}
+      <div className="relative px-5 py-4 flex items-center gap-3" style={{ background: "linear-gradient(135deg, rgba(255,77,77,0.18), rgba(0,229,255,0.12))" }}>
+        <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-black/40 text-2xl">{user.avatar_emoji}</div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[10px] uppercase tracking-widest font-bold text-white/55">your invite card</div>
+          <div className="font-display font-black text-lg leading-tight truncate">{user.codename}</div>
+          {referralCount > 0 && (
+            <div className="text-[10px] text-[#00E5FF] font-bold uppercase tracking-widest mt-0.5">
+              +{referralCount} friend{referralCount > 1 ? "s" : ""} joined
+            </div>
+          )}
+        </div>
+        <Sparkles size={20} className="text-[#FF4D4D]" />
+      </div>
+      {/* Actions */}
+      <div className="bg-black/40 px-4 py-3 flex gap-2">
+        <button
+          className="btn-primary flex-1 flex items-center justify-center gap-2 text-sm py-3"
+          onClick={onShare}
+          data-testid="profile-share-button"
+        >
+          <Share2 size={16} /> Share invite
+        </button>
+        <button
+          className="px-4 rounded-full bg-white/8 text-white border border-white/10 active:scale-95 transition"
+          onClick={onCopy}
+          data-testid="profile-copy-link-button"
+          aria-label="Copy invite link"
+        >
+          {copied ? <Check size={16} className="text-[#00E5FF]" /> : <Copy size={16} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ---------- Profile ----------
 function ProfileScreen({ user, setUser, onTab, onLogout, onChangeVideo }) {
   const [editing, setEditing] = useState(false);
@@ -1111,7 +1207,10 @@ function ProfileScreen({ user, setUser, onTab, onLogout, onChangeVideo }) {
               <div className="mt-3 text-xs text-white/60 flex items-center gap-1.5">
                 <Globe size={12} /> Native: {LANG_OPTIONS.find((l) => l.code === user.language)?.name || user.language}
               </div>
-              <div className="mt-5 grid grid-cols-2 gap-2">
+
+              <ShareCard user={user} />
+
+              <div className="mt-3 grid grid-cols-2 gap-2">
                 <button className="btn-ghost text-sm" onClick={onChangeVideo} data-testid="profile-change-video">
                   <VideoIcon size={14} className="inline mr-1" /> Change intro
                 </button>

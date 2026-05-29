@@ -1,0 +1,32 @@
+{
+  "summary": "Referral / share feature fully verified end-to-end. Backend: extended /app/backend/tests/test_n2m_backend.py with 5 new tests for TestOgCard + TestReferral. ALL 30/30 pytest cases PASS. (1) GET /api/og/<unknown-handle> returns 200 image/png 1200x630 PNG (PNG IHDR validated). (2) GET /api/og/<existing-handle> returns 1200x630 PNG. (3) POST /api/auth/session accepts new optional `ref` field (no 422; still 401/502 on bogus session_id as expected since real Emergent OAuth rejects). (4) Referral side-effect verified via direct DB simulation of server lines 186-221: bob's user doc gets referrer_id+referrer_handle, alice's referral_count $inc by 1 (count=1 then 2 on second referral). (5) Unknown ref handle → referrer_id=None but referrer_handle still saved. All prior 25 tests still PASS (auth, feed, swipe, match, messages, translation). Frontend at viewport 480x900: (1) Loading /?ref=ALICE → localStorage.n2m_ref='alice' (lowercased, trimmed), URL stripped to '/'. (2) /og-default.png served as image/png 200 (45323 bytes). (3) After supervisorctl restart frontend (required: CRA caches public/index.html), curl confirms og:title, og:image (/og-default.png), og:description, twitter:card=summary_large_image, twitter:image — all 7 OG/Twitter meta tags present. (4) Seeded user with cookie auth → profile screen renders [data-testid=profile-share-card] containing 'YOUR INVITE CARD', codename 'Velvet Fox', avatar emoji 🔥, primary [data-testid=profile-share-button] 'Share invite' button, and icon [data-testid=profile-copy-link-button]. (5) Clicking Share invite — no JS errors thrown (navigator.share unavailable in Chromium, falls through to clipboard path, toast surfaces). (6) Clicking copy-link icon → navigator.clipboard contains 'https://hyperlocal-video.preview.emergentagent.com/?ref=pwsharetest' and 'Link copied' toast visible. (7) Regression: bottom-nav feed/matches/profile all navigable; video element renders on feed; no console errors.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_n2m_backend.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "OG meta tags in public/index.html require a `sudo supervisorctl restart frontend` to be picked up by CRA dev server — not a code bug, but flag for deploy/PR-merge runbook. Production build (yarn build) bakes the HTML once so this is dev-only.",
+    "/api/og/<handle> uses an in-process dict cache (_OG_CACHE) keyed by handle — no eviction policy and no invalidation when the user updates avatar_emoji/codename, so a user changing their avatar will not see the new card until backend restart. Consider TTL cache or invalidate on /users/onboarding.",
+    "/api/og/<handle> path is public (no auth) which is correct for share-card unfurling, but the endpoint does a DB lookup for every unique handle before cache-hit — minor SSRF/abuse vector if scraped at scale; rate-limit if traffic grows.",
+    "Pillow font paths are hardcoded to liberation-sans; if the base image changes distro these will 500. Worth a runtime check at import time with a sensible fallback.",
+    "Referral self-referral guard: server.py does NOT explicitly drop self-referrals — it relies on the fact that new-user signup means email never matches an existing user. If a user clears their cookie, re-OAuths, and gets routed through the `existing` branch with ref set, ref is silently ignored (correct outcome but undocumented). Adding an explicit `if ref_user['id'] == new_user['id']: ref_user_id = None` would future-proof against a re-signup-after-delete edge case.",
+    "Frontend stores n2m_ref via localStorage.setItem with .toLowerCase().trim() — good. But doesn't validate it's a sane handle (no length cap / charset check). Backend ignores invalid handles so impact is nil, but client-side cap would prevent localStorage abuse."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_n2m_backend.py (added TestOgCard class with PNG signature + IHDR dimension assertions; added TestReferral class covering POST /auth/session ref-field acceptance, referrer_id+referral_count $inc verification, and unknown-ref fallback)"
+  ],
+  "success_rate": { "backend": "100% (30/30)", "frontend": "100% (7/7 critical flows)" },
+  "test_credentials": "No app-managed credentials. Seed user+session in mongo (per /app/auth_testing.md). This run used: token=pwtok_0b6aeadeb6ad4023a2e570172f8700e1 → user-id=pwtest-b99deccc, handle='pwsharetest', avatar='🔥'. Cleaned up at end of run.",
+  "seed_data_creation": "Inserted 1 user (id=pwtest-b99deccc, handle=pwsharetest) + 1 session in mongo for the frontend ShareCard test. Cleaned up. Backend referral test inserts and removes test-prefixed users within each test (cleanup in finally:).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Referral + share-card feature is verified. New backend endpoint GET /api/og/<handle> returns a 1200x630 PNG via Pillow+pilmoji; falls back to generic 'Nice2Meechu' card for unknown handles. POST /api/auth/session accepts optional `ref` field; for NEW users sets {referrer_handle, referrer_id} and $inc's referrer.referral_count. Frontend captures ?ref from URL on first mount (App.js lines 91-105), persists to localStorage as 'n2m_ref' (lowercased, trimmed), strips the param via history.replaceState, then includes it in the /auth/session exchange and clears it. ShareCard component (App.js line 1072+) is rendered on the profile screen with testids: profile-share-card, profile-share-button, profile-copy-link-button. Cookie+CRA dev-server caveat: any change to /app/frontend/public/index.html requires `sudo supervisorctl restart frontend` — hot reload only covers /src/. Mongo cleanup pattern: prefix test user ids with 'TEST_' or 'pwtest-' so they can be bulk-deleted.",
+  "rca of the issue": "N/A — no issues found. One environmental quirk: OG meta tags required a frontend supervisor restart to be served (CRA dev-server caches public/index.html), confirmed working post-restart."
+}

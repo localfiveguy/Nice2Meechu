@@ -68,6 +68,7 @@ def generate_codename() -> str:
 # ---------------------------------------------------------------------------
 class SessionExchangeReq(BaseModel):
     session_id: str
+    ref: Optional[str] = None  # referrer's handle, if user landed via /?ref=<handle>
 
 
 class OnboardingReq(BaseModel):
@@ -182,6 +183,14 @@ async def auth_session_exchange(req: SessionExchangeReq, response: Response):
         )
         user = await db.users.find_one({"id": existing["id"]}, {"_id": 0})
     else:
+        # Resolve optional referrer (by handle). Self-referrals are dropped.
+        ref_user_id = None
+        ref_handle = (req.ref or "").strip().lower()
+        if ref_handle:
+            ref_user = await db.users.find_one({"handle": ref_handle}, {"_id": 0, "id": 1})
+            if ref_user:
+                ref_user_id = ref_user["id"]
+
         new_user = {
             "id": str(uuid.uuid4()),
             "email": email,
@@ -197,10 +206,19 @@ async def auth_session_exchange(req: SessionExchangeReq, response: Response):
             "video_url": None,
             "transcript": None,
             "source_lang": None,
+            "referrer_handle": ref_handle or None,
+            "referrer_id": ref_user_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         await db.users.insert_one(new_user.copy())
         user = await db.users.find_one({"id": new_user["id"]}, {"_id": 0})
+
+        # Increment a small public stat on the referrer (best-effort)
+        if ref_user_id:
+            await db.users.update_one(
+                {"id": ref_user_id},
+                {"$inc": {"referral_count": 1}},
+            )
 
     expires_at = datetime.now(timezone.utc) + SESSION_TTL
     await db.user_sessions.update_one(
@@ -591,6 +609,111 @@ async def list_samples():
         "vibes": VIBES_POOL,
         "languages": [{"code": k, "name": v} for k, v in LANG_NAMES.items()],
     }
+
+
+# ---------------------------------------------------------------------------
+# OG share-card image generation
+# ---------------------------------------------------------------------------
+from fastapi.responses import StreamingResponse  # noqa: E402
+import io  # noqa: E402
+
+_FONT_BOLD_PATH = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+_FONT_REG_PATH = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+_OG_CACHE: dict[str, bytes] = {}
+
+
+def _render_share_card(codename: str, emoji: str, handle: str | None) -> bytes:
+    """Render a 1200x630 share card PNG with codename + emoji + tagline."""
+    from PIL import Image, ImageDraw, ImageFont  # local import keeps cold-start fast
+    from pilmoji import Pilmoji
+
+    W, H = 1200, 630
+    img = Image.new("RGB", (W, H), "#050507")
+    draw = ImageDraw.Draw(img)
+
+    # Subtle accent — a red→cyan gradient strip on the right edge
+    for x in range(W - 14, W):
+        t = (x - (W - 14)) / 14
+        r = int(255 * (1 - t) + 0 * t)
+        g = int(77 * (1 - t) + 229 * t)
+        b = int(77 * (1 - t) + 255 * t)
+        draw.line([(x, 0), (x, H)], fill=(r, g, b))
+
+    # Subtle radial-ish bloom (two soft circles)
+    bloom = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    bd = ImageDraw.Draw(bloom)
+    bd.ellipse([-260, -260, 540, 540], fill=(255, 77, 77, 40))
+    bd.ellipse([W - 540, H - 540, W + 260, H + 260], fill=(0, 229, 255, 30))
+    img = Image.alpha_composite(img.convert("RGBA"), bloom).convert("RGB")
+    draw = ImageDraw.Draw(img)
+
+    # Small brand mark top-left
+    brand_font = ImageFont.truetype(_FONT_BOLD_PATH, 30)
+    draw.text((64, 56), "NICE2MEECHU", fill="#FFFFFF", font=brand_font)
+    draw.text((64 + 290, 56), ".", fill="#FF4D4D", font=brand_font)
+
+    # Big "joins you on" prefix
+    pref_font = ImageFont.truetype(_FONT_REG_PATH, 36)
+    draw.text((64, 200), "Nice2Meechu invite from", fill="#FFFFFF80", font=pref_font)
+
+    # Codename — large bold
+    name_font = ImageFont.truetype(_FONT_BOLD_PATH, 110)
+    safe_name = (codename or "Anon").strip()[:24]
+    draw.text((64, 256), safe_name, fill="#FFFFFF", font=name_font)
+
+    # Emoji rendered via pilmoji (uses Twitter color emoji)
+    if emoji:
+        with Pilmoji(img) as p:
+            emoji_font = ImageFont.truetype(_FONT_BOLD_PATH, 96)
+            try:
+                p.text((64, 384), emoji[:2], font=emoji_font)
+            except Exception:  # noqa: BLE001
+                pass
+        draw = ImageDraw.Draw(img)
+
+    # Tagline at the bottom
+    tag_font = ImageFont.truetype(_FONT_REG_PATH, 32)
+    tag = "video-first  ·  hyperlocal  ·  anonymous until the spark"
+    draw.text((64, H - 120), tag, fill="#FFFFFFB0", font=tag_font)
+
+    # Handle pill, bottom-right
+    if handle:
+        h_text = f"@{handle}"
+        hf = ImageFont.truetype(_FONT_BOLD_PATH, 28)
+        bbox = draw.textbbox((0, 0), h_text, font=hf)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        px, py = W - tw - 96, H - 96
+        pad = 16
+        draw.rounded_rectangle(
+            [px - pad, py - pad, px + tw + pad, py + th + pad + 4],
+            radius=24, fill="#FF4D4D",
+        )
+        draw.text((px, py - 4), h_text, fill="#FFFFFF", font=hf)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
+@api.get("/og/{handle}")
+async def og_card(handle: str):
+    """Return a 1200x630 PNG share card for the given user handle."""
+    handle = handle.lower().strip()
+    if handle in _OG_CACHE:
+        return StreamingResponse(io.BytesIO(_OG_CACHE[handle]), media_type="image/png")
+
+    user = await db.users.find_one({"handle": handle}, {"_id": 0})
+    if not user:
+        # generic card so the link still unfurls nicely
+        png = _render_share_card("Nice2Meechu", "✨", None)
+    else:
+        png = _render_share_card(
+            codename=user.get("codename") or "Anon",
+            emoji=user.get("avatar_emoji") or "✨",
+            handle=user.get("handle"),
+        )
+    _OG_CACHE[handle] = png
+    return StreamingResponse(io.BytesIO(png), media_type="image/png")
 
 
 # ---------------------------------------------------------------------------
