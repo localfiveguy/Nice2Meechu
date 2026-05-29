@@ -429,10 +429,22 @@ async def swipe(req: SwipeReq, user=Depends(current_user)):
 async def matches(user=Depends(current_user)):
     cursor = db.matches.find({"user_ids": user["id"]}, {"_id": 0}).sort("at", -1)
     rows = await cursor.to_list(100)
+    if not rows:
+        return {"matches": []}
+
+    # Batch-fetch the other-user for every match in a single query (avoids N+1)
+    other_ids = [
+        next(uid for uid in row["user_ids"] if uid != user["id"])
+        for row in rows
+    ]
+    users_cursor = db.users.find(
+        {"id": {"$in": other_ids}}, {"_id": 0, "email": 0}
+    )
+    users_by_id = {u["id"]: u for u in await users_cursor.to_list(200)}
+
     out = []
-    for row in rows:
-        other = [uid for uid in row["user_ids"] if uid != user["id"]][0]
-        u = await db.users.find_one({"id": other}, {"_id": 0, "email": 0})
+    for row, other in zip(rows, other_ids):
+        u = users_by_id.get(other)
         if not u:
             continue
         out.append(
