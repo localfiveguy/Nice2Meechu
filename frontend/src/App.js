@@ -1499,23 +1499,38 @@ function ShareCard({ user }) {
 // ---------- Profile ----------
 function ProfileScreen({ user, setUser, onTab, onLogout, onChangeVideo }) {
   const [editing, setEditing] = useState(false);
-  const [handle, setHandle] = useState(user.handle);
-  const [vibes, setVibes] = useState(user.vibes);
-  const [language, setLanguage] = useState(user.language);
-  const [emoji, setEmoji] = useState(user.avatar_emoji);
+  const [firstName, setFirstName] = useState(user.first_name || "");
+  const [city, setCity] = useState(user.city || "");
+  const [cityCoords, setCityCoords] = useState(null);
+  const [age, setAge] = useState(user.age ? String(user.age) : "");
+  const [language, setLanguage] = useState(user.language || "en");
+  const [emoji, setEmoji] = useState(user.avatar_emoji || "🌙");
   const [saving, setSaving] = useState(false);
 
+  const ageNum = parseInt(age, 10);
+  const canSave =
+    firstName.trim().length >= 1 &&
+    city.trim().length >= 2 &&
+    !isNaN(ageNum) && ageNum >= 13 && ageNum <= 120;
+
   const save = async () => {
+    if (!canSave) { toast.error("Check name, city, and age (13+)"); return; }
     setSaving(true);
     try {
       const { data } = await api.post("/users/onboarding", {
-        handle: handle.trim(), vibes, language, avatar_emoji: emoji,
+        first_name: firstName.trim(),
+        city: city.trim(),
+        age: ageNum,
+        language,
+        avatar_emoji: emoji,
+        city_lat: cityCoords?.lat ?? null,
+        city_lng: cityCoords?.lng ?? null,
       });
       setUser(data.user);
       setEditing(false);
       toast.success("Saved");
-    } catch {
-      toast.error("Couldn't save");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Couldn't save");
     } finally { setSaving(false); }
   };
 
@@ -1551,12 +1566,14 @@ function ProfileScreen({ user, setUser, onTab, onLogout, onChangeVideo }) {
 
           {!editing ? (
             <>
-              <div className="mt-4 flex flex-wrap gap-1.5">
-                {(user.vibes || []).map((v) => (
-                  <span key={v} className="text-[10px] uppercase tracking-widest font-bold px-2.5 py-1 rounded-full bg-white/10">{v}</span>
-                ))}
+              <div className="mt-4 text-sm text-white/80">
+                <span className="font-bold text-white">{user.first_name}</span>
+                {user.age ? <span className="text-white/60"> · {user.age}</span> : null}
               </div>
-              <div className="mt-3 text-xs text-white/60 flex items-center gap-1.5">
+              <div className="mt-1 text-xs text-white/60 flex items-center gap-1.5">
+                <MapPin size={12} /> {user.city || "Somewhere on Earth"}
+              </div>
+              <div className="mt-1 text-xs text-white/60 flex items-center gap-1.5">
                 <Globe size={12} /> Native: {LANG_OPTIONS.find((l) => l.code === user.language)?.name || user.language}
               </div>
 
@@ -1573,17 +1590,34 @@ function ProfileScreen({ user, setUser, onTab, onLogout, onChangeVideo }) {
             </>
           ) : (
             <div className="mt-4 flex flex-col gap-3">
-              <input className="n2m-input" value={handle} onChange={(e) => setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9._]/g, ""))} data-testid="profile-handle-input" />
-              <div className="flex flex-wrap gap-1.5">
-                {VIBES_POOL.map((v) => (
-                  <button
-                    key={v}
-                    className="vibe-pill text-xs px-3 py-1.5"
-                    data-active={vibes.includes(v)}
-                    onClick={() => setVibes((arr) => arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v])}
-                    data-testid={`profile-vibe-${v}`}
-                  >{v}</button>
-                ))}
+              <div>
+                <p className="text-[10px] uppercase tracking-widest font-bold text-white/55 mb-1">First name</p>
+                <input
+                  className="n2m-input"
+                  value={firstName}
+                  maxLength={40}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  data-testid="profile-firstname-input"
+                />
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-widest font-bold text-white/55 mb-1">City</p>
+                <CityAutocomplete
+                  value={city}
+                  onChange={(v) => { setCity(v); setCityCoords(null); }}
+                  onPick={(item) => { setCity(item.value || ""); setCityCoords({ lat: item.lat, lng: item.lng }); }}
+                />
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-widest font-bold text-white/55 mb-1">Age</p>
+                <input
+                  className="n2m-input"
+                  inputMode="numeric"
+                  value={age}
+                  maxLength={3}
+                  onChange={(e) => setAge(e.target.value.replace(/\D/g, ""))}
+                  data-testid="profile-age-input"
+                />
               </div>
               <select
                 className="n2m-input"
@@ -1603,7 +1637,7 @@ function ProfileScreen({ user, setUser, onTab, onLogout, onChangeVideo }) {
                   >{e}</button>
                 ))}
               </div>
-              <button className="btn-primary" onClick={save} disabled={saving} data-testid="profile-save">
+              <button className="btn-primary" onClick={save} disabled={saving || !canSave} data-testid="profile-save">
                 {saving ? "Saving…" : "Save"}
               </button>
             </div>
