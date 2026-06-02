@@ -11,6 +11,7 @@ import httpx
 from dotenv import load_dotenv
 from emergentintegrations.llm.chat import ImageContent, LlmChat, UserMessage
 from fastapi import APIRouter, Cookie, Depends, FastAPI, Header, HTTPException, Response
+from fastapi.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
 from starlette.middleware.cors import CORSMiddleware
@@ -46,12 +47,12 @@ logger = logging.getLogger("nice2meechu")
 # Sample seed data
 # ---------------------------------------------------------------------------
 SAMPLE_VIDEOS = [
-    {"url": "/videos/v1.mp4", "transcript": "Hey there! I love grabbing oat lattes at the corner cafe. Anyone up for a coffee crawl?", "lang": "en"},
-    {"url": "/videos/v2.mp4", "transcript": "Just wrapped a long studio session. Looking for someone to grab late-night ramen with.", "lang": "en"},
-    {"url": "/videos/v3.mp4", "transcript": "I run a tiny vinyl shop down the street. If you love jazz, slide into the feed.", "lang": "en"},
-    {"url": "/videos/v4.mp4", "transcript": "Hola! New in town. Show me your favourite spots and I will share mine.", "lang": "es"},
-    {"url": "/videos/v5.mp4", "transcript": "I bike everywhere. Hidden parks, weird ramen joints, rooftop sunsets. Tag along?", "lang": "en"},
-    {"url": "/videos/v6.mp4", "transcript": "Bonjour! Just moved here for art school. Looking for gallery buddies and study cafes.", "lang": "fr"},
+    {"url": "/api/videos/v1.mp4", "transcript": "Hey there! I love grabbing oat lattes at the corner cafe. Anyone up for a coffee crawl?", "lang": "en"},
+    {"url": "/api/videos/v2.mp4", "transcript": "Just wrapped a long studio session. Looking for someone to grab late-night ramen with.", "lang": "en"},
+    {"url": "/api/videos/v3.mp4", "transcript": "I run a tiny vinyl shop down the street. If you love jazz, slide into the feed.", "lang": "en"},
+    {"url": "/api/videos/v4.mp4", "transcript": "Hola! New in town. Show me your favourite spots and I will share mine.", "lang": "es"},
+    {"url": "/api/videos/v5.mp4", "transcript": "I bike everywhere. Hidden parks, weird ramen joints, rooftop sunsets. Tag along?", "lang": "en"},
+    {"url": "/api/videos/v6.mp4", "transcript": "Bonjour! Just moved here for art school. Looking for gallery buddies and study cafes.", "lang": "fr"},
 ]
 
 VIBES_POOL = ["Coffee", "Vinyl", "Skater", "Foodie", "Bookworm", "Gamer", "Hiker", "Artist", "Runner", "Night Owl"]
@@ -886,6 +887,14 @@ async def og_card(handle: str):
 # ---------------------------------------------------------------------------
 app.include_router(api)
 
+# Serve sample intro videos through the backend so the production CDN
+# preserves Content-Type (video/mp4) and byte-range support — required for
+# mobile browser playback. The frontend static deploy was returning
+# application/octet-stream which silently breaks <video> autoplay on mobile.
+_VIDEOS_DIR = ROOT_DIR / "videos"
+if _VIDEOS_DIR.is_dir():
+    app.mount("/api/videos", StaticFiles(directory=str(_VIDEOS_DIR)), name="videos")
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -893,6 +902,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def _migrate_legacy_video_urls():
+    """One-shot: rewrite any existing user.video_url from /videos/... to /api/videos/...
+    so previously-seeded demo users and onboarded humans keep working after the
+    static→backend video move.
+    """
+    try:
+        result = await db.users.update_many(
+            {"video_url": {"$regex": "^/videos/"}},
+            [{"$set": {"video_url": {"$concat": ["/api", "$video_url"]}}}],
+        )
+        if result.modified_count:
+            logger.info("Migrated %d users to /api/videos/* paths", result.modified_count)
+    except Exception:  # noqa: BLE001
+        logger.exception("video-url migration failed (non-fatal)")
 
 
 @app.on_event("shutdown")

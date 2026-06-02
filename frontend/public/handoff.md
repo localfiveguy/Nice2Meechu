@@ -13,7 +13,7 @@
 - FastAPI + React (CRA via craco) + MongoDB. All backend routes prefixed `/api`.
 - Backend: `/app/backend/server.py` (~900 lines, single-file) · env: `/app/backend/.env`
 - Frontend: `/app/frontend/src/App.js` (~1640 lines, single-file), `index.css`, `analytics.js` · env: `/app/frontend/.env`
-- Sample videos: `/app/frontend/public/videos/v{1..6}.{mp4,webm}` → served at `/videos/...`.
+- Sample videos: `/app/backend/videos/v{1..6}.{mp4,webm}` → served at `/api/videos/...` via FastAPI's `StaticFiles` (moved from `/app/frontend/public/videos/` so production CDN doesn't mangle the MIME type to `octet-stream`).
 - Supervisor: `sudo supervisorctl restart {backend|frontend}` after `.env`/deps; hot-reload otherwise. Use **yarn**, never npm.
 
 ### .env templates
