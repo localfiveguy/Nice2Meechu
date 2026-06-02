@@ -777,7 +777,7 @@ function VideoPick({ user, onDone }) {
     v.playsInline = true;
     v.onloadeddata = () => {
       // seek slightly past the start so we don't grab a black frame
-      try { v.currentTime = Math.min(0.6, (v.duration || 1) / 2); } catch { /* noop */ }
+      try { v.currentTime = Math.min(0.6, (v.duration || 1) / 2); } catch (err) { console.warn("video seek failed", err); }
     };
     v.onseeked = () => {
       try {
@@ -1188,7 +1188,7 @@ function ChangeLocationScreen({ user, onClose, onChanged }) {
           lng: f.geometry.coordinates[0],
         }));
         setSuggestions(items);
-      } catch { /* ignore */ }
+      } catch (err) { console.warn("city autocomplete failed", err); }
     }, 220);
   };
 
@@ -1221,7 +1221,7 @@ function ChangeLocationScreen({ user, onClose, onChanged }) {
           const j = await r.json();
           const f = j.features?.[0]?.properties;
           if (f) cityLabel = `${f.city || f.name || ""}${f.country ? ", " + f.country : ""}`.trim().replace(/^,\s*/, "");
-        } catch { /* ignore */ }
+        } catch (err) { console.warn("reverse geocode failed", err); }
         setCenter({ lat, lng, label: cityLabel || "Your location" });
         await persist(lat, lng, cityLabel);
       },
@@ -1272,7 +1272,7 @@ function ChangeLocationScreen({ user, onClose, onChanged }) {
           cityLabel = `${name}${f.country ? ", " + f.country : ""}`.trim().replace(/^,\s*/, "");
         }
       }
-    } catch { /* ignore */ }
+    } catch (err) { console.warn("map-tap reverse geocode failed", err); }
     setCenter({ lat, lng, label: cityLabel });
     track("location_map_tapped", { lat, lng });
     await persist(lat, lng, cityLabel);
@@ -1632,13 +1632,13 @@ function ChatScreen({ me, match, onBack }) {
   const [sending, setSending] = useState(false);
   const scrollRef = useRef(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const { data } = await api.get(`/messages/${match.match_id}`);
       setMessages(data.messages);
     } finally { setLoading(false); }
-  };
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  }, [match.match_id]);
+  useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 99999, behavior: "smooth" });
