@@ -492,6 +492,63 @@ function Onboarding({ user, onDone }) {
 }
 
 // ---------- City Autocomplete (Photon / OpenStreetMap) ----------
+// Friendly short country names + state abbreviations for the US.
+// Photon returns full state names ("New Jersey") and country names ("United States").
+const COUNTRY_SHORT = {
+  "United States": "USA",
+  "United States of America": "USA",
+  "United Kingdom": "UK",
+  "United Arab Emirates": "UAE",
+  "Russian Federation": "Russia",
+  "Republic of Korea": "South Korea",
+  "Democratic Republic of the Congo": "DR Congo",
+  "Bolivia (Plurinational State of)": "Bolivia",
+  "Venezuela (Bolivarian Republic of)": "Venezuela",
+  "Iran (Islamic Republic of)": "Iran",
+  "Czechia": "Czechia",
+  // Photon sometimes returns native country names — normalize the common ones.
+  "Deutschland": "Germany",
+  "España": "Spain",
+  "Italia": "Italy",
+  "Brasil": "Brazil",
+  "México": "Mexico",
+  "Polska": "Poland",
+  "Türkiye": "Turkey",
+  "Suomi": "Finland",
+  "Sverige": "Sweden",
+  "Norge": "Norway",
+  "Nederland": "Netherlands",
+  "Österreich": "Austria",
+  "Schweiz": "Switzerland",
+  "Magyarország": "Hungary",
+  "Ελλάδα": "Greece",
+  "日本": "Japan",
+  "中国": "China",
+  "대한민국": "South Korea",
+};
+const US_STATE_ABBR = {
+  Alabama:"AL", Alaska:"AK", Arizona:"AZ", Arkansas:"AR", California:"CA", Colorado:"CO",
+  Connecticut:"CT", Delaware:"DE", Florida:"FL", Georgia:"GA", Hawaii:"HI", Idaho:"ID",
+  Illinois:"IL", Indiana:"IN", Iowa:"IA", Kansas:"KS", Kentucky:"KY", Louisiana:"LA",
+  Maine:"ME", Maryland:"MD", Massachusetts:"MA", Michigan:"MI", Minnesota:"MN",
+  Mississippi:"MS", Missouri:"MO", Montana:"MT", Nebraska:"NE", Nevada:"NV",
+  "New Hampshire":"NH", "New Jersey":"NJ", "New Mexico":"NM", "New York":"NY",
+  "North Carolina":"NC", "North Dakota":"ND", Ohio:"OH", Oklahoma:"OK", Oregon:"OR",
+  Pennsylvania:"PA", "Rhode Island":"RI", "South Carolina":"SC", "South Dakota":"SD",
+  Tennessee:"TN", Texas:"TX", Utah:"UT", Vermont:"VT", Virginia:"VA", Washington:"WA",
+  "West Virginia":"WV", Wisconsin:"WI", Wyoming:"WY", "District of Columbia":"DC",
+};
+
+// Format Photon properties into "City, State, Country" — collapses
+// "United States" → "USA", and US states into 2-letter abbreviations.
+function formatCityLabel(p = {}) {
+  const country = COUNTRY_SHORT[p.country] || p.country || "";
+  let state = p.state || "";
+  if (country === "USA" && US_STATE_ABBR[state]) state = US_STATE_ABBR[state];
+  const parts = [p.name, state, country].filter(Boolean);
+  return parts.join(", ");
+}
+
 function CityAutocomplete({ value, onChange, onPick }) {
   const [suggestions, setSuggestions] = useState([]);
   const [open, setOpen] = useState(false);
@@ -510,10 +567,9 @@ function CityAutocomplete({ value, onChange, onPick }) {
         const data = await r.json();
         const items = (data?.features || []).map((f) => {
           const p = f.properties || {};
-          const parts = [p.name, p.state, p.country].filter(Boolean);
           const coords = f.geometry?.coordinates || []; // [lng, lat]
           return {
-            label: parts.join(", "),
+            label: formatCityLabel(p),
             value: p.name,
             lat: coords[1] ?? null,
             lng: coords[0] ?? null,
@@ -1206,14 +1262,18 @@ function ChangeLocationScreen({ user, onClose, onChanged }) {
       try {
         const r = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(v)}&limit=6&layer=city`);
         const j = await r.json();
-        const items = (j.features || []).map((f) => ({
-          value: `${f.properties.name}${f.properties.country ? ", " + f.properties.country : ""}`,
-          city: f.properties.name,
-          country: f.properties.country,
-          country_code: (f.properties.countrycode || "").toLowerCase(),
-          lat: f.geometry.coordinates[1],
-          lng: f.geometry.coordinates[0],
-        }));
+        const items = (j.features || []).map((f) => {
+          const p = f.properties || {};
+          return {
+            value: formatCityLabel(p),
+            city: p.name,
+            state: p.state,
+            country: p.country,
+            country_code: (p.countrycode || "").toLowerCase(),
+            lat: f.geometry.coordinates[1],
+            lng: f.geometry.coordinates[0],
+          };
+        });
         setSuggestions(items);
       } catch (err) { console.warn("city autocomplete failed", err); }
     }, 220);
@@ -1247,7 +1307,11 @@ function ChangeLocationScreen({ user, onClose, onChanged }) {
           const r = await fetch(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}&limit=1`);
           const j = await r.json();
           const f = j.features?.[0]?.properties;
-          if (f) cityLabel = `${f.city || f.name || ""}${f.country ? ", " + f.country : ""}`.trim().replace(/^,\s*/, "");
+          if (f) {
+            // Photon reverse uses `city` for the place name (instead of `name`).
+            const p = { ...f, name: f.city || f.name };
+            cityLabel = formatCityLabel(p);
+          }
         } catch (err) { console.warn("reverse geocode failed", err); }
         setCenter({ lat, lng, label: cityLabel || "Your location" });
         await persist(lat, lng, cityLabel);
@@ -1296,7 +1360,8 @@ function ChangeLocationScreen({ user, onClose, onChanged }) {
       if (f) {
         const name = f.city || f.name || f.county || f.state || "";
         if (name) {
-          cityLabel = `${name}${f.country ? ", " + f.country : ""}`.trim().replace(/^,\s*/, "");
+          const p = { ...f, name };
+          cityLabel = formatCityLabel(p);
         }
       }
     } catch (err) { console.warn("map-tap reverse geocode failed", err); }
