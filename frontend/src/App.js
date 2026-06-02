@@ -1152,8 +1152,9 @@ function ChangeLocationScreen({ user, onClose, onChanged }) {
     lng: user.city_lng || user.lng || -74.0060,
     label: user.city || "Drop a pin",
   });
-  const [busy, setBusy] = useState(null); // "geo" | "save" | null
+  const [busy, setBusy] = useState(null); // "geo" | "save" | "tap" | null
   const debounceRef = useRef(null);
+  const mapTapRef = useRef(null);
 
   // Load popular cities once on mount
   useEffect(() => {
@@ -1242,6 +1243,41 @@ function ChangeLocationScreen({ user, onClose, onChanged }) {
     persist(c.lat, c.lng, label);
   };
 
+  // Tap anywhere on the map preview → convert pixel to lat/lng using the
+  // currently-rendered bbox, reverse-geocode for a city label, then persist.
+  const handleMapTap = async (e) => {
+    if (busy) return;
+    const el = mapTapRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const lngMin = center.lng - D;
+    const lngMax = center.lng + D;
+    const latMin = center.lat - D / 2;
+    const latMax = center.lat + D / 2;
+    const lng = lngMin + (x / rect.width) * (lngMax - lngMin);
+    const lat = latMax - (y / rect.height) * (latMax - latMin);
+
+    setBusy("tap");
+    let cityLabel = `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+    try {
+      const r = await fetch(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}&limit=1`);
+      const j = await r.json();
+      const f = j.features?.[0]?.properties;
+      if (f) {
+        const name = f.city || f.name || f.county || f.state || "";
+        if (name) {
+          cityLabel = `${name}${f.country ? ", " + f.country : ""}`.trim().replace(/^,\s*/, "");
+        }
+      }
+    } catch { /* ignore */ }
+    setCenter({ lat, lng, label: cityLabel });
+    track("location_map_tapped", { lat, lng });
+    await persist(lat, lng, cityLabel);
+  };
+
   // OSM embed bbox (~0.2° square around the point)
   const D = 0.12;
   const bbox = `${center.lng - D},${center.lat - D / 2},${center.lng + D},${center.lat + D / 2}`;
@@ -1310,16 +1346,31 @@ function ChangeLocationScreen({ user, onClose, onChanged }) {
           </span>
         </button>
 
-        {/* Map preview */}
+        {/* Map preview — tap anywhere to pick that spot */}
         <div className="rounded-2xl overflow-hidden border border-white/10 bg-white/5 flex-shrink-0">
-          <iframe
-            key={`${center.lat}-${center.lng}`}
-            title="Map preview"
-            src={mapUrl}
-            className="w-full block"
-            style={{ height: 200, border: 0 }}
-            data-testid="change-location-map"
-          />
+          <div className="relative" style={{ height: 200 }}>
+            <iframe
+              key={`${center.lat}-${center.lng}`}
+              title="Map preview"
+              src={mapUrl}
+              className="absolute inset-0 w-full h-full"
+              style={{ border: 0 }}
+              data-testid="change-location-map"
+            />
+            <button
+              ref={mapTapRef}
+              type="button"
+              onClick={handleMapTap}
+              disabled={busy !== null}
+              className="absolute inset-0 cursor-crosshair disabled:cursor-wait"
+              aria-label="Tap to pick this spot"
+              data-testid="change-location-map-tap"
+            />
+            <div className="absolute top-2 left-2 glass-dark px-2 py-1 rounded-full text-[10px] uppercase tracking-widest font-bold text-white/85 pointer-events-none flex items-center gap-1">
+              <MapPin size={10} className="text-[#FF4D4D]" />
+              <span>{busy === "tap" ? "Resolving…" : "Tap map to pick"}</span>
+            </div>
+          </div>
           <div className="px-3 py-2 flex items-center gap-1.5 text-xs text-white/70">
             <MapPin size={12} className="text-[#FF4D4D]" />
             <span className="truncate">{center.label}</span>

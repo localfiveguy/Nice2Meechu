@@ -42,6 +42,12 @@ A hyperlocal, video-first social app where users connect by watching short video
 - Updated `SAMPLE_VIDEOS` constant to `/api/videos/v{n}.mp4`. Added one-shot startup migration that rewrites legacy `/videos/*` paths in `user.video_url` → `/api/videos/*`.
 - Verified preview: `Content-Type: video/mp4`, `readyState: 4`, 480×270 dimensions, no error.
 
+## Updated (2026-06-02 part 3) — Tap map to pick
+- The Change Location map now has a transparent **tap-catcher overlay** on top of the OSM iframe. User taps any spot → pixel coordinates convert to lat/lng via the rendered bbox → Photon reverse-geocode resolves a human-readable city/region → persisted via `POST /api/users/location`.
+- Visual hint pill on the map: "📍 Tap map to pick" (turns into "Resolving…" during the API call).
+- New GA4 event: `location_map_tapped`.
+- Verified: tapped east of Madrid → reverse-geocoded to "Madrid, España" → green toast → feed refreshed with Spanish demo user + live LLM EN-translation badge appeared.
+
 ## Updated (2026-06-02 part 2) — Change Location screen
 - Replaced the per-card "distance pill" tap-target with a full-screen **Change Location** modal modeled on the alpha screenshot:
   - 🔎 City search with debounced Photon autocomplete (`layer=city` — works for Tokyo, etc.)
