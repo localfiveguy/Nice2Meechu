@@ -36,13 +36,23 @@ A hyperlocal, video-first social app where users connect by watching short video
 - Frontend: replaced PhoneScreen + OtpScreen with `SignInScreen` (Google button) and `AuthCallback` (handles `#session_id=` URL fragment).
 - Code-review fixes applied: `secrets` module for cryptographically secure RNG (codename + demo seed + OTP-era); empty catch blocks now log; stable React keys instead of array indexes; nested ternary flattened.
 
-## Updated (2026-06-02)
-- **🐛 Production video playback fix (P0).** Mobile users on `nice2meechu.com` saw black video cards in the Feed because the production static CDN was serving `/videos/*.mp4` as `application/octet-stream` (no MIME sniffing, no byte-range). Mobile Chrome / Safari silently refused to autoplay.
-  - **Fix:** moved sample videos from `/app/frontend/public/videos/` to `/app/backend/videos/` and mounted via `app.mount("/api/videos", StaticFiles(directory="videos"))` in `server.py`. FastAPI sets proper `Content-Type: video/mp4` / `video/webm`. They now route through the `/api/*` ingress which preserves the header.
-  - Updated `SAMPLE_VIDEOS` constant to `/api/videos/v{n}.mp4`.
-  - Added one-shot startup migration that rewrites any existing `user.video_url` from `/videos/*` → `/api/videos/*` so prod-seeded demos + onboarded humans keep working post-deploy.
-  - Verified: preview backend returns `Content-Type: video/mp4` and `Content-Type: video/webm`; Playwright reports `readyState: 4`, `videoWidth/Height: 480×270`, no error.
-- Files kept in `/app/frontend/public/videos/` as well (no harm; can be removed in a future cleanup).
+## Updated (2026-06-02) — Production video playback fix (P0)
+- Mobile users on `nice2meechu.com` saw black video cards in the Feed because the production static CDN served `/videos/*.mp4` as `application/octet-stream` (no MIME sniffing, no byte-range) → mobile Chrome/Safari refused to autoplay.
+- **Fix:** moved sample videos from `/app/frontend/public/videos/` → `/app/backend/videos/` and mounted via `app.mount("/api/videos", StaticFiles(directory="videos"))`. FastAPI sets proper `Content-Type: video/mp4` / `video/webm`.
+- Updated `SAMPLE_VIDEOS` constant to `/api/videos/v{n}.mp4`. Added one-shot startup migration that rewrites legacy `/videos/*` paths in `user.video_url` → `/api/videos/*`.
+- Verified preview: `Content-Type: video/mp4`, `readyState: 4`, 480×270 dimensions, no error.
+
+## Updated (2026-06-02 part 2) — Change Location screen
+- Replaced the per-card "distance pill" tap-target with a full-screen **Change Location** modal modeled on the alpha screenshot:
+  - 🔎 City search with debounced Photon autocomplete (`layer=city` — works for Tokyo, etc.)
+  - 📡 "Use my current location" button (browser geolocation + Photon reverse-geocode)
+  - 🗺️ OpenStreetMap iframe preview centered on selected lat/lng (zero deps, no API key)
+  - 🔥 "Popular cities" list — curated baseline of 12 global cities (NYC, LA, London, Tokyo, Paris, Berlin, Madrid, Sydney, Mumbai, Lagos, São Paulo, Toronto) merged with live MongoDB signup counts
+- Backend: `GET /api/cities/popular` aggregates `users.city` (case-insensitive substring match), returns curated + real, sorted by people-count desc.
+- `POST /api/users/location` now also accepts optional `city` so picking a popular city updates the profile city + lat/lng atomically.
+- Feed pill now shows `· {city}` suffix on every card so you always see which city's feed you're browsing.
+- New GA4 event: `location_changed`.
+- Reverted the short-lived "distance filter" popover (1km/5km/25km/anywhere) — superseded by the location flow.
 
 ## Prioritized backlog
 - **P1** Real recorded-video upload to object storage (currently `URL.createObjectURL(blob)` — not persistent across sessions).

@@ -121,6 +121,7 @@ class MessageReq(BaseModel):
 class LocationUpdate(BaseModel):
     lat: float
     lng: float
+    city: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -346,8 +347,79 @@ async def accept_rules(req: RulesAcceptReq, user=Depends(current_user)):
 
 @api.post("/users/location")
 async def update_location(req: LocationUpdate, user=Depends(current_user)):
-    await db.users.update_one({"id": user["id"]}, {"$set": {"lat": req.lat, "lng": req.lng}})
+    update = {"lat": req.lat, "lng": req.lng}
+    if req.city and req.city.strip():
+        update["city"] = req.city.strip()[:120]
+        update["city_lat"] = req.lat
+        update["city_lng"] = req.lng
+    await db.users.update_one({"id": user["id"]}, {"$set": update})
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Popular cities (curated baseline merged with live signup counts)
+# ---------------------------------------------------------------------------
+CURATED_CITIES = [
+    {"city": "New York",  "country": "USA",       "country_code": "us", "flag": "🇺🇸", "lat": 40.7128,  "lng": -74.0060},
+    {"city": "Los Angeles","country": "USA",       "country_code": "us", "flag": "🇺🇸", "lat": 34.0522,  "lng": -118.2437},
+    {"city": "London",    "country": "UK",        "country_code": "gb", "flag": "🇬🇧", "lat": 51.5074,  "lng": -0.1278},
+    {"city": "Tokyo",     "country": "Japan",     "country_code": "jp", "flag": "🇯🇵", "lat": 35.6762,  "lng": 139.6503},
+    {"city": "Paris",     "country": "France",    "country_code": "fr", "flag": "🇫🇷", "lat": 48.8566,  "lng": 2.3522},
+    {"city": "Berlin",    "country": "Germany",   "country_code": "de", "flag": "🇩🇪", "lat": 52.5200,  "lng": 13.4050},
+    {"city": "Madrid",    "country": "Spain",     "country_code": "es", "flag": "🇪🇸", "lat": 40.4168,  "lng": -3.7038},
+    {"city": "Sydney",    "country": "Australia", "country_code": "au", "flag": "🇦🇺", "lat": -33.8688, "lng": 151.2093},
+    {"city": "Mumbai",    "country": "India",     "country_code": "in", "flag": "🇮🇳", "lat": 19.0760,  "lng": 72.8777},
+    {"city": "Lagos",     "country": "Nigeria",   "country_code": "ng", "flag": "🇳🇬", "lat": 6.5244,   "lng": 3.3792},
+    {"city": "São Paulo", "country": "Brazil",    "country_code": "br", "flag": "🇧🇷", "lat": -23.5505, "lng": -46.6333},
+    {"city": "Toronto",   "country": "Canada",    "country_code": "ca", "flag": "🇨🇦", "lat": 43.6532,  "lng": -79.3832},
+]
+
+
+@api.get("/cities/popular")
+async def cities_popular():
+    """Returns curated top-12 cities merged with real signup counts.
+    Real cities not in the curated list are appended (require city_lat/city_lng)."""
+    pipeline = [
+        {"$match": {"city": {"$nin": [None, ""]}}},
+        {"$group": {
+            "_id": {"$toLower": "$city"},
+            "raw_city": {"$first": "$city"},
+            "count": {"$sum": 1},
+            "lat": {"$first": "$city_lat"},
+            "lng": {"$first": "$city_lng"},
+        }},
+    ]
+    rows = await db.users.aggregate(pipeline).to_list(500)
+
+    out = []
+    matched_keys = set()
+    for c in CURATED_CITIES:
+        needle = c["city"].lower()
+        people = 0
+        for r in rows:
+            key = r["_id"]
+            if needle in key:
+                people += int(r["count"])
+                matched_keys.add(key)
+        out.append({**c, "people": people})
+
+    # Append real-only cities that weren't matched to a curated entry AND have coords.
+    for r in rows:
+        key = r["_id"]
+        if key in matched_keys:
+            continue
+        if r.get("lat") is None or r.get("lng") is None:
+            continue
+        parts = [p.strip() for p in (r.get("raw_city") or "").split(",")]
+        city = parts[0] or "Unknown"
+        country = parts[-1] if len(parts) > 1 else ""
+        out.append({
+            "city": city, "country": country, "country_code": "", "flag": "🌍",
+            "lat": float(r["lat"]), "lng": float(r["lng"]), "people": int(r["count"]),
+        })
+
+    out.sort(key=lambda x: (-x["people"], x["city"]))
+    return {"cities": out[:20]}
 
 
 @api.get("/users/me")
@@ -436,6 +508,7 @@ async def feed(user=Depends(current_user)):
     for c in candidates:
         if not c.get("video_url"):
             continue
+        dist = haversine_km(user.get("lat"), user.get("lng"), c.get("lat"), c.get("lng"))
         out.append(
             {
                 "id": c["id"],
@@ -446,7 +519,7 @@ async def feed(user=Depends(current_user)):
                 "video_url": c["video_url"],
                 "transcript": c.get("transcript", ""),
                 "source_lang": c.get("source_lang", "en"),
-                "distance_km": haversine_km(user.get("lat"), user.get("lng"), c.get("lat"), c.get("lng")),
+                "distance_km": dist,
             }
         )
     _rng.shuffle(out)

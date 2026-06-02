@@ -216,6 +216,7 @@ export default function App() {
           {screen === "feed" && user && (
             <FeedScreen key="feed"
               user={user}
+              setUser={setUser}
               onMatch={(m) => setMatchState(m)}
               onTab={(s) => setScreen(s)}
             />
@@ -1008,10 +1009,11 @@ function VideoPick({ user, onDone }) {
 }
 
 // ---------- Feed ----------
-function FeedScreen({ user, onMatch, onTab }) {
+function FeedScreen({ user, setUser, onMatch, onTab }) {
   const [feed, setFeed] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeIdx, setActiveIdx] = useState(0);
+  const [locationOpen, setLocationOpen] = useState(false);
   const scrollRef = useRef(null);
   const itemRefs = useRef([]);
 
@@ -1028,6 +1030,12 @@ function FeedScreen({ user, onMatch, onTab }) {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleLocationChanged = (updatedUser) => {
+    setLocationOpen(false);
+    if (updatedUser) setUser?.(updatedUser);
+    load();
+  };
 
   // intersection observer to detect which video is in view
   useEffect(() => {
@@ -1082,8 +1090,17 @@ function FeedScreen({ user, onMatch, onTab }) {
         <div className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center gap-3">
           <Sparkles size={32} className="text-[#00E5FF]" />
           <div className="font-display text-2xl font-black">All caught up</div>
-          <p className="text-sm text-white/55">You've seen everyone nearby. Come back later — new faces drop in all the time.</p>
-          <button className="btn-ghost mt-4" onClick={load} data-testid="feed-refresh">Refresh</button>
+          <p className="text-sm text-white/55">
+            {user.city
+              ? `You've seen everyone near ${user.city}. Switch cities to discover more.`
+              : "You've seen everyone nearby. Come back later — new faces drop in all the time."}
+          </p>
+          <div className="flex gap-2 mt-4">
+            <button className="btn-ghost" onClick={load} data-testid="feed-refresh">Refresh</button>
+            <button className="btn-ghost" onClick={() => setLocationOpen(true)} data-testid="feed-change-location">
+              <MapPin size={14} className="inline mr-1" /> Change city
+            </button>
+          </div>
         </div>
       )}
 
@@ -1100,6 +1117,8 @@ function FeedScreen({ user, onMatch, onTab }) {
               item={item}
               isActive={activeIdx === i}
               myLang={user.language || "en"}
+              currentCity={user.city}
+              onOpenLocation={() => setLocationOpen(true)}
               onLike={() => handleSwipe(i, "like")}
               onPass={() => handleSwipe(i, "pass")}
             />
@@ -1107,12 +1126,249 @@ function FeedScreen({ user, onMatch, onTab }) {
         ))}
       </div>
 
+      <AnimatePresence>
+        {locationOpen && (
+          <ChangeLocationScreen
+            key="change-location"
+            user={user}
+            onClose={() => setLocationOpen(false)}
+            onChanged={handleLocationChanged}
+          />
+        )}
+      </AnimatePresence>
+
       <BottomNav active="feed" onTab={onTab} />
     </motion.div>
   );
 }
 
-function FeedCard({ item, isActive, myLang, onLike, onPass }) {
+// ---------- Change Location screen (full-screen modal) ----------
+function ChangeLocationScreen({ user, onClose, onChanged }) {
+  const [query, setQuery] = useState("");
+  const [suggestions, setSuggestions] = useState([]);
+  const [popular, setPopular] = useState([]);
+  const [center, setCenter] = useState({
+    lat: user.city_lat || user.lat || 40.7128,
+    lng: user.city_lng || user.lng || -74.0060,
+    label: user.city || "Drop a pin",
+  });
+  const [busy, setBusy] = useState(null); // "geo" | "save" | null
+  const debounceRef = useRef(null);
+
+  // Load popular cities once on mount
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await api.get("/cities/popular");
+        if (alive) setPopular(data.cities || []);
+      } catch {
+        if (alive) setPopular([]);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // Debounced Photon city search
+  const onQueryChange = (v) => {
+    setQuery(v);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (v.trim().length < 2) { setSuggestions([]); return; }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const r = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(v)}&limit=6&layer=city`);
+        const j = await r.json();
+        const items = (j.features || []).map((f) => ({
+          value: `${f.properties.name}${f.properties.country ? ", " + f.properties.country : ""}`,
+          city: f.properties.name,
+          country: f.properties.country,
+          country_code: (f.properties.countrycode || "").toLowerCase(),
+          lat: f.geometry.coordinates[1],
+          lng: f.geometry.coordinates[0],
+        }));
+        setSuggestions(items);
+      } catch { /* ignore */ }
+    }, 220);
+  };
+
+  // Save the new location to backend, then notify parent to refresh feed
+  const persist = async (lat, lng, cityLabel) => {
+    setBusy("save");
+    try {
+      await api.post("/users/location", { lat, lng, city: cityLabel || null });
+      const { data } = await api.get("/auth/me");
+      track("location_changed", { city: cityLabel || "(coords only)" });
+      toast.success(`Now exploring ${cityLabel || "nearby"} ✨`);
+      onChanged(data.user);
+    } catch (e) {
+      toast.error("Couldn't update location");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const useMyLocation = () => {
+    if (!navigator.geolocation) { toast.error("Geolocation isn't available"); return; }
+    setBusy("geo");
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        // Reverse-geocode via Photon
+        let cityLabel = null;
+        try {
+          const r = await fetch(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}&limit=1`);
+          const j = await r.json();
+          const f = j.features?.[0]?.properties;
+          if (f) cityLabel = `${f.city || f.name || ""}${f.country ? ", " + f.country : ""}`.trim().replace(/^,\s*/, "");
+        } catch { /* ignore */ }
+        setCenter({ lat, lng, label: cityLabel || "Your location" });
+        await persist(lat, lng, cityLabel);
+      },
+      () => { toast.error("Couldn't access your location"); setBusy(null); },
+      { timeout: 8000, maximumAge: 60_000 }
+    );
+  };
+
+  const pickSuggestion = (item) => {
+    setCenter({ lat: item.lat, lng: item.lng, label: item.value });
+    setSuggestions([]);
+    setQuery(item.value);
+    persist(item.lat, item.lng, item.value);
+  };
+
+  const pickPopular = (c) => {
+    const label = `${c.city}${c.country ? ", " + c.country : ""}`;
+    setCenter({ lat: c.lat, lng: c.lng, label });
+    persist(c.lat, c.lng, label);
+  };
+
+  // OSM embed bbox (~0.2° square around the point)
+  const D = 0.12;
+  const bbox = `${center.lng - D},${center.lat - D / 2},${center.lng + D},${center.lat + D / 2}`;
+  const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${center.lat},${center.lng}`;
+
+  return (
+    <motion.div
+      className="absolute inset-0 z-50 bg-black flex flex-col"
+      initial={{ y: 24, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 24, opacity: 0 }}
+      transition={{ type: "spring", stiffness: 320, damping: 30 }}
+      data-testid="change-location-screen"
+    >
+      <div className="flex items-center justify-between px-6 pt-12 pb-3">
+        <h2 className="font-display text-2xl font-black">
+          Change location<span style={{ color: "#FF4D4D" }}>.</span>
+        </h2>
+        <button
+          onClick={onClose}
+          className="text-white/60 hover:text-white p-2 -mr-2"
+          aria-label="Close"
+          data-testid="change-location-close"
+        >
+          <X size={22} />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto no-scrollbar px-6 pb-10 flex flex-col gap-4">
+        {/* Search input */}
+        <div className="relative">
+          <input
+            className="n2m-input pr-10"
+            placeholder="Search a city…"
+            value={query}
+            onChange={(e) => onQueryChange(e.target.value)}
+            data-testid="change-location-search-input"
+            autoComplete="off"
+          />
+          <Sparkles size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
+          {suggestions.length > 0 && (
+            <div className="absolute left-0 right-0 mt-1 glass-dark rounded-2xl border border-white/10 max-h-64 overflow-y-auto z-10 shadow-2xl">
+              {suggestions.map((s, i) => (
+                <button
+                  key={`${s.value}-${i}`}
+                  onClick={() => pickSuggestion(s)}
+                  className="w-full text-left px-4 py-2.5 hover:bg-white/8 flex items-center justify-between gap-2"
+                  data-testid={`change-location-suggestion-${i}`}
+                >
+                  <span className="text-sm">{s.value}</span>
+                  <MapPin size={12} className="text-white/40 shrink-0" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Use my current location */}
+        <button
+          onClick={useMyLocation}
+          disabled={busy !== null}
+          className="w-full flex items-center justify-center gap-2 rounded-2xl py-3 bg-gradient-to-r from-[#FF4D4D]/15 to-[#00E5FF]/10 border border-white/12 hover:border-white/25 transition disabled:opacity-50"
+          data-testid="change-location-use-mine"
+        >
+          <span className="text-lg">📡</span>
+          <span className="font-bold text-sm">
+            {busy === "geo" ? "Locating…" : "Use my current location"}
+          </span>
+        </button>
+
+        {/* Map preview */}
+        <div className="rounded-2xl overflow-hidden border border-white/10 bg-white/5 flex-shrink-0">
+          <iframe
+            key={`${center.lat}-${center.lng}`}
+            title="Map preview"
+            src={mapUrl}
+            className="w-full block"
+            style={{ height: 200, border: 0 }}
+            data-testid="change-location-map"
+          />
+          <div className="px-3 py-2 flex items-center gap-1.5 text-xs text-white/70">
+            <MapPin size={12} className="text-[#FF4D4D]" />
+            <span className="truncate">{center.label}</span>
+          </div>
+        </div>
+
+        {/* Popular cities */}
+        <div className="mt-1">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🔥</span>
+              <h3 className="font-display text-base font-black">Popular cities</h3>
+            </div>
+            <span className="text-[10px] uppercase tracking-widest font-bold text-white/40">tap to jump</span>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            {popular.length === 0 && (
+              <div className="text-xs text-white/40 py-3">Loading hotspots…</div>
+            )}
+            {popular.map((c, i) => (
+              <button
+                key={`${c.city}-${c.country}-${i}`}
+                onClick={() => pickPopular(c)}
+                disabled={busy !== null || c.lat == null}
+                className="flex items-center gap-3 rounded-2xl px-3 py-2.5 bg-white/5 hover:bg-white/10 active:scale-[0.99] transition text-left disabled:opacity-50"
+                data-testid={`change-location-popular-${i}`}
+              >
+                <div className="text-2xl shrink-0">{c.flag}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-display text-base font-black truncate">{c.city}</div>
+                  <div className="text-xs text-white/45 truncate">{c.country || "—"}</div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className={`text-[10px] uppercase tracking-widest font-bold px-2 py-1 rounded-full ${c.people > 0 ? "bg-[#FF4D4D]/20 text-white" : "bg-white/8 text-white/55"}`}>
+                    {c.people === 1 ? "1 person" : `${c.people} people`}
+                  </span>
+                  <ArrowRight size={14} className="text-white/35" />
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, onOpenLocation }) {
   const vidRef = useRef(null);
   const [translated, setTranslated] = useState("");
   const [showCaption, setShowCaption] = useState(false);
@@ -1169,11 +1425,22 @@ function FeedCard({ item, isActive, myLang, onLike, onPass }) {
         <span className="font-display font-bold text-sm tracking-tight">{item.codename}</span>
       </div>
 
-      {/* distance badge */}
-      <div className="absolute top-5 right-5 flex items-center gap-1.5 glass-dark px-3 py-1.5 rounded-full text-xs font-bold" data-testid="feed-distance-badge">
+      {/* distance / location pill — tap to change feed location */}
+      <button
+        type="button"
+        onClick={onOpenLocation}
+        className="absolute top-5 right-5 flex items-center gap-1.5 glass-dark px-3 py-1.5 rounded-full text-xs font-bold transition hover:bg-white/15 active:scale-95"
+        data-testid="feed-distance-badge"
+        aria-label="Change feed location"
+      >
         <MapPin size={12} className="text-[#FF4D4D]" />
-        {item.distance_km < 100 ? `${item.distance_km} km` : "near you"}
-      </div>
+        <span>{item.distance_km < 100 ? `${item.distance_km} km` : "near you"}</span>
+        {currentCity && (
+          <span className="text-[9px] text-white/55 uppercase tracking-widest ml-0.5 max-w-[90px] truncate">
+            · {currentCity.split(",")[0]}
+          </span>
+        )}
+      </button>
 
       {/* vibes */}
       <div className="absolute top-20 left-5 right-24 flex flex-wrap gap-1.5">
