@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Heart, X, MapPin, Languages, ArrowRight, ArrowLeft, Sparkles,
   Send, MessageCircle, User as UserIcon, Video as VideoIcon, Camera,
-  Globe, Check, LogOut, Pause, Share2, Copy,
+  Globe, Check, LogOut, Pause, Share2, Copy, AlertTriangle,
 } from "lucide-react";
 import "@/App.css";
 import { initAnalytics, pageview, track } from "./analytics";
@@ -756,6 +756,7 @@ function VideoPick({ user, onDone }) {
   const [recording, setRecording] = useState(false);
   const [recordedBlob, setRecordedBlob] = useState(null);
   const recorderRef = useRef(null);
+  const [rejectReason, setRejectReason] = useState(null);
 
   const firstName = user?.first_name || "there";
   const city = user?.city || "your city";
@@ -875,6 +876,7 @@ function VideoPick({ user, onDone }) {
       r.onstop = () => {
         const blob = new Blob(chunks, { type: "video/webm" });
         setRecordedBlob(blob);
+        setRejectReason(null);
       };
       r.start();
       recorderRef.current = r;
@@ -916,12 +918,12 @@ function VideoPick({ user, onDone }) {
       <div className="mt-4 flex gap-2">
         <button
           className={`flex-1 px-4 py-2 rounded-full text-sm font-bold ${mode === "record" ? "bg-white text-black" : "bg-white/5 text-white/80"}`}
-          onClick={() => setMode("record")}
+          onClick={() => { setMode("record"); setRejectReason(null); }}
           data-testid="video-mode-record"
         >Record now</button>
         <button
           className={`flex-1 px-4 py-2 rounded-full text-sm font-bold ${mode === "pick" ? "bg-white text-black" : "bg-white/5 text-white/80"}`}
-          onClick={() => setMode("pick")}
+          onClick={() => { setMode("pick"); setRejectReason(null); }}
           data-testid="video-mode-pick"
         >Use a sample</button>
       </div>
@@ -992,6 +994,31 @@ function VideoPick({ user, onDone }) {
             <div className="text-[11px] text-white/55">AI is checking it's just your face. Takes ~2 seconds.</div>
           </div>
         </div>
+      )}
+
+      {rejectReason && phase !== "verifying" && (
+        <motion.div
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-4 rounded-2xl bg-[#FF4D4D]/12 border border-[#FF4D4D]/45 px-4 py-3 flex items-start gap-3"
+          data-testid="face-check-reject"
+          role="alert"
+        >
+          <AlertTriangle size={18} className="text-[#FF4D4D] shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <div className="text-sm font-bold text-white">Video rejected</div>
+            <div className="text-[11px] text-white/70 mt-0.5 leading-snug">{rejectReason}</div>
+            <div className="text-[11px] text-white/55 mt-1">Tap <span className="font-bold text-white/85">Record now</span> to try again, or pick <span className="font-bold text-white/85">Use a sample</span>.</div>
+          </div>
+          <button
+            onClick={() => setRejectReason(null)}
+            className="text-white/55 hover:text-white p-1 -mr-1 -mt-1"
+            aria-label="Dismiss"
+            data-testid="face-check-reject-dismiss"
+          >
+            <X size={14} />
+          </button>
+        </motion.div>
       )}
 
       <button
