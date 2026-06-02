@@ -44,17 +44,8 @@ logger = logging.getLogger("nice2meechu")
 
 
 # ---------------------------------------------------------------------------
-# Sample seed data
+# Seed data
 # ---------------------------------------------------------------------------
-SAMPLE_VIDEOS = [
-    {"url": "/api/videos/v1.mp4", "transcript": "Hey there! I love grabbing oat lattes at the corner cafe. Anyone up for a coffee crawl?", "lang": "en"},
-    {"url": "/api/videos/v2.mp4", "transcript": "Just wrapped a long studio session. Looking for someone to grab late-night ramen with.", "lang": "en"},
-    {"url": "/api/videos/v3.mp4", "transcript": "I run a tiny vinyl shop down the street. If you love jazz, slide into the feed.", "lang": "en"},
-    {"url": "/api/videos/v4.mp4", "transcript": "Hola! New in town. Show me your favourite spots and I will share mine.", "lang": "es"},
-    {"url": "/api/videos/v5.mp4", "transcript": "I bike everywhere. Hidden parks, weird ramen joints, rooftop sunsets. Tag along?", "lang": "en"},
-    {"url": "/api/videos/v6.mp4", "transcript": "Bonjour! Just moved here for art school. Looking for gallery buddies and study cafes.", "lang": "fr"},
-]
-
 VIBES_POOL = ["Coffee", "Vinyl", "Skater", "Foodie", "Bookworm", "Gamer", "Hiker", "Artist", "Runner", "Night Owl"]
 CODENAME_ADJ = ["Velvet", "Neon", "Midnight", "Ember", "Cosmic", "Aurora", "Silken", "Vivid", "Hazel", "Indigo"]
 CODENAME_NOUN = ["Fox", "Comet", "Drift", "Echo", "Lynx", "Mirage", "Orbit", "Phoenix", "Raven", "Tide"]
@@ -92,7 +83,6 @@ class RulesAcceptReq(BaseModel):
 
 
 class VideoUploadReq(BaseModel):
-    sample_index: Optional[int] = None
     video_url: Optional[str] = None
     transcript: Optional[str] = None
     source_lang: str = "en"
@@ -429,16 +419,9 @@ async def me(user=Depends(current_user)):
 
 @api.post("/users/video")
 async def upload_video(req: VideoUploadReq, user=Depends(current_user)):
-    if req.sample_index is not None and 0 <= req.sample_index < len(SAMPLE_VIDEOS):
-        sample = SAMPLE_VIDEOS[req.sample_index]
-        video_url = sample["url"]
-        transcript = sample["transcript"]
-        source_lang = sample["lang"]
-    else:
-        video_url = req.video_url or ""
-        transcript = req.transcript or "Hey, nice to meet you!"
-        source_lang = req.source_lang or "en"
-
+    video_url = req.video_url or ""
+    transcript = req.transcript or "Hey, nice to meet you!"
+    source_lang = req.source_lang or "en"
     await db.users.update_one(
         {"id": user["id"]},
         {"$set": {"video_url": video_url, "transcript": transcript, "source_lang": source_lang}},
@@ -461,34 +444,96 @@ def haversine_km(lat1, lng1, lat2, lng2) -> float:
     return round(2 * r * asin(sqrt(a)), 1)
 
 
+# ---------------------------------------------------------------------------
+# AI-generated demo users (Sora 2 talking-head videos) — seeded from
+# /app/backend/videos/demo_meta.json which the generator script produces.
+# Demos are distributed across the top-12 metro cities; count per city
+# equals (13 - rank), so #1 city gets 12 demos, #12 gets 1. Total = 78.
+# ---------------------------------------------------------------------------
+import json as _json  # noqa: E402
+
+
+def _load_demo_personas():
+    meta = ROOT_DIR / "videos" / "demo_meta.json"
+    if not meta.exists():
+        return []
+    try:
+        personas = _json.loads(meta.read_text())
+    except Exception:
+        return []
+    out = []
+    for p in personas:
+        vf = ROOT_DIR / "videos" / p.get("file", "")
+        # Only seed personas whose video has finished rendering on disk.
+        if vf.exists() and vf.stat().st_size > 50_000:
+            out.append(p)
+    return out
+
+
+_DEMO_HANDLE_POOL = [
+    "luna","kai","rumi","sol","indie","noa","milo","saga","ezra","nova",
+    "rio","jules","kira","arlo","kit","mika","theo","skye","lior","wren",
+    "wynn","aki","yuna","ben","tova","emi","kell","fia","aram","oren",
+    "lev","quinn","sage","yara","reese","jad","navi","tessa","caz","leda",
+    "shay","aya","ozzy","poppy","faye","cyrus","mara","ren","ida","oslo",
+    "esme","lia","amir","june","aksel","viv","callie","beau","tane","viola",
+    "lyle","onyx","sora","azul","palmer","gigi","jovi","cici","mae","oren2",
+    "blake","mae2","willa","fern","azure","klee","veda","yael",
+]
+
+
 async def seed_demo_users():
-    count = await db.users.count_documents({"is_demo": True})
-    if count >= len(SAMPLE_VIDEOS):
+    personas = _load_demo_personas()
+    if not personas:
         return
-    await db.users.delete_many({"is_demo": True})
-    demo_handles = ["luna", "kai", "rumi", "sol", "indie", "noa"]
-    base_lat, base_lng = 40.7128, -74.0060
-    for i, sample in enumerate(SAMPLE_VIDEOS):
+    desired_ids = {f"demo-{p['idx']:02d}" for p in personas}
+    existing = {
+        u["id"]
+        async for u in db.users.find({"is_demo": True}, {"_id": 0, "id": 1})
+    }
+    # Remove demos that no longer have a corresponding video on disk
+    stale = existing - desired_ids
+    if stale:
+        await db.users.delete_many({"id": {"$in": list(stale)}})
+    missing = desired_ids - existing
+    if not missing:
+        return
+    for p in personas:
+        uid = f"demo-{p['idx']:02d}"
+        if uid not in missing:
+            continue
+        handle = _DEMO_HANDLE_POOL[p["idx"] % len(_DEMO_HANDLE_POOL)]
         await db.users.insert_one(
             {
-                "id": f"demo-{i}",
+                "id": uid,
                 "is_demo": True,
-                "email": f"demo{i}@example.com",
-                "name": demo_handles[i % len(demo_handles)].title(),
+                "email": f"{uid}@nice2meechu.local",
+                "google_sub": uid,
+                "name": handle.title(),
                 "picture": None,
-                "handle": demo_handles[i % len(demo_handles)],
+                "first_name": handle.title(),
+                "handle": handle,
                 "codename": generate_codename(),
+                "city": p["city"],
+                "city_lat": p["lat"],
+                "city_lng": p["lng"],
+                "age": p.get("age", 26),
                 "vibes": _rng.sample(VIBES_POOL, 3),
-                "language": sample["lang"],
-                "avatar_emoji": _rng.choice(["🌙", "✨", "🔥", "🌊", "🌸", "🪐"]),
-                "lat": base_lat + (_rng.random() - 0.5) * 0.06,
-                "lng": base_lng + (_rng.random() - 0.5) * 0.06,
-                "video_url": sample["url"],
-                "transcript": sample["transcript"],
-                "source_lang": sample["lang"],
+                "language": p.get("lang", "en"),
+                "avatar_emoji": p.get("avatar_emoji", "🌙"),
+                "lat": p["lat"] + (_rng.random() - 0.5) * 0.05,
+                "lng": p["lng"] + (_rng.random() - 0.5) * 0.05,
+                "video_url": f"/api/videos/{p['file']}",
+                "transcript": p.get("transcript", ""),
+                "source_lang": p.get("lang", "en"),
+                "onboarding_phase": "done",
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
         )
+
+
+def _is_demo_user(target: dict) -> bool:
+    return bool(target.get("is_demo"))
 
 
 @api.get("/feed")
@@ -524,10 +569,6 @@ async def feed(user=Depends(current_user)):
         )
     _rng.shuffle(out)
     return {"feed": out[:20]}
-
-
-def _is_demo_user(target: dict) -> bool:
-    return bool(target.get("is_demo"))
 
 
 async def _check_mutual_match(target: dict, viewer_id: str) -> bool:
@@ -705,6 +746,7 @@ async def send_message(req: MessageReq, user=Depends(current_user)):
     await db.messages.insert_one(msg.copy())
     msg.pop("_id", None)
 
+    # Quick demo auto-reply so the chat doesn't feel empty in a demo match.
     other_id = [uid for uid in match["user_ids"] if uid != user["id"]][0]
     other = await db.users.find_one({"id": other_id}, {"_id": 0})
     if other and other.get("is_demo"):
@@ -721,7 +763,7 @@ async def send_message(req: MessageReq, user=Depends(current_user)):
                 "match_id": req.match_id,
                 "from_user_id": other_id,
                 "text": _rng.choice(replies),
-                "source_lang": "en",  # reply strings are English regardless of demo user's profile lang
+                "source_lang": "en",
                 "translations": {},
                 "at": datetime.now(timezone.utc).isoformat(),
             }
@@ -832,10 +874,6 @@ async def face_check(req: FaceCheckReq, user=Depends(current_user)):
 @api.get("/samples")
 async def list_samples():
     return {
-        "samples": [
-            {"index": i, "url": s["url"], "transcript": s["transcript"], "lang": s["lang"]}
-            for i, s in enumerate(SAMPLE_VIDEOS)
-        ],
         "vibes": VIBES_POOL,
         "languages": [{"code": k, "name": v} for k, v in LANG_NAMES.items()],
     }
@@ -978,20 +1016,19 @@ app.add_middleware(
 
 
 @app.on_event("startup")
-async def _migrate_legacy_video_urls():
-    """One-shot: rewrite any existing user.video_url from /videos/... to /api/videos/...
-    so previously-seeded demo users and onboarded humans keep working after the
-    static→backend video move.
+async def _retire_legacy_sample_demos():
+    """Delete old stock-video demo users (handles luna/kai/rumi/sol/indie/noa
+    whose video_url pointed at the deprecated /api/videos/v{n}.mp4 stock files).
+    New Sora 2 demos use demo-NN ids + /api/videos/demo_NN.mp4.
     """
     try:
-        result = await db.users.update_many(
-            {"video_url": {"$regex": "^/videos/"}},
-            [{"$set": {"video_url": {"$concat": ["/api", "$video_url"]}}}],
+        result = await db.users.delete_many(
+            {"is_demo": True, "video_url": {"$regex": r"/v\d+\.mp4$"}},
         )
-        if result.modified_count:
-            logger.info("Migrated %d users to /api/videos/* paths", result.modified_count)
+        if result.deleted_count:
+            logger.info("Retired %d legacy stock-video demo users", result.deleted_count)
     except Exception:  # noqa: BLE001
-        logger.exception("video-url migration failed (non-fatal)")
+        logger.exception("legacy demo cleanup failed (non-fatal)")
 
 
 @app.on_event("shutdown")

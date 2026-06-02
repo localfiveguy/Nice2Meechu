@@ -494,6 +494,12 @@ function Onboarding({ user, onDone }) {
 // ---------- City Autocomplete (Photon / OpenStreetMap) ----------
 // Friendly short country names + state abbreviations for the US.
 // Photon returns full state names ("New Jersey") and country names ("United States").
+function flagEmoji(cc) {
+  if (!cc || cc.length !== 2) return "";
+  const A = 0x1f1e6;
+  const c = cc.toLowerCase();
+  return String.fromCodePoint(A + (c.charCodeAt(0) - 97), A + (c.charCodeAt(1) - 97));
+}
 const COUNTRY_SHORT = {
   "United States": "USA",
   "United States of America": "USA",
@@ -800,9 +806,6 @@ const SignaturePad = React.forwardRef(function SignaturePad({ onChange }, ref) {
 
 // ---------- Video Pick / Record ----------
 function VideoPick({ user, onDone }) {
-  const [samples, setSamples] = useState([]);
-  const [selectedIdx, setSelectedIdx] = useState(0);
-  const [mode, setMode] = useState("record"); // record-first; sample is fallback
   const [loading, setLoading] = useState(false);
   // null | 'verifying' | 'saving'  → drives the button label so users know the
   // AI is actively reviewing their video (builds trust in the safety promise)
@@ -819,10 +822,6 @@ function VideoPick({ user, onDone }) {
   // Dynamic script — pulls in entered name + city
   const scriptText = `"Hello, my name is ${firstName}, and I live in ${city}. Nice to meet you!"`;
   const scriptTranscript = `Hello, my name is ${firstName}, and I live in ${city}. Nice to meet you!`;
-
-  useEffect(() => {
-    api.get("/samples").then(({ data }) => setSamples(data.samples)).catch((e) => console.error(e));
-  }, []);
 
   // Extract a single JPEG frame from the recorded blob via off-screen video + canvas.
   // Returns base64 (without the data: prefix) for the backend face-check.
@@ -855,44 +854,41 @@ function VideoPick({ user, onDone }) {
   });
 
   const save = async () => {
+    setRejectReason(null);
+    if (!recordedBlob) {
+      toast.error("Record your intro first");
+      return;
+    }
     setLoading(true);
     try {
-      if (mode === "record" && recordedBlob) {
-        // AI face / safety check on a captured frame BEFORE we accept the video
-        setPhase("verifying");
-        try {
-          const b64 = await captureFrameBase64(recordedBlob);
-          const { data: check } = await api.post("/video/face-check", { image_base64: b64 });
-          track("face_check_done", { ok: !!check.ok });
-          if (!check.ok) {
-            const why = check.reason || "Please record a clearer video of just your face.";
-            toast.error(`Video rejected: ${why}`);
-            setLoading(false);
-            setPhase(null);
-            return;
-          }
-        } catch (err) {
-          console.error("face check error", err);
-          // Fail-open — if we can't extract a frame, allow save (rare)
+      // AI face / safety check on a captured frame BEFORE we accept the video
+      setPhase("verifying");
+      try {
+        const b64 = await captureFrameBase64(recordedBlob);
+        const { data: check } = await api.post("/video/face-check", { image_base64: b64 });
+        track("face_check_done", { ok: !!check.ok });
+        if (!check.ok) {
+          const why = check.reason || "Please record a clearer video of just your face.";
+          setRejectReason(why);
+          setLoading(false);
+          setPhase(null);
+          return;
         }
-
-        setPhase("saving");
-        const blobUrl = URL.createObjectURL(recordedBlob);
-        await api.post("/users/video", {
-          video_url: blobUrl,
-          transcript: scriptTranscript,
-          source_lang: (user?.language || "en"),
-        });
-        track("video_intro_set", { source: "recorded" });
-        const me = await api.get("/users/me");
-        onDone(me.data.user);
-      } else {
-        setPhase("saving");
-        await api.post("/users/video", { sample_index: selectedIdx });
-        track("video_intro_set", { source: "sample", sample_index: selectedIdx });
-        const me = await api.get("/users/me");
-        onDone(me.data.user);
+      } catch (err) {
+        console.error("face check error", err);
+        // Fail-open — if we can't extract a frame, allow save (rare)
       }
+
+      setPhase("saving");
+      const blobUrl = URL.createObjectURL(recordedBlob);
+      await api.post("/users/video", {
+        video_url: blobUrl,
+        transcript: scriptTranscript,
+        source_lang: (user?.language || "en"),
+      });
+      track("video_intro_set", { source: "recorded" });
+      const me = await api.get("/users/me");
+      onDone(me.data.user);
     } catch {
       toast.error("Couldn't save your intro");
     } finally {
@@ -910,18 +906,17 @@ function VideoPick({ user, onDone }) {
         videoRef.current.play();
       }
     } catch {
-      toast.error("Camera permission denied. Use a sample instead.");
-      setMode("pick");
+      toast.error("Camera permission is needed to record your intro. Please enable it in your browser settings.");
     }
   };
 
   useEffect(() => {
-    if (mode === "record") startCamera();
+    startCamera();
     return () => {
       streamRef.current?.getTracks?.().forEach((t) => t.stop());
       streamRef.current = null;
     };
-  }, [mode]);
+  }, []);
 
   const toggleRecord = () => {
     if (!streamRef.current) return;
@@ -971,73 +966,29 @@ function VideoPick({ user, onDone }) {
         </div>
       </div>
 
-      <div className="mt-4 flex gap-2">
-        <button
-          className={`flex-1 px-4 py-2 rounded-full text-sm font-bold ${mode === "record" ? "bg-white text-black" : "bg-white/5 text-white/80"}`}
-          onClick={() => { setMode("record"); setRejectReason(null); }}
-          data-testid="video-mode-record"
-        >Record now</button>
-        <button
-          className={`flex-1 px-4 py-2 rounded-full text-sm font-bold ${mode === "pick" ? "bg-white text-black" : "bg-white/5 text-white/80"}`}
-          onClick={() => { setMode("pick"); setRejectReason(null); }}
-          data-testid="video-mode-pick"
-        >Use a sample</button>
-      </div>
-
-      {mode === "pick" ? (
-        <div className="mt-4 grid grid-cols-2 gap-3 pb-2" data-testid="sample-grid">
-          {samples.map((s, i) => (
-            <button
-              key={s.url}
-              onClick={() => setSelectedIdx(i)}
-              className={`relative aspect-[3/4] rounded-2xl overflow-hidden border-2 ${selectedIdx === i ? "border-[#FF4D4D]" : "border-white/8"}`}
-              data-testid={`sample-card-${i}`}
-            >
-              <VideoEl
-                src={s.url}
-                muted
-                loop
-                playsInline
-                autoPlay
-                preload="metadata"
-                className="w-full h-full object-cover bg-black"
-              />
-              <div className="absolute inset-x-0 bottom-0 p-2 text-[10px] font-bold uppercase tracking-widest text-white bg-gradient-to-t from-black/70 to-transparent">
-                {s.lang}
-              </div>
-              {selectedIdx === i && (
-                <div className="absolute top-2 right-2 w-7 h-7 rounded-full bg-[#FF4D4D] flex items-center justify-center">
-                  <Check size={14} />
-                </div>
-              )}
-            </button>
-          ))}
-        </div>
-      ) : (
-        <div className="mt-4 relative aspect-[3/4] rounded-3xl overflow-hidden bg-black">
-          <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
-          {!streamRef.current && !recordedBlob && (
-            <div className="absolute inset-0 flex items-center justify-center text-white/40 text-sm">
-              Press record to start
-            </div>
-          )}
-          <div className="absolute bottom-5 left-0 right-0 flex justify-center">
-            <button
-              className={`btn-icon ${recording ? "record-ring" : ""}`}
-              onClick={toggleRecord}
-              data-testid="record-toggle-button"
-              style={{ background: recording ? "#FF4D4D" : "rgba(255,255,255,0.15)" }}
-            >
-              {recording ? <Pause size={22} /> : <Camera size={22} />}
-            </button>
+      <div className="mt-4 relative aspect-[3/4] rounded-3xl overflow-hidden bg-black">
+        <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
+        {!streamRef.current && !recordedBlob && (
+          <div className="absolute inset-0 flex items-center justify-center text-white/40 text-sm">
+            Press record to start
           </div>
-          {recordedBlob && (
-            <div className="absolute top-3 left-3 text-xs glass-dark px-2 py-1 rounded-full font-bold">
-              Recorded ✓
-            </div>
-          )}
+        )}
+        <div className="absolute bottom-5 left-0 right-0 flex justify-center">
+          <button
+            className={`btn-icon ${recording ? "record-ring" : ""}`}
+            onClick={toggleRecord}
+            data-testid="record-toggle-button"
+            style={{ background: recording ? "#FF4D4D" : "rgba(255,255,255,0.15)" }}
+          >
+            {recording ? <Pause size={22} /> : <Camera size={22} />}
+          </button>
         </div>
-      )}
+        {recordedBlob && (
+          <div className="absolute top-3 left-3 text-xs glass-dark px-2 py-1 rounded-full font-bold">
+            Recorded ✓
+          </div>
+        )}
+      </div>
 
       {phase === "verifying" && (
         <div className="mt-4 rounded-2xl glass-dark border border-[#00E5FF]/30 px-4 py-3 flex items-center gap-3" data-testid="face-check-status">
@@ -1064,7 +1015,7 @@ function VideoPick({ user, onDone }) {
           <div className="flex-1">
             <div className="text-sm font-bold text-white">Video rejected</div>
             <div className="text-[11px] text-white/70 mt-0.5 leading-snug">{rejectReason}</div>
-            <div className="text-[11px] text-white/55 mt-1">Tap <span className="font-bold text-white/85">Record now</span> to try again, or pick <span className="font-bold text-white/85">Use a sample</span>.</div>
+            <div className="text-[11px] text-white/55 mt-1">Tap the record button to try again.</div>
           </div>
           <button
             onClick={() => setRejectReason(null)}
@@ -1080,7 +1031,7 @@ function VideoPick({ user, onDone }) {
       <button
         className="btn-primary mt-4 flex items-center justify-center gap-2"
         onClick={save}
-        disabled={loading || (mode === "record" && !recordedBlob)}
+        disabled={loading || !recordedBlob}
         data-testid="video-save-button"
       >
         {phase === "verifying" ? "Verifying your video…"
