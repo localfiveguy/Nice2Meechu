@@ -1133,7 +1133,7 @@ function FeedScreen({ user, setUser, onMatch, onTab }) {
                 aria-label="Change feed location"
               >
                 <MapPin size={12} className="text-[#FF4D4D]" />
-                <span className="text-[9px] text-white/70 uppercase tracking-widest max-w-[120px] truncate">
+                <span className="uppercase tracking-widest text-[10px] max-w-[140px] truncate">
                   {user.city.split(",")[0]}
                 </span>
               </button>
@@ -1622,12 +1622,9 @@ function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, onOpenL
         aria-label="Change feed location"
       >
         <MapPin size={12} className="text-[#FF4D4D]" />
-        <span>{item.distance_km < 100 ? `${item.distance_km} km` : "near you"}</span>
-        {currentCity && (
-          <span className="text-[9px] text-white/55 uppercase tracking-widest ml-0.5 max-w-[90px] truncate">
-            · {currentCity.split(",")[0]}
-          </span>
-        )}
+        <span className="uppercase tracking-widest text-[10px] max-w-[140px] truncate">
+          {currentCity ? currentCity.split(",")[0] : "set location"}
+        </span>
       </button>
 
       {/* vibes */}
