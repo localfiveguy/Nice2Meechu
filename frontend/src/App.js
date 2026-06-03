@@ -1163,6 +1163,33 @@ function FeedScreen({ user, setUser, onMatch, onTab }) {
                 >
                   <MapPin size={16} /> Explore another city
                 </button>
+                <button
+                  className="btn-ghost flex items-center gap-2 mt-1"
+                  onClick={async () => {
+                    const cityShort = (user.city || "").split(",")[0];
+                    const shareUrl = `${window.location.origin}/?ref=${encodeURIComponent(user.handle || "")}`;
+                    const shareText = `I'm the very first person on Nice2Meechu in ${cityShort}! Come meet people near you 👀 ${shareUrl}`;
+                    track("first_in_city_share_clicked", { city: cityShort });
+                    try {
+                      if (navigator.share) {
+                        await navigator.share({
+                          title: "Nice2Meechu",
+                          text: `I'm the first on Nice2Meechu in ${cityShort}! Join me 👀`,
+                          url: shareUrl,
+                        });
+                      } else {
+                        await navigator.clipboard.writeText(shareText);
+                        toast.success("Invite link copied — paste it anywhere!");
+                      }
+                    } catch (err) {
+                      // user cancelled, ignore
+                      if (err?.name !== "AbortError") console.warn("share failed", err);
+                    }
+                  }}
+                  data-testid="feed-first-share"
+                >
+                  <Share2 size={16} /> Share this app
+                </button>
                 <button className="text-xs text-white/45 underline" onClick={load} data-testid="feed-refresh">
                   Check again
                 </button>
