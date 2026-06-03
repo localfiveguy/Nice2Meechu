@@ -921,41 +921,49 @@ async def translate(req: TranslateReq):
 # ---------------------------------------------------------------------------
 @api.post("/video/face-check")
 async def face_check(req: FaceCheckReq, user=Depends(current_user)):
-    """Use GPT-4o vision to confirm the frame is one human face and content-safe.
+    """Use GPT-4o vision to (1) confirm the frame is one human face and content-safe,
+    AND (2) estimate the person's apparent age for age-assurance.
 
-    Returns: {ok: bool, reason: str}.
+    Returns: {ok: bool, reason: str, estimated_age: int|None, age_ok: bool}.
+    Rejects if estimated age < 18 OR if estimated age differs from the user's
+    declared age by more than 8 years (catches "I'm 30" when they look 15).
+
     If EMERGENT_LLM_KEY isn't configured we fail-open with ok=true so onboarding
     is never blocked by a misconfigured server.
     """
     img = (req.image_base64 or "").strip()
     if img.startswith("data:"):
-        # strip data URL prefix if the client sent it
         img = img.split(",", 1)[-1]
     if not img or len(img) < 200:
         raise HTTPException(400, "Image is required")
     if not EMERGENT_LLM_KEY:
-        return {"ok": True, "reason": "skipped (no key)"}
+        return {"ok": True, "reason": "skipped (no key)", "estimated_age": None, "age_ok": True}
 
+    declared_age = int(user.get("age") or 0)
     try:
         chat = LlmChat(
             api_key=EMERGENT_LLM_KEY,
             session_id=f"facecheck-{uuid.uuid4()}",
             system_message=(
-                "You are a strict content-safety reviewer for an intro-video social app. "
-                "Look at the supplied image (one frame from a user's intro video) and decide if it's acceptable. "
-                "Acceptable = exactly ONE clearly visible human face looking roughly at the camera, fully clothed, "
-                "no other people, no nudity / sexual content / hate symbols / weapons / illegal content / minors / blank screen. "
-                'Reply ONLY with strict JSON of the form {"ok": true|false, "reason": "<one short sentence>"}. '
+                "You are a strict content-safety + age-assurance reviewer for an intro-video social app. "
+                "Look at the supplied image (one frame from a user's intro video) and decide TWO things:\n"
+                "1. Is it acceptable? Acceptable = exactly ONE clearly visible human face looking roughly "
+                "at the camera, fully clothed, no other people, no nudity / sexual content / hate symbols / "
+                "weapons / illegal content / blank screen.\n"
+                "2. Estimate the person's apparent age in YEARS (integer). Be conservative — if they could "
+                "plausibly be a minor, err on the lower side. Do NOT rely on clothing or context; judge from "
+                "facial features only. Return null only if no face is visible.\n"
+                'Reply ONLY with strict JSON of the form '
+                '{"ok": true|false, "reason": "<one short sentence>", "estimated_age": <int or null>}. '
                 "No prose outside the JSON."
             ),
         ).with_model("openai", "gpt-4o-mini")
         msg = UserMessage(
-            text="Is this intro-video frame acceptable per the rules?",
+            text="Review this intro-video frame: is it acceptable, and what is the apparent age?",
             file_contents=[ImageContent(image_base64=img)],
         )
         raw = (await chat.send_message(msg)) or ""
         import json as _json
-        # Extract JSON even if the model wrapped it in code fences
         s = raw.strip()
         if "```" in s:
             s = s.split("```", 2)[1]
@@ -965,11 +973,47 @@ async def face_check(req: FaceCheckReq, user=Depends(current_user)):
         parsed = _json.loads(s)
         ok = bool(parsed.get("ok"))
         reason = str(parsed.get("reason") or "")[:300]
-        return {"ok": ok, "reason": reason}
+        est_raw = parsed.get("estimated_age")
+        estimated_age = int(est_raw) if isinstance(est_raw, (int, float)) and est_raw else None
+
+        # Age-assurance gate — only apply when the model returned a number AND
+        # the safety check itself passed (so we don't double-reject).
+        age_ok = True
+        if ok and estimated_age is not None:
+            if estimated_age < 18:
+                age_ok = False
+                reason = (
+                    f"You appear to be around {estimated_age}, but Nice2Meechu is 18+. "
+                    "If this is wrong, please retake with better lighting or a clearer angle."
+                )
+                ok = False
+            elif declared_age and abs(estimated_age - declared_age) > 8:
+                age_ok = False
+                reason = (
+                    f"Your video doesn't match the age you entered ({declared_age}). "
+                    "Please retake your intro, or update your profile."
+                )
+                ok = False
+
+        # Record the age-check outcome for audit trail (GDPR/DSA evidence)
+        try:
+            await db.age_checks.insert_one({
+                "id": str(uuid.uuid4()),
+                "user_id": user["id"],
+                "declared_age": declared_age,
+                "estimated_age": estimated_age,
+                "ok": ok,
+                "age_ok": age_ok,
+                "at": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception:  # noqa: BLE001
+            pass
+
+        return {"ok": ok, "reason": reason, "estimated_age": estimated_age, "age_ok": age_ok}
     except Exception as exc:  # noqa: BLE001
         logger.exception("face-check failed: %s", exc)
         # Fail-open so users aren't blocked by transient model issues
-        return {"ok": True, "reason": f"check unavailable ({exc.__class__.__name__})"}
+        return {"ok": True, "reason": f"check unavailable ({exc.__class__.__name__})", "estimated_age": None, "age_ok": True}
 
 
 @api.get("/samples")
