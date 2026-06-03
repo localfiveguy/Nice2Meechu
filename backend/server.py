@@ -418,6 +418,81 @@ async def me(user=Depends(current_user)):
     return {"user": user}
 
 
+@api.delete("/users/me")
+async def delete_my_account(
+    user=Depends(current_user),
+    response: Response = None,
+    authorization: Optional[str] = Header(None),
+    session_token: Optional[str] = Cookie(None),
+):
+    """GDPR Art. 17 / CCPA right to delete. Wipes the user and all data
+    they own (messages, swipes, matches involving them, sessions).
+    Demo users protected — cannot self-delete via this endpoint.
+    """
+    uid = user["id"]
+    if user.get("is_demo"):
+        raise HTTPException(403, "Demo users cannot be deleted via API")
+    await db.messages.delete_many({"$or": [{"from_user_id": uid}, {"to_user_id": uid}]})
+    await db.matches.delete_many({"user_ids": uid})
+    await db.swipes.delete_many({"$or": [{"user_id": uid}, {"target_user_id": uid}]})
+    await db.user_sessions.delete_many({"user_id": uid})
+    await db.users.delete_one({"id": uid})
+    if response is not None:
+        response.delete_cookie("session_token", path="/")
+    return {"ok": True, "deleted": uid}
+
+
+class ReportReq(BaseModel):
+    target_user_id: str
+    reason: str
+    details: Optional[str] = None
+    match_id: Optional[str] = None
+
+
+@api.post("/users/report")
+async def report_user(req: ReportReq, user=Depends(current_user)):
+    """User safety report — DSA Art. 16 compliant notice-and-action.
+    Also blocks the target from appearing in the reporter's feed.
+    """
+    if req.target_user_id == user["id"]:
+        raise HTTPException(400, "Cannot report yourself")
+    valid_reasons = {"impersonation", "harassment", "inappropriate", "spam", "underage", "csam", "other"}
+    reason = req.reason if req.reason in valid_reasons else "other"
+    await db.reports.insert_one({
+        "id": str(uuid.uuid4()),
+        "reporter_id": user["id"],
+        "target_user_id": req.target_user_id,
+        "reason": reason,
+        "details": (req.details or "")[:1000],
+        "match_id": req.match_id,
+        "status": "pending",
+        "at": datetime.now(timezone.utc).isoformat(),
+    })
+    # Also record an implicit block so the reporter never sees this user again
+    await db.swipes.update_one(
+        {"user_id": user["id"], "target_user_id": req.target_user_id},
+        {"$set": {"user_id": user["id"], "target_user_id": req.target_user_id, "action": "block", "at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+class BlockReq(BaseModel):
+    target_user_id: str
+
+
+@api.post("/users/block")
+async def block_user(req: BlockReq, user=Depends(current_user)):
+    if req.target_user_id == user["id"]:
+        raise HTTPException(400, "Cannot block yourself")
+    await db.swipes.update_one(
+        {"user_id": user["id"], "target_user_id": req.target_user_id},
+        {"$set": {"user_id": user["id"], "target_user_id": req.target_user_id, "action": "block", "at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
 @api.post("/users/video")
 async def upload_video(req: VideoUploadReq, user=Depends(current_user)):
     video_url = req.video_url or ""
@@ -584,6 +659,7 @@ async def feed(user=Depends(current_user)):
                 "transcript": c.get("transcript", ""),
                 "source_lang": c.get("source_lang", "en"),
                 "distance_km": dist,
+                "is_demo": bool(c.get("is_demo")),
                 "_city": (c.get("city") or "").lower(),
             }
         )
