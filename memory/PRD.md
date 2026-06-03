@@ -42,9 +42,17 @@ A hyperlocal, video-first social app where users connect by watching short video
 - Updated `SAMPLE_VIDEOS` constant to `/api/videos/v{n}.mp4`. Added one-shot startup migration that rewrites legacy `/videos/*` paths in `user.video_url` → `/api/videos/*`.
 - Verified preview: `Content-Type: video/mp4`, `readyState: 4`, 480×270 dimensions, no error.
 
-## Updated (2026-06-02 part 3) — Tap map to pick
+## Updated (2026-06-03) — AI-generated demo users (Sora 2)
+- **Removed all stock/sample videos** (`v1.mp4`…`v6.mp4`) and the "Use a sample" toggle in `VideoPick`. Real users must record their intro now — no fallback.
+- **New demo user pipeline:** `/app/backend/scripts/generate_demo_videos.py` generates Sora 2 talking-head videos via the Emergent LLM key, saves to `/app/backend/videos/demo_NN.mp4`, and writes `demo_meta.json` describing each persona (city, language, transcript, age, vibe, avatar, lat/lng).
+- **City distribution by population rank:** top-12 metros, count per city = `13 - rank` → Tokyo:12, São Paulo:11, Mumbai:10, NYC:9, Lagos:8, LA:7, Paris:6, London:5, Toronto:4, Madrid:3, Sydney:2, Berlin:1. Total = 78.
+- **Status:** 24 of 78 videos rendered before the Emergent LLM key hit `insufficient_balance`. Generator is idempotent. To resume → top-up balance + rerun the script. Steps in `/app/RESUME_DEMOS.md`.
+- **Backend:** restored `seed_demo_users()` to read `demo_meta.json` and only insert demo users whose MP4 file exists on disk. New startup hook `_retire_legacy_sample_demos` deletes old stock-video demo rows so the feed only ever shows AI personas.
+- Verified in preview: 24 demos seeded across 10 cities; first feed card shows "Velvet Tide · Tokyo · 2.8 km" with live JA→EN translated transcript.
+- Local SDK patch applied: `emergentintegrations.llm.openai.video_generation.SIZES` now includes `720x1280` (upstream was missing it; required by Sora 2 API).
 - The Change Location map now has a transparent **tap-catcher overlay** on top of the OSM iframe. User taps any spot → pixel coordinates convert to lat/lng via the rendered bbox → Photon reverse-geocode resolves a human-readable city/region → persisted via `POST /api/users/location`.
 - Visual hint pill on the map: "📍 Tap map to pick" (turns into "Resolving…" during the API call).
+## Updated (2026-06-02 part 3) — Tap map to pick
 - New GA4 event: `location_map_tapped`.
 - Verified: tapped east of Madrid → reverse-geocoded to "Madrid, España" → green toast → feed refreshed with Spanish demo user + live LLM EN-translation badge appeared.
 
