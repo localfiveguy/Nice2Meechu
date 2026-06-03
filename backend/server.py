@@ -1,6 +1,7 @@
 """Nice2Meechu backend - Google OAuth (Emergent), anonymous video feed, AI translation."""
 import logging
 import os
+import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -542,14 +543,34 @@ async def feed(user=Depends(current_user)):
     await seed_demo_users()
     swiped = await db.swipes.find({"user_id": user["id"]}, {"_id": 0, "target_user_id": 1}).to_list(2000)
     swiped_ids = {s["target_user_id"] for s in swiped}
-    cursor = db.users.find(
-        {
-            "id": {"$ne": user["id"], "$nin": list(swiped_ids)},
-            "video_url": {"$ne": None, "$exists": True},
-        },
-        {"_id": 0, "email": 0},
-    )
-    candidates = await cursor.to_list(50)
+    viewer_city_full = (user.get("city") or "").strip()
+    viewer_city = viewer_city_full.split(",")[0].strip().lower()
+
+    # Two-pass query: first try to fill the page with demos in the viewer's
+    # exact city, then top up with anyone else if there aren't enough. This
+    # prevents the local sort from being starved by an early `.to_list(50)`
+    # cut when there are 70+ total demos.
+    base_filter = {
+        "id": {"$ne": user["id"], "$nin": list(swiped_ids)},
+        "video_url": {"$ne": None, "$exists": True},
+    }
+    candidates: list = []
+    seen_ids: set = set()
+    if viewer_city:
+        # Case-insensitive contains match on `city`
+        city_filter = {
+            **base_filter,
+            "city": {"$regex": f"^{re.escape(viewer_city)}", "$options": "i"},
+        }
+        async for u in db.users.find(city_filter, {"_id": 0, "email": 0}).limit(40):
+            candidates.append(u)
+            seen_ids.add(u["id"])
+    # Fill the rest from outside the viewer's city
+    if len(candidates) < 20:
+        fill_filter = {**base_filter, "id": {**base_filter["id"], "$nin": list(swiped_ids | seen_ids)}}
+        async for u in db.users.find(fill_filter, {"_id": 0, "email": 0}).limit(60 - len(candidates)):
+            candidates.append(u)
+
     out = []
     for c in candidates:
         if not c.get("video_url"):
@@ -573,11 +594,7 @@ async def feed(user=Depends(current_user)):
     # Hyperlocal sort:
     #  1) Demos in the viewer's exact city come first (shuffled among themselves)
     #  2) Then everyone else, sorted by distance ascending
-    # This ensures "Show Mumbai" only surfaces Mumbai people first; if Mumbai
-    # has fewer demos than the page size, we fall back to nearest cities so
-    # the feed isn't empty.
-    viewer_city = (user.get("city") or "").split(",")[0].strip().lower()
-    same_city = [o for o in out if viewer_city and o["_city"] and viewer_city in o["_city"]]
+    same_city = [o for o in out if viewer_city and o["_city"] and o["_city"].startswith(viewer_city)]
     others = [o for o in out if o not in same_city]
     _rng.shuffle(same_city)
     others.sort(key=lambda o: o["distance_km"])
