@@ -1121,20 +1121,28 @@ function FeedScreen({ user, setUser, onMatch, onTab }) {
       )}
 
       {!loading && feed.length === 0 && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center gap-3">
-          <Sparkles size={32} className="text-[#00E5FF]" />
-          <div className="font-display text-2xl font-black">All caught up</div>
-          <p className="text-sm text-white/55">
-            {user.city
-              ? `You've seen everyone near ${user.city}. Switch cities to discover more.`
-              : "You've seen everyone nearby. Come back later — new faces drop in all the time."}
-          </p>
-          <div className="flex gap-2 mt-4">
-            <button className="btn-ghost" onClick={load} data-testid="feed-refresh">Refresh</button>
-            <button className="btn-ghost" onClick={() => setLocationOpen(true)} data-testid="feed-change-location">
-              <MapPin size={14} className="inline mr-1" /> Change city
-            </button>
+        <div className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center gap-4">
+          <div className="text-5xl">📍</div>
+          <div className="font-display text-2xl font-black leading-tight">
+            {user.city ? `No one in ${user.city.split(",")[0]} yet` : "Pick a city to begin"}
           </div>
+          <p className="text-sm text-white/60 max-w-[280px] leading-snug">
+            {user.city
+              ? "You're early! Be the first intro here, or switch to a city with more videos."
+              : "Tell us where to look and we'll show you the people nearby."}
+          </p>
+          <button
+            className="btn-primary mt-2 flex items-center gap-2"
+            onClick={() => setLocationOpen(true)}
+            data-testid="feed-change-location"
+          >
+            <MapPin size={16} /> {user.city ? "Change city" : "Set my city"}
+          </button>
+          {user.city && (
+            <button className="text-xs text-white/45 underline" onClick={load} data-testid="feed-refresh">
+              Try again
+            </button>
+          )}
         </div>
       )}
 

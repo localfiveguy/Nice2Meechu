@@ -546,29 +546,26 @@ async def feed(user=Depends(current_user)):
     viewer_city_full = (user.get("city") or "").strip()
     viewer_city = viewer_city_full.split(",")[0].strip().lower()
 
-    # Two-pass query: first try to fill the page with demos in the viewer's
-    # exact city, then top up with anyone else if there aren't enough. This
-    # prevents the local sort from being starved by an early `.to_list(50)`
-    # cut when there are 70+ total demos.
+    # STRICT hyperlocal: if the viewer has set a city, ONLY surface demos in
+    # that exact city. If there are none, return an empty feed and let the
+    # frontend prompt the user to change location. No silent fallback — the
+    # whole point of "near you" is to be honest about it.
     base_filter = {
         "id": {"$ne": user["id"], "$nin": list(swiped_ids)},
         "video_url": {"$ne": None, "$exists": True},
     }
     candidates: list = []
-    seen_ids: set = set()
     if viewer_city:
-        # Case-insensitive contains match on `city`
         city_filter = {
             **base_filter,
             "city": {"$regex": f"^{re.escape(viewer_city)}", "$options": "i"},
         }
-        async for u in db.users.find(city_filter, {"_id": 0, "email": 0}).limit(40):
+        async for u in db.users.find(city_filter, {"_id": 0, "email": 0}).limit(60):
             candidates.append(u)
-            seen_ids.add(u["id"])
-    # Fill the rest from outside the viewer's city
-    if len(candidates) < 20:
-        fill_filter = {**base_filter, "id": {**base_filter["id"], "$nin": list(swiped_ids | seen_ids)}}
-        async for u in db.users.find(fill_filter, {"_id": 0, "email": 0}).limit(60 - len(candidates)):
+    else:
+        # No city set yet → fall back to nearest by distance so a brand-new
+        # user without a city still sees content.
+        async for u in db.users.find(base_filter, {"_id": 0, "email": 0}).limit(60):
             candidates.append(u)
 
     out = []
@@ -591,17 +588,12 @@ async def feed(user=Depends(current_user)):
             }
         )
 
-    # Hyperlocal sort:
-    #  1) Demos in the viewer's exact city come first (shuffled among themselves)
-    #  2) Then everyone else, sorted by distance ascending
-    same_city = [o for o in out if viewer_city and o["_city"] and o["_city"].startswith(viewer_city)]
-    others = [o for o in out if o not in same_city]
-    _rng.shuffle(same_city)
-    others.sort(key=lambda o: o["distance_km"])
-    ordered = same_city + others
-    for o in ordered:
+    # Strict hyperlocal — only same-city demos surface; sort newest-first
+    # within the city via a randomized shuffle so the feed feels fresh.
+    _rng.shuffle(out)
+    for o in out:
         o.pop("_city", None)
-    return {"feed": ordered[:20]}
+    return {"feed": out[:20]}
 
 
 async def _check_mutual_match(target: dict, viewer_id: str) -> bool:
