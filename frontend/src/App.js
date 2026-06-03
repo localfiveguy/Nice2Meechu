@@ -1284,12 +1284,12 @@ function ChangeLocationScreen({ user, onClose, onChanged }) {
         if (code === 1) {
           // PERMISSION_DENIED — could be user-blocked OR iframe sandboxing
           msg = inIframe
-            ? "Geolocation is blocked in the preview window. It works on nice2meechu.com — or tap the map / pick a city instead."
-            : "Location permission denied. Tap the map or pick a city below.";
+            ? "Geolocation is blocked in the preview window. It works on nice2meechu.com — or enter a city, tap the map, or pick a popular city below."
+            : "Location permission denied. Enter a city, tap the map, or pick a popular city below.";
         } else if (code === 2) {
-          msg = "Location unavailable right now. Tap the map or pick a city below.";
+          msg = "Location unavailable right now. Enter a city, tap the map, or pick a popular city below.";
         } else if (code === 3) {
-          msg = "Locating timed out. Tap the map or pick a city below.";
+          msg = "Locating timed out. Enter a city, tap the map, or pick a popular city below.";
         }
         toast.error(msg);
         setBusy(null);
