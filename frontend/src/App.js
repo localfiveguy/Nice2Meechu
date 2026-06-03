@@ -1247,7 +1247,18 @@ function ChangeLocationScreen({ user, onClose, onChanged }) {
   };
 
   const useMyLocation = () => {
-    if (!navigator.geolocation) { toast.error("Geolocation isn't available"); return; }
+    if (!navigator.geolocation) {
+      toast.error("Geolocation isn't available in this browser");
+      return;
+    }
+    // Detect the iframe sandbox case (Emergent Preview, etc.) — geolocation
+    // requires the parent <iframe> to set allow="geolocation" which most
+    // preview shells don't. The production site at nice2meechu.com is
+    // top-level, so the API works fine there.
+    const inIframe = (() => {
+      try { return window.self !== window.top; } catch { return true; }
+    })();
+
     setBusy("geo");
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
@@ -1267,7 +1278,22 @@ function ChangeLocationScreen({ user, onClose, onChanged }) {
         setCenter({ lat, lng, label: cityLabel || "Your location" });
         await persist(lat, lng, cityLabel);
       },
-      () => { toast.error("Couldn't access your location"); setBusy(null); },
+      (err) => {
+        const code = err && err.code;
+        let msg = "Couldn't access your location";
+        if (code === 1) {
+          // PERMISSION_DENIED — could be user-blocked OR iframe sandboxing
+          msg = inIframe
+            ? "Geolocation is blocked in the preview window. It works on nice2meechu.com — or tap the map / pick a city instead."
+            : "Location permission denied. Tap the map or pick a city below.";
+        } else if (code === 2) {
+          msg = "Location unavailable right now. Tap the map or pick a city below.";
+        } else if (code === 3) {
+          msg = "Locating timed out. Tap the map or pick a city below.";
+        }
+        toast.error(msg);
+        setBusy(null);
+      },
       { timeout: 8000, maximumAge: 60_000 }
     );
   };
