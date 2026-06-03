@@ -673,7 +673,7 @@ function CommunityRulesScreen({ onDone }) {
       data-testid="community-rules-screen"
     >
       <h2 className="font-display text-3xl font-black leading-tight">Community<br/>rules<span style={{ color: "#FF4D4D" }}>.</span></h2>
-      <p className="mt-3 text-sm text-white/55">Check every box and sign below to continue.</p>
+      <p className="mt-3 text-sm text-white/55">Read every line, check every box, and sign below to continue.</p>
 
       <div className="mt-6 glass-dark rounded-2xl divide-y divide-white/8" data-testid="rules-list">
         {COMMUNITY_RULES.map((rule, i) => (
