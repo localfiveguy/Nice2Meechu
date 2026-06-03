@@ -1521,10 +1521,20 @@ function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, onOpenL
         ref={vidRef}
         loop
         playsInline
-        muted
+        muted={muted}
         preload="metadata"
         className="w-full h-full object-cover bg-black"
-        onClick={() => setMuted((m) => !m)}
+        onClick={() => {
+          // Toggle on state AND on the underlying element so the change is
+          // applied immediately (boolean DOM props don't always re-sync via
+          // React's diffing alone on mid-playback toggles).
+          setMuted((m) => {
+            const next = !m;
+            if (vidRef.current) vidRef.current.muted = next;
+            track("feed_video_mute_toggled", { muted: next });
+            return next;
+          });
+        }}
         data-testid="feed-card-video"
         key={item.video_url}
       >
@@ -1533,6 +1543,15 @@ function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, onOpenL
         )}
         <source src={item.video_url} type={item.video_url?.endsWith(".webm") ? "video/webm" : "video/mp4"} />
       </video>
+      {/* tap-to-unmute pill (top-center) — shown only while muted */}
+      {muted && (
+        <div
+          className="absolute top-5 left-1/2 -translate-x-1/2 glass-dark px-3 py-1 rounded-full text-[10px] uppercase tracking-widest font-bold text-white/85 pointer-events-none flex items-center gap-1"
+          data-testid="feed-mute-hint"
+        >
+          <span>🔇</span><span>tap to unmute</span>
+        </div>
+      )}
       {/* gradient overlays */}
       <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-transparent to-transparent pointer-events-none" />
       <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent pointer-events-none" />

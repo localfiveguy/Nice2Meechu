@@ -503,15 +503,16 @@ async def seed_demo_users():
         if uid not in missing:
             continue
         handle = _DEMO_HANDLE_POOL[p["idx"] % len(_DEMO_HANDLE_POOL)]
+        first_name = p.get("name") or handle.title()
         await db.users.insert_one(
             {
                 "id": uid,
                 "is_demo": True,
                 "email": f"{uid}@nice2meechu.local",
                 "google_sub": uid,
-                "name": handle.title(),
+                "name": first_name,
                 "picture": None,
-                "first_name": handle.title(),
+                "first_name": first_name,
                 "handle": handle,
                 "codename": generate_codename(),
                 "city": p["city"],

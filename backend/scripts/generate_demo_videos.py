@@ -61,6 +61,22 @@ VIBES_BY_CITY = {
     "Berlin":      ["Kreuzberg vinyl shop"],
 }
 
+# Popular first names by city (mix of native + international, cycled per city).
+NAMES_BY_CITY = {
+    "Tokyo":       ["Yui", "Haruto", "Sakura", "Riku", "Aoi", "Sota", "Mei", "Hinata", "Kazuki", "Rin", "Ren", "Hana"],
+    "São Paulo":   ["Lucas", "Sofia", "Mateus", "Helena", "Pedro", "Alice", "Davi", "Manuela", "Gabriel", "Laura", "Arthur"],
+    "Mumbai":      ["Aarav", "Ananya", "Vihaan", "Diya", "Aditya", "Saanvi", "Ishaan", "Aanya", "Reyansh", "Myra"],
+    "New York":    ["Olivia", "Liam", "Emma", "Noah", "Ava", "Ethan", "Mia", "Lucas", "Sophia"],
+    "Lagos":       ["Chinedu", "Adaeze", "Tunde", "Ngozi", "Oluwaseun", "Folake", "Emeka", "Chiamaka"],
+    "Los Angeles": ["Sofia", "Diego", "Camila", "Mateo", "Isabella", "Lucas", "Valentina"],
+    "Paris":       ["Léa", "Hugo", "Emma", "Louis", "Jade", "Gabriel"],
+    "London":      ["Oliver", "Amelia", "Harry", "Mia", "Jack"],
+    "Toronto":     ["Ethan", "Olivia", "Noah", "Emma"],
+    "Madrid":      ["Lucía", "Hugo", "Sofía"],
+    "Sydney":      ["Charlotte", "Oliver"],
+    "Berlin":      ["Emilia"],
+}
+
 # Transcript copy per language (kept short, friendly, ~3 sec read).
 TRANSCRIPTS = {
     "en": [
@@ -145,24 +161,28 @@ _rng = random.Random(2026)
 
 def build_personas():
     personas = []
-    transcript_idx = {k: 0 for k in TRANSCRIPTS}
+    name_idx = {k: 0 for k in NAMES_BY_CITY}
     for rank, (city, lat, lng, lang) in enumerate(CITY_PLAN, start=1):
         count = 13 - rank  # rank 1 -> 12, rank 12 -> 1
         vibes = VIBES_BY_CITY[city]
+        names = NAMES_BY_CITY[city]
         for j in range(count):
             idx = len(personas)
             gender = _rng.choice(GENDERS)
             hair = _rng.choice(HAIRS)
             scene = vibes[j % len(vibes)]
-            tlist = TRANSCRIPTS[lang]
-            transcript = tlist[transcript_idx[lang] % len(tlist)]
-            transcript_idx[lang] += 1
+            name = names[name_idx[city] % len(names)]
+            name_idx[city] += 1
+            transcript = f"Hi, my name is {name}, and I live in {city}."
             age = _rng.randint(22, 33)
             prompt = (
                 f"A 4-second vertical selfie-style intro video for a social app. "
-                f"A {gender}, around {age} years old, with {hair}, smiling warmly at the camera in {scene}, {city}. "
-                f"Soft natural lighting, shallow depth of field, gentle subtle motion (slight head tilt, hair drift, ambient sway). "
-                f"Photo-realistic, looks like a real iPhone selfie video. No text overlay, no logo. Friendly, inviting vibe."
+                f"A {gender}, around {age} years old, with {hair}, in {scene}, {city}. "
+                f"They look directly into the camera and clearly say the line "
+                f'"Hi, my name is {name}, and I live in {city}." in a warm, friendly voice. '
+                f"Their lips move naturally with the words. Real human voice, conversational tone, no music or background voices. "
+                f"Soft natural lighting, shallow depth of field, gentle subtle motion (hair drift, ambient sway). "
+                f"Photo-realistic, looks like a real iPhone selfie video. No text overlay, no logo."
             )
             personas.append({
                 "idx": idx,
@@ -173,6 +193,7 @@ def build_personas():
                 "lang": lang,
                 "age": age,
                 "gender": gender,
+                "name": name,
                 "transcript": transcript,
                 "prompt": prompt,
                 "avatar_emoji": AVATARS[idx % len(AVATARS)],

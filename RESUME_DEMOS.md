@@ -15,6 +15,13 @@ The original plan was 78 videos — 24 succeeded before the LLM key hit
 
 ## To resume (and pay for the rest)
 
+> **Important** — the 24 already-rendered videos used the original generic prompt (no specific dialogue), so their audio is silent or improvised. The new generator prompts Sora to **say the exact line "Hi, my name is {NAME}, and I live in {CITY}."** with lip-sync. To get matching audio for the 24 existing ones, delete them first so they get re-rendered:
+> ```bash
+> # OPTIONAL — only if you want the 24 existing videos to be re-spoken with the new line.
+> # Skip if you're OK with the 24 existing being silent / off-script.
+> rm /app/backend/videos/demo_*.mp4 /app/backend/videos/demo_meta.json
+> ```
+
 1. **Top up the Emergent LLM key.**
    In the Emergent workspace: *Profile → Universal Key → Add Balance*
    (or enable auto-top-up). Budget hint: ~$0.10–0.50 per 4-sec Sora 2 video.
