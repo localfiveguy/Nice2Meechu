@@ -1121,29 +1121,70 @@ function FeedScreen({ user, setUser, onMatch, onTab }) {
       )}
 
       {!loading && feed.length === 0 && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center gap-4">
-          <div className="text-5xl">📍</div>
-          <div className="font-display text-2xl font-black leading-tight">
-            {user.city ? `No one in ${user.city.split(",")[0]} yet` : "Pick a city to begin"}
-          </div>
-          <p className="text-sm text-white/60 max-w-[280px] leading-snug">
-            {user.city
-              ? "You're early! Be the first intro here, or switch to a city with more videos."
-              : "Tell us where to look and we'll show you the people nearby."}
-          </p>
-          <button
-            className="btn-primary mt-2 flex items-center gap-2"
-            onClick={() => setLocationOpen(true)}
-            data-testid="feed-change-location"
-          >
-            <MapPin size={16} /> {user.city ? "Change city" : "Set my city"}
-          </button>
+        <>
+          {/* Persistent city pill in the empty state so the user always sees the
+              control they need to discover content. */}
           {user.city && (
-            <button className="text-xs text-white/45 underline" onClick={load} data-testid="feed-refresh">
-              Try again
-            </button>
+            <div className="absolute top-5 right-5 z-10 flex flex-col items-end gap-1">
+              <button
+                onClick={() => setLocationOpen(true)}
+                className="flex items-center gap-1.5 glass-dark px-3 py-1.5 rounded-full text-xs font-bold transition hover:bg-white/15 active:scale-95"
+                data-testid="feed-distance-badge"
+                aria-label="Change feed location"
+              >
+                <MapPin size={12} className="text-[#FF4D4D]" />
+                <span className="text-[9px] text-white/70 uppercase tracking-widest max-w-[120px] truncate">
+                  {user.city.split(",")[0]}
+                </span>
+              </button>
+              <div className="text-[10px] uppercase tracking-widest font-bold text-white/70 flex items-center gap-1 pr-1">
+                <span>to change location</span>
+                <span aria-hidden>☝️</span>
+              </div>
+            </div>
           )}
-        </div>
+
+          <div className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center gap-4">
+            {user.city ? (
+              <>
+                <div className="text-6xl" aria-hidden>🎉</div>
+                <div className="font-display text-2xl font-black leading-tight">
+                  You're the first<br />
+                  in {user.city.split(",")[0]}!
+                </div>
+                <p className="text-sm text-white/65 max-w-[290px] leading-snug">
+                  Congrats — your intro will be the very first face people see when they explore this city.
+                  Share Nice2Meechu with friends nearby, or hop to a busier city while you wait.
+                </p>
+                <button
+                  className="btn-primary mt-2 flex items-center gap-2"
+                  onClick={() => setLocationOpen(true)}
+                  data-testid="feed-change-location"
+                >
+                  <MapPin size={16} /> Explore another city
+                </button>
+                <button className="text-xs text-white/45 underline" onClick={load} data-testid="feed-refresh">
+                  Check again
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="text-5xl" aria-hidden>📍</div>
+                <div className="font-display text-2xl font-black leading-tight">Pick a city to begin</div>
+                <p className="text-sm text-white/60 max-w-[280px] leading-snug">
+                  Tell us where to look and we'll show you the people nearby.
+                </p>
+                <button
+                  className="btn-primary mt-2 flex items-center gap-2"
+                  onClick={() => setLocationOpen(true)}
+                  data-testid="feed-change-location"
+                >
+                  <MapPin size={16} /> Set my city
+                </button>
+              </>
+            )}
+          </div>
+        </>
       )}
 
       <div ref={scrollRef} className="n2m-feed" data-testid="feed-scroll">
