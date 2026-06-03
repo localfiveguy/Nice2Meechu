@@ -566,10 +566,25 @@ async def feed(user=Depends(current_user)):
                 "transcript": c.get("transcript", ""),
                 "source_lang": c.get("source_lang", "en"),
                 "distance_km": dist,
+                "_city": (c.get("city") or "").lower(),
             }
         )
-    _rng.shuffle(out)
-    return {"feed": out[:20]}
+
+    # Hyperlocal sort:
+    #  1) Demos in the viewer's exact city come first (shuffled among themselves)
+    #  2) Then everyone else, sorted by distance ascending
+    # This ensures "Show Mumbai" only surfaces Mumbai people first; if Mumbai
+    # has fewer demos than the page size, we fall back to nearest cities so
+    # the feed isn't empty.
+    viewer_city = (user.get("city") or "").split(",")[0].strip().lower()
+    same_city = [o for o in out if viewer_city and o["_city"] and viewer_city in o["_city"]]
+    others = [o for o in out if o not in same_city]
+    _rng.shuffle(same_city)
+    others.sort(key=lambda o: o["distance_km"])
+    ordered = same_city + others
+    for o in ordered:
+        o.pop("_city", None)
+    return {"feed": ordered[:20]}
 
 
 async def _check_mutual_match(target: dict, viewer_id: str) -> bool:
