@@ -173,14 +173,14 @@ def build_personas():
             scene = vibes[j % len(vibes)]
             name = names[name_idx[city] % len(names)]
             name_idx[city] += 1
-            transcript = f"Hi, my name is {name}, and I live in {city}."
+            transcript = f"Hi! My name is {name}! I live in {city}! Nice to meet you!"
             age = _rng.randint(22, 33)
             prompt = (
                 f"A 4-second vertical selfie-style intro video for a social app. "
                 f"A {gender}, around {age} years old, with {hair}, in {scene}, {city}. "
-                f"They look directly into the camera and clearly say the line "
-                f'"Hi, my name is {name}, and I live in {city}." in a warm, friendly voice. '
-                f"Their lips move naturally with the words. Real human voice, conversational tone, no music or background voices. "
+                f"They look directly into the camera and enthusiastically say the line "
+                f'"Hi! My name is {name}! I live in {city}! Nice to meet you!" in a warm, friendly, energetic voice. '
+                f"Their lips move naturally with each word and they smile. Real human voice, conversational tone, no music or background voices. "
                 f"Soft natural lighting, shallow depth of field, gentle subtle motion (hair drift, ambient sway). "
                 f"Photo-realistic, looks like a real iPhone selfie video. No text overlay, no logo."
             )
