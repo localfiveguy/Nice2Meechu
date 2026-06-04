@@ -265,7 +265,12 @@ export default function App() {
             <CommunityRulesScreen key="rules" onDone={(u) => { setUser(u); setScreen("video-pick"); }} />
           )}
           {screen === "video-pick" && user && (
-            <VideoPick key="vid" user={user} onDone={(u) => { setUser(u); setScreen("feed"); }} />
+            <VideoPick
+              key="vid"
+              user={user}
+              onDone={(u) => { setUser(u); setScreen("feed"); }}
+              onSkip={user?.agreed_to_rules_at ? () => setScreen("feed") : null}
+            />
           )}
           {screen === "feed" && user && (
             <FeedScreen key="feed"
@@ -925,7 +930,7 @@ const SignaturePad = React.forwardRef(function SignaturePad({ onChange }, ref) {
 });
 
 // ---------- Video Pick / Record ----------
-function VideoPick({ user, onDone }) {
+function VideoPick({ user, onDone, onSkip }) {
   const [loading, setLoading] = useState(false);
   // null | 'verifying' | 'saving'  → drives the button label so users know the
   // AI is actively reviewing their video (builds trust in the safety promise)
@@ -1081,6 +1086,19 @@ function VideoPick({ user, onDone }) {
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       data-testid="video-pick-screen"
     >
+      {onSkip && (
+        // Top-right close button — only rendered for signed-in users who've
+        // already accepted community rules (i.e. not blocking primary onboarding).
+        <button
+          type="button"
+          onClick={() => { try { streamRef.current?.getTracks?.().forEach((t) => t.stop()); } catch {} ; onSkip(); }}
+          aria-label="Close and skip for now"
+          className="absolute top-4 right-4 z-10 w-9 h-9 rounded-full glass-dark border border-white/15 text-white/85 hover:text-white hover:bg-white/10 active:scale-95 transition flex items-center justify-center text-lg leading-none"
+          data-testid="video-pick-close"
+        >
+          ✕
+        </button>
+      )}
       <h2 className="font-display text-3xl font-black leading-tight">Intro<br/>video<span style={{ color: "#FF4D4D" }}>.</span></h2>
       <p className="mt-3 text-sm text-white/55">Keep it under 10 seconds. Use the script below word-for-word, or remix it.</p>
 
