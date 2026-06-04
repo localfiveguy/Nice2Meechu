@@ -433,11 +433,20 @@ CURATED_CITIES = [
 
 
 @api.get("/cities/popular")
-async def cities_popular():
+async def cities_popular(user=Depends(current_user)):
     """Returns curated top-12 cities merged with real signup counts.
-    Real cities not in the curated list are appended (require city_lat/city_lng)."""
+    `people` is the number of users in that city the CURRENT viewer hasn't
+    yet swiped on (so it decreases as they watch). Real cities not in the
+    curated list are appended (require city_lat/city_lng)."""
+    # Exclude users the viewer has already swiped on so the count is "remaining".
+    swiped = await db.swipes.find({"user_id": user["id"]}, {"_id": 0, "target_user_id": 1}).to_list(5000)
+    swiped_ids = [s["target_user_id"] for s in swiped]
     pipeline = [
-        {"$match": {"city": {"$nin": [None, ""]}}},
+        {"$match": {
+            "city": {"$nin": [None, ""]},
+            "video_url": {"$ne": None, "$exists": True},
+            "id": {"$ne": user["id"], "$nin": swiped_ids},
+        }},
         {"$group": {
             "_id": {"$toLower": "$city"},
             "raw_city": {"$first": "$city"},
@@ -930,7 +939,19 @@ async def feed(user=Depends(current_user)):
     _rng.shuffle(out)
     for o in out:
         o.pop("_city", None)
-    return {"feed": out[:20]}
+
+    # city_stats lets the frontend distinguish "genuinely empty" from
+    # "exhausted" so the empty-state copy can be honest about which it is.
+    city_stats = None
+    if viewer_city:
+        city_total = await db.users.count_documents({
+            "id": {"$ne": user["id"]},
+            "city": {"$regex": f"^{re.escape(viewer_city)}", "$options": "i"},
+            "video_url": {"$ne": None, "$exists": True},
+        })
+        city_stats = {"total": city_total, "remaining": len(out)}
+
+    return {"feed": out[:20], "city_stats": city_stats}
 
 
 async def _check_mutual_match(target: dict, viewer_id: str) -> bool:

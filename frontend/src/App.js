@@ -1245,6 +1245,10 @@ function VideoPick({ user, onDone, onSkip }) {
 // ---------- Feed ----------
 function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
   const [feed, setFeed] = useState([]);
+  // city_stats.total = users in this city we've ever seen (excluding self);
+  // city_stats.remaining = users we haven't yet swiped on. Lets the empty
+  // state say "you've watched everyone" vs "no one is here yet".
+  const [cityStats, setCityStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeIdx, setActiveIdx] = useState(0);
   const [locationOpen, setLocationOpen] = useState(false);
@@ -1256,6 +1260,7 @@ function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
     try {
       const { data } = await api.get("/feed");
       setFeed(data.feed);
+      setCityStats(data.city_stats || null);
     } catch (e) {
       toast.error("Couldn't load feed");
     } finally {
@@ -1346,47 +1351,73 @@ function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
 
           <div className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center gap-4">
             {user.city ? (
-              <>
-                <div className="text-6xl" aria-hidden>🎉</div>
-                <div className="font-display text-2xl font-black leading-tight">
-                  You're the first<br />
-                  in {user.city.split(",")[0]}!
-                </div>
-                <p className="text-sm text-white/65 max-w-[290px] leading-snug">
-                  Congrats — your intro will be the very first face people see when they explore this city.
-                  Share Nice2Meechu with friends nearby, or hop to a busier city while you wait.
-                </p>
-                <button
-                  className="btn-primary mt-2 flex items-center gap-2"
-                  onClick={() => setLocationOpen(true)}
-                  data-testid="feed-change-location"
-                >
-                  <MapPin size={16} /> Explore another city
-                </button>
-                <button
-                  className="btn-ghost flex items-center gap-2 mt-1"
-                  onClick={async () => {
-                    const cityShort = (user.city || "").split(",")[0];
-                    const shareUrl = `${window.location.origin}/?ref=${encodeURIComponent(user.handle || "")}`;
-                    const shareText = `I'm the very first person on Nice2Meechu in ${cityShort}! Come meet people near you 👀 ${shareUrl}`;
-                    track("first_in_city_share_clicked", { city: cityShort });
-                    const result = await shareOrCopy({
-                      title: "Nice2Meechu",
-                      text: `I'm the first on Nice2Meechu in ${cityShort}! Join me 👀`,
-                      url: shareUrl,
-                      copyText: shareText,
-                    });
-                    if (result === "copied") toast.success("Invite link copied — paste it anywhere!");
-                    else if (result === "failed") toast.error("Couldn't share. Link: " + shareUrl);
-                  }}
-                  data-testid="feed-first-share"
-                >
-                  <Share2 size={16} /> Share this app
-                </button>
-                <button className="text-xs text-white/45 underline" onClick={load} data-testid="feed-refresh">
-                  Check again
-                </button>
-              </>
+              cityStats && cityStats.total > 0 ? (
+                // Exhausted state — viewer has swiped on everyone in this city.
+                <>
+                  <div className="text-6xl" aria-hidden>🏁</div>
+                  <div className="font-display text-2xl font-black leading-tight">
+                    That's everyone<br />
+                    in {user.city.split(",")[0]}!
+                  </div>
+                  <p className="text-sm text-white/65 max-w-[290px] leading-snug">
+                    You've seen all {cityStats.total} {cityStats.total === 1 ? "person" : "people"} here for now.
+                    New intros will appear as people join. Try another city while you wait.
+                  </p>
+                  <button
+                    className="btn-primary mt-2 flex items-center gap-2"
+                    onClick={() => setLocationOpen(true)}
+                    data-testid="feed-change-location"
+                  >
+                    <MapPin size={16} /> Explore another city
+                  </button>
+                  <button className="text-xs text-white/45 underline" onClick={load} data-testid="feed-refresh">
+                    Check again
+                  </button>
+                </>
+              ) : (
+                // Truly first-in-city — no one else here yet.
+                <>
+                  <div className="text-6xl" aria-hidden>🎉</div>
+                  <div className="font-display text-2xl font-black leading-tight">
+                    You're the first<br />
+                    in {user.city.split(",")[0]}!
+                  </div>
+                  <p className="text-sm text-white/65 max-w-[290px] leading-snug">
+                    Congrats — your intro will be the very first face people see when they explore this city.
+                    Share Nice2Meechu with friends nearby, or hop to a busier city while you wait.
+                  </p>
+                  <button
+                    className="btn-primary mt-2 flex items-center gap-2"
+                    onClick={() => setLocationOpen(true)}
+                    data-testid="feed-change-location"
+                  >
+                    <MapPin size={16} /> Explore another city
+                  </button>
+                  <button
+                    className="btn-ghost flex items-center gap-2 mt-1"
+                    onClick={async () => {
+                      const cityShort = (user.city || "").split(",")[0];
+                      const shareUrl = `${window.location.origin}/?ref=${encodeURIComponent(user.handle || "")}`;
+                      const shareText = `I'm the very first person on Nice2Meechu in ${cityShort}! Come meet people near you 👀 ${shareUrl}`;
+                      track("first_in_city_share_clicked", { city: cityShort });
+                      const result = await shareOrCopy({
+                        title: "Nice2Meechu",
+                        text: `I'm the first on Nice2Meechu in ${cityShort}! Join me 👀`,
+                        url: shareUrl,
+                        copyText: shareText,
+                      });
+                      if (result === "copied") toast.success("Invite link copied — paste it anywhere!");
+                      else if (result === "failed") toast.error("Couldn't share. Link: " + shareUrl);
+                    }}
+                    data-testid="feed-first-share"
+                  >
+                    <Share2 size={16} /> Share this app
+                  </button>
+                  <button className="text-xs text-white/45 underline" onClick={load} data-testid="feed-refresh">
+                    Check again
+                  </button>
+                </>
+              )
             ) : (
               <>
                 <div className="text-5xl" aria-hidden>📍</div>
