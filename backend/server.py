@@ -11,7 +11,7 @@ from typing import List, Optional
 import httpx
 from dotenv import load_dotenv
 from emergentintegrations.llm.chat import ImageContent, LlmChat, UserMessage
-from fastapi import APIRouter, Cookie, Depends, FastAPI, Header, HTTPException, Response
+from fastapi import APIRouter, Cookie, Depends, FastAPI, File, Header, HTTPException, Response, UploadFile
 from fastapi.staticfiles import StaticFiles
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
@@ -507,6 +507,55 @@ async def delete_my_account(
     return {"ok": True, "deleted": uid}
 
 
+@api.get("/users/me/export")
+async def export_my_data(user=Depends(current_user)):
+    """GDPR Art. 20 (right to data portability) — return a machine-readable
+    JSON dump of everything we hold about the signed-in user.
+    Includes: profile, sessions metadata (no tokens leaked), swipes, matches,
+    messages they sent OR received, reports they filed, and age-check audits.
+    """
+    uid = user["id"]
+
+    # Strip server-only fields from the profile copy we hand back.
+    profile = {k: v for k, v in user.items() if k not in ("_id",)}
+
+    swipes = await db.swipes.find(
+        {"$or": [{"user_id": uid}, {"target_user_id": uid}]}, {"_id": 0}
+    ).to_list(10_000)
+    matches = await db.matches.find({"user_ids": uid}, {"_id": 0}).to_list(10_000)
+    messages = await db.messages.find(
+        {"$or": [{"from_user_id": uid}, {"to_user_id": uid}]}, {"_id": 0}
+    ).sort("at", 1).to_list(50_000)
+    reports = await db.reports.find({"reporter_id": uid}, {"_id": 0}).to_list(1000)
+    age_checks = await db.age_checks.find({"user_id": uid}, {"_id": 0}).to_list(100)
+
+    # Sessions: hide token hashes; keep only timestamps so users can see when
+    # their account was used.
+    sessions = await db.user_sessions.find(
+        {"user_id": uid}, {"_id": 0, "session_token": 0}
+    ).to_list(100)
+
+    return {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "exported_for_user_id": uid,
+        "profile": profile,
+        "sessions": sessions,
+        "swipes": swipes,
+        "matches": matches,
+        "messages": messages,
+        "reports": reports,
+        "age_checks": age_checks,
+        "counts": {
+            "swipes": len(swipes),
+            "matches": len(matches),
+            "messages": len(messages),
+            "reports": len(reports),
+            "age_checks": len(age_checks),
+            "sessions": len(sessions),
+        },
+    }
+
+
 class ReportReq(BaseModel):
     target_user_id: str
     reason: str
@@ -556,6 +605,65 @@ async def block_user(req: BlockReq, user=Depends(current_user)):
         upsert=True,
     )
     return {"ok": True}
+
+@api.post("/users/video/upload")
+async def upload_video_file(file: UploadFile = File(...), user=Depends(current_user)):
+    """Persist a user-recorded intro to disk and return a stable public URL.
+    Replaces the previous flow which stored `URL.createObjectURL(blob)` —
+    those blob URLs dropped the moment the tab closed, so returning users
+    effectively had no profile video. Now the file is written under
+    /app/backend/user_videos/<uid>.<ext> and served via /api/user-videos/<uid>.<ext>.
+    Overwrites any previous recording for the same user."""
+    # Accept WebM (MediaRecorder default on Chromium) and MP4 (Safari).
+    ALLOWED = {"video/webm": "webm", "video/mp4": "mp4"}
+    ext = ALLOWED.get((file.content_type or "").lower())
+    if not ext:
+        raise HTTPException(415, f"Unsupported video type: {file.content_type}")
+
+    # 25 MB cap — well above what 15s of 720p VP9/H264 should produce, but
+    # protects the disk from runaway uploads. We stream-read in chunks so a
+    # malicious client can't OOM us before we trip the limit.
+    MAX_BYTES = 25 * 1024 * 1024
+    target = _USER_VIDEOS_DIR / f"{user['id']}.{ext}"
+
+    # Clean up the other-extension file if the user previously recorded in a
+    # different browser (e.g. Safari MP4 then Chrome WebM) so we don't serve stale.
+    other_ext = "mp4" if ext == "webm" else "webm"
+    other = _USER_VIDEOS_DIR / f"{user['id']}.{other_ext}"
+    if other.exists():
+        try:
+            other.unlink()
+        except OSError:
+            pass
+
+    total = 0
+    with target.open("wb") as out:
+        while True:
+            chunk = await file.read(1 << 20)  # 1 MB
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_BYTES:
+                out.close()
+                try:
+                    target.unlink()
+                except OSError:
+                    pass
+                raise HTTPException(413, "Video exceeds 25 MB limit")
+            out.write(chunk)
+
+    if total < 1024:  # < 1 KB → empty/corrupt
+        try:
+            target.unlink()
+        except OSError:
+            pass
+        raise HTTPException(400, "Empty or corrupt video file")
+
+    # Cache-bust the URL so the <video> element refetches after re-recording.
+    video_url = f"/api/user-videos/{user['id']}.{ext}?v={int(datetime.now(timezone.utc).timestamp())}"
+    return {"video_url": video_url, "bytes": total}
+
+
 
 
 @api.post("/users/video")
@@ -1232,6 +1340,11 @@ app.include_router(api)
 _VIDEOS_DIR = ROOT_DIR / "videos"
 if _VIDEOS_DIR.is_dir():
     app.mount("/api/videos", StaticFiles(directory=str(_VIDEOS_DIR)), name="videos")
+
+# User-recorded intros land here (persistent disk). Created on first upload.
+_USER_VIDEOS_DIR = ROOT_DIR / "user_videos"
+_USER_VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/api/user-videos", StaticFiles(directory=str(_USER_VIDEOS_DIR)), name="user_videos")
 
 app.add_middleware(
     CORSMiddleware,

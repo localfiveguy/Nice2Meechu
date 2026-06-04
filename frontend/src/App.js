@@ -1000,9 +1000,19 @@ function VideoPick({ user, onDone }) {
       }
 
       setPhase("saving");
-      const blobUrl = URL.createObjectURL(recordedBlob);
+      // Persist the recording to the backend so the URL survives tab close.
+      // (Previously we used URL.createObjectURL(blob), which is in-memory and
+      // dies when the tab/browser closes — the user effectively lost their
+      // intro on every return visit.)
+      const ext = (recordedBlob.type || "").includes("mp4") ? "mp4" : "webm";
+      const form = new FormData();
+      form.append("file", recordedBlob, `intro.${ext}`);
+      const { data: up } = await api.post("/users/video/upload", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
       await api.post("/users/video", {
-        video_url: blobUrl,
+        video_url: up.video_url,
         transcript: scriptTranscript,
         source_lang: (user?.language || "en"),
       });
@@ -2327,6 +2337,32 @@ function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, onChange
                   <span className="text-white/20">·</span>
                   <a href="mailto:safety@nice2meechu.com" className="hover:text-white underline" data-testid="profile-safety-link">Report safety</a>
                 </div>
+                <button
+                  className="text-white/70 hover:text-white text-xs underline mt-1"
+                  onClick={async () => {
+                    // GDPR Art. 20 — give the user a full JSON dump.
+                    try {
+                      track("data_export_requested");
+                      const { data } = await api.get("/users/me/export");
+                      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `nice2meechu-data-${data.exported_for_user_id}-${data.exported_at.slice(0, 10)}.json`;
+                      document.body.appendChild(a);
+                      a.click();
+                      a.remove();
+                      URL.revokeObjectURL(url);
+                      toast.success("Your data was downloaded");
+                    } catch (err) {
+                      console.error(err);
+                      toast.error("Couldn't export — please email privacy@nice2meechu.com");
+                    }
+                  }}
+                  data-testid="profile-data-export"
+                >
+                  Download my data
+                </button>
                 <button
                   className="text-[#FF4D4D]/80 hover:text-[#FF4D4D] text-xs underline mt-1"
                   onClick={async () => {

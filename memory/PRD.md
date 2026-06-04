@@ -91,6 +91,23 @@ A hyperlocal, video-first social app where users connect by watching short video
 - Verified: GIS button renders on /signin, `/api/auth/google` rejects bogus JWTs (401), seeded session bears authenticated `/api/auth/me`.
 
 ## Prioritized backlog
+- **P1** Real recorded-video upload to object storage ✅ done — `/api/users/video/upload` persists to disk; URL is stable across sessions.
+- **P1** GDPR Art. 20 data-export endpoint ✅ done — `/api/users/me/export` + Profile "Download my data" button.
+- **P1** Set up `safety@` / `privacy@` mailboxes via Cloudflare Email Routing — **checklist drafted at `/app/EMAIL_ROUTING_SETUP.md` (5 min DNS-only task for the owner).**
+- **P2** Mark `onboarding_completed`, `community_rules_accepted`, `match_made`, `share_started` as Key Events in GA4 Admin.
+- **P2** Push/online presence — show which matches are live now.
+- **P2** Decommission old Netlify `nice2meechu` site once Emergent SSL stable ≥7 days.
+- **P3** Voice-note replies; audio translation (TTS over translated text).
+- **P3** Invite-only friends-of-friends discovery.
+- **P3** Split `App.js` into per-screen files once it stops being a single-file brief.
+
+## Next Tasks
+- Validate the new GIS sign-in end-to-end with a real Google account in the preview (one human-click smoke test).
+- Click **Deploy** to push the new auth flow to `nice2meechu.com`.
+://nice2meechu.com`.
+- Verified: GIS button renders on /signin, `/api/auth/google` rejects bogus JWTs (401), seeded session bears authenticated `/api/auth/me`.
+
+## Prioritized backlog
 - **P1** Real recorded-video upload to object storage (currently `URL.createObjectURL(blob)` — not persistent across sessions).
 - **P1** GDPR Art. 20 data-export endpoint ("Download my data").
 - **P1** Set up `safety@` / `privacy@` mailboxes via Cloudflare Email Routing.
