@@ -1115,13 +1115,13 @@ function VideoPick({ user, onDone, onSkip }) {
       r.start();
       recorderRef.current = r;
       setRecording(true);
-      // auto-stop at 10 seconds
+      // auto-stop at 7 seconds (matches the "7-second intro" script copy)
       setTimeout(() => {
         if (recorderRef.current?.state === "recording") {
           recorderRef.current.stop();
           setRecording(false);
         }
-      }, 10000);
+      }, 7000);
     } else {
       recorderRef.current?.stop();
       setRecording(false);
@@ -1148,7 +1148,7 @@ function VideoPick({ user, onDone, onSkip }) {
         </button>
       )}
       <h2 className="font-display text-3xl font-black leading-tight">Intro<br/>video<span style={{ color: "#FF4D4D" }}>.</span></h2>
-      <p className="mt-3 text-sm text-white/55">Keep it under 10 seconds. Use the script below word-for-word, or remix it.</p>
+      <p className="mt-3 text-sm text-white/55">Keep it under 7 seconds. Use the script below word-for-word, or remix it.</p>
 
       {/* Dynamic script panel */}
       <div className="mt-5 rounded-2xl glass-dark border border-[#FF4D4D]/25 p-4" data-testid="intro-script">
