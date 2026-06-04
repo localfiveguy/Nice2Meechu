@@ -1083,7 +1083,10 @@ function VideoPick({ user, onDone, onSkip }) {
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
+        // play() returns a Promise that REJECTS with AbortError if a new
+        // load/srcObject swap happens before the first frame paints. Swallow
+        // it — it's harmless but trips the dev-mode error overlay.
+        videoRef.current.play().catch(() => {});
       }
     } catch {
       toast.error("Camera permission is needed to record your intro. Please enable it in your browser settings.");
