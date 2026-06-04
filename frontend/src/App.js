@@ -67,6 +67,51 @@ async function translate(text, target_lang, source_lang) {
 
 import { CookieConsentBanner, getCookieConsent, PrivacyPolicyPage, TermsOfServicePage } from "./legal/LegalPages";
 
+// ---------- Share helpers ----------
+// Robust copy that works even in cross-origin iframes (Emergent preview) where
+// `navigator.clipboard.writeText` is blocked by the missing `clipboard-write`
+// permission. Falls back to a hidden <textarea> + document.execCommand('copy'),
+// which is deprecated but still the only thing that works in those sandboxes.
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch { /* permissions or insecure context — fall through */ }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.top = "0";
+    ta.style.left = "0";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+// Tries Web Share first; on AbortError returns silently (user cancelled);
+// otherwise falls back to clipboard. Returns "shared" | "copied" | "failed".
+async function shareOrCopy({ title, text, url, copyText }) {
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, text, url });
+      return "shared";
+    } catch (err) {
+      if (err?.name === "AbortError") return "shared"; // treat cancel as no-op
+      console.warn("web share blocked, falling back to clipboard", err);
+    }
+  }
+  const ok = await copyToClipboard(copyText || url || text);
+  return ok ? "copied" : "failed";
+}
+
 // ---------- Top-level App ----------
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 export default function App() {
@@ -1318,31 +1363,14 @@ function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
                     const shareUrl = `${window.location.origin}/?ref=${encodeURIComponent(user.handle || "")}`;
                     const shareText = `I'm the very first person on Nice2Meechu in ${cityShort}! Come meet people near you 👀 ${shareUrl}`;
                     track("first_in_city_share_clicked", { city: cityShort });
-                    // Try Web Share API first. It throws NotAllowedError in
-                    // iframe-sandboxed previews (no `allow="web-share"`), and on
-                    // some desktop browsers — so fall back to clipboard on any
-                    // non-cancel failure so the user always gets a usable link.
-                    const fallbackCopy = async () => {
-                      try {
-                        await navigator.clipboard.writeText(shareText);
-                        toast.success("Invite link copied — paste it anywhere!");
-                        track("first_in_city_share_clicked", { method: "clipboard_fallback", city: cityShort });
-                      } catch {
-                        toast.error("Couldn't copy. Long-press: " + shareUrl);
-                      }
-                    };
-                    if (!navigator.share) return fallbackCopy();
-                    try {
-                      await navigator.share({
-                        title: "Nice2Meechu",
-                        text: `I'm the first on Nice2Meechu in ${cityShort}! Join me 👀`,
-                        url: shareUrl,
-                      });
-                    } catch (err) {
-                      if (err?.name === "AbortError") return; // user cancelled
-                      console.warn("share failed, falling back to clipboard", err);
-                      await fallbackCopy();
-                    }
+                    const result = await shareOrCopy({
+                      title: "Nice2Meechu",
+                      text: `I'm the first on Nice2Meechu in ${cityShort}! Join me 👀`,
+                      url: shareUrl,
+                      copyText: shareText,
+                    });
+                    if (result === "copied") toast.success("Invite link copied — paste it anywhere!");
+                    else if (result === "failed") toast.error("Couldn't share. Link: " + shareUrl);
                   }}
                   data-testid="feed-first-share"
                 >
@@ -2194,41 +2222,30 @@ function ShareCard({ user }) {
   const shareText = `${user.codename} just invited you to Nice2Meechu — video-first, hyperlocal, anonymous until the spark.`;
 
   const onShare = async () => {
-    // Same iframe-/desktop-fallback pattern as the "first in city" button.
-    // Web Share API throws NotAllowedError in the Emergent preview iframe
-    // (no `allow="web-share"`), so any non-cancel failure falls back to copy.
-    const fallbackCopy = async () => {
-      try {
-        await navigator.clipboard.writeText(shareUrl);
-        track("share_started", { method: "clipboard_fallback" });
-        setCopied(true);
-        toast.success("Invite link copied");
-        setTimeout(() => setCopied(false), 1800);
-      } catch (e) {
-        console.error("copy failed", e);
-        toast.error("Couldn't share — copy the link below");
-      }
-    };
-    if (!navigator.share) return fallbackCopy();
-    try {
-      await navigator.share({ title: "Nice2Meechu", text: shareText, url: shareUrl });
+    const result = await shareOrCopy({
+      title: "Nice2Meechu", text: shareText, url: shareUrl, copyText: shareUrl,
+    });
+    if (result === "shared") {
       track("share_started", { method: "web_share_api" });
-    } catch (e) {
-      if (e?.name === "AbortError") return; // user cancelled
-      console.warn("share failed, falling back to clipboard", e);
-      await fallbackCopy();
+    } else if (result === "copied") {
+      track("share_started", { method: "clipboard_fallback" });
+      setCopied(true);
+      toast.success("Invite link copied");
+      setTimeout(() => setCopied(false), 1800);
+    } else {
+      toast.error("Couldn't share — copy from the link below");
     }
   };
 
   const onCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(shareUrl);
+    const ok = await copyToClipboard(shareUrl);
+    if (ok) {
       track("referral_link_copied");
       setCopied(true);
       toast.success("Link copied");
       setTimeout(() => setCopied(false), 1800);
-    } catch (e) {
-      console.error("copy failed", e);
+    } else {
+      toast.error("Couldn't copy");
     }
   };
 
