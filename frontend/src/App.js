@@ -1318,20 +1318,30 @@ function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
                     const shareUrl = `${window.location.origin}/?ref=${encodeURIComponent(user.handle || "")}`;
                     const shareText = `I'm the very first person on Nice2Meechu in ${cityShort}! Come meet people near you 👀 ${shareUrl}`;
                     track("first_in_city_share_clicked", { city: cityShort });
-                    try {
-                      if (navigator.share) {
-                        await navigator.share({
-                          title: "Nice2Meechu",
-                          text: `I'm the first on Nice2Meechu in ${cityShort}! Join me 👀`,
-                          url: shareUrl,
-                        });
-                      } else {
+                    // Try Web Share API first. It throws NotAllowedError in
+                    // iframe-sandboxed previews (no `allow="web-share"`), and on
+                    // some desktop browsers — so fall back to clipboard on any
+                    // non-cancel failure so the user always gets a usable link.
+                    const fallbackCopy = async () => {
+                      try {
                         await navigator.clipboard.writeText(shareText);
                         toast.success("Invite link copied — paste it anywhere!");
+                        track("first_in_city_share_clicked", { method: "clipboard_fallback", city: cityShort });
+                      } catch {
+                        toast.error("Couldn't copy. Long-press: " + shareUrl);
                       }
+                    };
+                    if (!navigator.share) return fallbackCopy();
+                    try {
+                      await navigator.share({
+                        title: "Nice2Meechu",
+                        text: `I'm the first on Nice2Meechu in ${cityShort}! Join me 👀`,
+                        url: shareUrl,
+                      });
                     } catch (err) {
-                      // user cancelled, ignore
-                      if (err?.name !== "AbortError") console.warn("share failed", err);
+                      if (err?.name === "AbortError") return; // user cancelled
+                      console.warn("share failed, falling back to clipboard", err);
+                      await fallbackCopy();
                     }
                   }}
                   data-testid="feed-first-share"
@@ -2184,22 +2194,29 @@ function ShareCard({ user }) {
   const shareText = `${user.codename} just invited you to Nice2Meechu — video-first, hyperlocal, anonymous until the spark.`;
 
   const onShare = async () => {
+    // Same iframe-/desktop-fallback pattern as the "first in city" button.
+    // Web Share API throws NotAllowedError in the Emergent preview iframe
+    // (no `allow="web-share"`), so any non-cancel failure falls back to copy.
+    const fallbackCopy = async () => {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        track("share_started", { method: "clipboard_fallback" });
+        setCopied(true);
+        toast.success("Invite link copied");
+        setTimeout(() => setCopied(false), 1800);
+      } catch (e) {
+        console.error("copy failed", e);
+        toast.error("Couldn't share — copy the link below");
+      }
+    };
+    if (!navigator.share) return fallbackCopy();
     try {
-      if (navigator.share) {
-        await navigator.share({ title: "Nice2Meechu", text: shareText, url: shareUrl });
-        track("share_started", { method: "web_share_api" });
-        return;
-      }
-      await navigator.clipboard.writeText(shareUrl);
-      track("share_started", { method: "clipboard_fallback" });
-      setCopied(true);
-      toast.success("Invite link copied");
-      setTimeout(() => setCopied(false), 1800);
+      await navigator.share({ title: "Nice2Meechu", text: shareText, url: shareUrl });
+      track("share_started", { method: "web_share_api" });
     } catch (e) {
-      if (e?.name !== "AbortError") {
-        console.error("share failed", e);
-        toast.error("Couldn't share — copy from the link below");
-      }
+      if (e?.name === "AbortError") return; // user cancelled
+      console.warn("share failed, falling back to clipboard", e);
+      await fallbackCopy();
     }
   };
 
