@@ -450,7 +450,11 @@ function SignInScreen() {
           itp_support: true,
         });
         if (btnRef.current) {
-          btnRef.current.innerHTML = "";
+          // .replaceChildren() instead of .innerHTML = "" — same effect (empty
+          // the container before Google's SDK renders the official pill button
+          // into it) but avoids any innerHTML usage so SAST tools don't flag
+          // it as an XSS sink. There's no user input here regardless.
+          btnRef.current.replaceChildren();
           gis.renderButton(btnRef.current, {
             type: "standard",
             theme: "filled_white",
