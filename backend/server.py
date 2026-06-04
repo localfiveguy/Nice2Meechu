@@ -433,19 +433,16 @@ CURATED_CITIES = [
 
 
 @api.get("/cities/popular")
-async def cities_popular(user=Depends(current_user)):
+async def cities_popular():
     """Returns curated top-12 cities merged with real signup counts.
-    `people` is the number of users in that city the CURRENT viewer hasn't
-    yet swiped on (so it decreases as they watch). Real cities not in the
-    curated list are appended (require city_lat/city_lng)."""
-    # Exclude users the viewer has already swiped on so the count is "remaining".
-    swiped = await db.swipes.find({"user_id": user["id"]}, {"_id": 0, "target_user_id": 1}).to_list(5000)
-    swiped_ids = [s["target_user_id"] for s in swiped]
+    `people` is the total number of users with intros in that city (NOT
+    per-viewer "remaining" — keeping it stable so the list doesn't shrink
+    as a single viewer watches). Real cities not in the curated list are
+    appended (require city_lat/city_lng)."""
     pipeline = [
         {"$match": {
             "city": {"$nin": [None, ""]},
             "video_url": {"$ne": None, "$exists": True},
-            "id": {"$ne": user["id"], "$nin": swiped_ids},
         }},
         {"$group": {
             "_id": {"$toLower": "$city"},
@@ -905,7 +902,10 @@ async def feed(user=Depends(current_user)):
             **base_filter,
             "city": {"$regex": f"^{re.escape(viewer_city)}", "$options": "i"},
         }
-        async for u in db.users.find(city_filter, {"_id": 0, "email": 0}).limit(60):
+        # Chronological (oldest-first) within the chosen city, so every viewer
+        # sees the same "first video made here" regardless of when they joined.
+        # No shuffle — the order is intentional.
+        async for u in db.users.find(city_filter, {"_id": 0, "email": 0}).sort("created_at", 1).limit(60):
             candidates.append(u)
     else:
         # No city set yet → fall back to nearest by distance so a brand-new
@@ -930,15 +930,12 @@ async def feed(user=Depends(current_user)):
                 "source_lang": c.get("source_lang", "en"),
                 "distance_km": dist,
                 "is_demo": bool(c.get("is_demo")),
-                "_city": (c.get("city") or "").lower(),
             }
         )
 
-    # Strict hyperlocal — only same-city demos surface; sort newest-first
-    # within the city via a randomized shuffle so the feed feels fresh.
-    _rng.shuffle(out)
-    for o in out:
-        o.pop("_city", None)
+    # Chronological order preserved (oldest first per the user's request) —
+    # NO shuffle. The "first in city" video should be the same for every
+    # viewer until that user is swiped away.
 
     # city_stats lets the frontend distinguish "genuinely empty" from
     # "exhausted" so the empty-state copy can be honest about which it is.
