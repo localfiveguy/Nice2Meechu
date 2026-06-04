@@ -68,6 +68,13 @@ A hyperlocal, video-first social app where users connect by watching short video
 - New GA4 event: `location_changed`.
 - Reverted the short-lived "distance filter" popover (1km/5km/25km/anywhere) — superseded by the location flow.
 
+## Updated (2026-06-04 part 3) — Unread match notification dot ✅
+- New backend endpoint: `GET /api/matches/unread` returns `{count}` of matches created after `user.last_matches_viewed_at` (uses `count_documents` for cheap polling).
+- `GET /api/matches` now also bumps `last_matches_viewed_at = now` server-side — visiting the Matches screen naturally resets the unread count.
+- App-level polling: re-fetches the count when the user object is set, when screen changes, and every 60s in the background. Also bumps locally by 1 on `onMatch` so the dot appears the instant a mutual match happens.
+- UI: small green (#22C55E) pulsing dot rendered on the top-right of the You-tab avatar (or fallback `UserIcon`) when `unreadCount > 0`. `aria-label` includes count for screen readers.
+- Verified end-to-end with Playwright: 1 unread → dot visible on Feed/Profile; tap Matches → dot disappears; subsequent navigation stays clean.
+
 ## Updated (2026-06-04 part 2) — Google profile picture as "You" tab affordance ✅
 - Bottom nav: the `You` tab icon now renders the user's Google profile picture (26×26 circle) when `user.picture` is set, falling back to the generic `UserIcon` glyph for legacy users without one. Active state adds a red ring (`ring-2 ring-[#FF4D4D]`) for affordance.
 - `BottomNav` now accepts a `userPicture` prop; all three call sites (`FeedScreen`, `MatchesScreen`, `ProfileScreen`) pass `user.picture`.

@@ -79,7 +79,28 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [matchState, setMatchState] = useState(null);
   const [activeChat, setActiveChat] = useState(null);
+  const [unreadMatches, setUnreadMatches] = useState(0);
   const callbackProcessed = useRef(false);
+
+  // Poll for unread match count whenever the user is signed in. We refresh:
+  // - once when the user object is first set,
+  // - whenever the user navigates between Feed / Matches / Profile (cheap int call),
+  // - every 60s in the background while the tab is open.
+  // Visiting the Matches screen calls GET /api/matches which resets the
+  // backend "last_matches_viewed_at" — so the count naturally returns to 0.
+  useEffect(() => {
+    if (!user) return undefined;
+    let cancelled = false;
+    const fetchUnread = async () => {
+      try {
+        const { data } = await api.get("/matches/unread");
+        if (!cancelled) setUnreadMatches(data?.count || 0);
+      } catch { /* not signed in or transient — ignore */ }
+    };
+    fetchUnread();
+    const id = setInterval(fetchUnread, 60_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [user?.id, screen]);
 
   // Static legal pages — detect path so /privacy and /terms work as links from
   // cookie banner, emails, search engines, etc. Rendered as overlays so the
@@ -250,14 +271,17 @@ export default function App() {
             <FeedScreen key="feed"
               user={user}
               setUser={setUser}
-              onMatch={(m) => setMatchState(m)}
+              unreadMatches={unreadMatches}
+              onMatch={(m) => { setMatchState(m); setUnreadMatches((n) => n + 1); }}
               onTab={(s) => setScreen(s)}
             />
           )}
           {screen === "matches" && user && (
             <MatchesScreen key="matches"
               user={user}
+              unreadMatches={unreadMatches}
               onTab={(s) => setScreen(s)}
+              onLoaded={() => setUnreadMatches(0)}
               onOpenChat={(m) => { setActiveChat(m); setScreen("chat"); }}
             />
           )}
@@ -268,6 +292,7 @@ export default function App() {
             <ProfileScreen key="profile"
               user={user}
               setUser={setUser}
+              unreadMatches={unreadMatches}
               onTab={(s) => setScreen(s)}
               onLogout={logout}
               onChangeVideo={() => setScreen("video-pick")}
@@ -1138,7 +1163,7 @@ function VideoPick({ user, onDone }) {
 }
 
 // ---------- Feed ----------
-function FeedScreen({ user, setUser, onMatch, onTab }) {
+function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
   const [feed, setFeed] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeIdx, setActiveIdx] = useState(0);
@@ -1342,7 +1367,7 @@ function FeedScreen({ user, setUser, onMatch, onTab }) {
         )}
       </AnimatePresence>
 
-      <BottomNav active="feed" onTab={onTab} userPicture={user?.picture} />
+      <BottomNav active="feed" onTab={onTab} userPicture={user?.picture} unreadCount={unreadMatches} />
     </motion.div>
   );
 }
@@ -1861,11 +1886,20 @@ function MatchCelebration({ data, onClose, onChat }) {
 }
 
 // ---------- Matches list ----------
-function MatchesScreen({ user, onTab, onOpenChat }) {
+function MatchesScreen({ user, unreadMatches, onTab, onOpenChat, onLoaded }) {
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    api.get("/matches").then(({ data }) => setMatches(data.matches)).catch((e) => console.error(e)).finally(() => setLoading(false));
+    api.get("/matches")
+      .then(({ data }) => {
+        setMatches(data.matches);
+        // GET /api/matches resets last_matches_viewed_at server-side; mirror
+        // that locally so the You-tab green dot disappears immediately.
+        onLoaded?.();
+      })
+      .catch((e) => console.error(e))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -1905,7 +1939,7 @@ function MatchesScreen({ user, onTab, onOpenChat }) {
         ))}
       </div>
 
-      <BottomNav active="matches" onTab={onTab} userPicture={user?.picture} />
+      <BottomNav active="matches" onTab={onTab} userPicture={user?.picture} unreadCount={unreadMatches} />
     </motion.div>
   );
 }
@@ -2194,7 +2228,7 @@ function ShareCard({ user }) {
 }
 
 // ---------- Profile ----------
-function ProfileScreen({ user, setUser, onTab, onLogout, onChangeVideo }) {
+function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, onChangeVideo }) {
   const [editing, setEditing] = useState(false);
   const [firstName, setFirstName] = useState(user.first_name || "");
   const [city, setCity] = useState(user.city || "");
@@ -2372,36 +2406,47 @@ function ProfileScreen({ user, setUser, onTab, onLogout, onChangeVideo }) {
         </div>
       </div>
 
-      <BottomNav active="profile" onTab={onTab} userPicture={user?.picture} />
+      <BottomNav active="profile" onTab={onTab} userPicture={user?.picture} unreadCount={unreadMatches} />
     </motion.div>
   );
 }
 
 // ---------- Bottom Nav ----------
-function BottomNav({ active, onTab, userPicture }) {
+function BottomNav({ active, onTab, userPicture, unreadCount = 0 }) {
+  const hasUnread = unreadCount > 0;
   const Item = ({ id, icon: Icon, label }) => {
     const isYouTabWithPic = id === "profile" && userPicture;
+    const showDotHere = id === "profile" && hasUnread;
     return (
       <button
         onClick={() => onTab(id)}
         className="flex flex-col items-center gap-1 flex-1 py-2"
         data-testid={`nav-${id}`}
       >
-        {isYouTabWithPic ? (
-          // Google profile picture as the "You" tab affordance — ringed when active.
-          // referrerPolicy avoids Google CDN blocking the request from our origin.
-          <img
-            src={userPicture}
-            alt=""
-            referrerPolicy="no-referrer"
-            data-testid="nav-profile-avatar"
-            className={`w-[26px] h-[26px] rounded-full object-cover ${
-              active === id ? "ring-2 ring-[#FF4D4D] ring-offset-2 ring-offset-black" : "opacity-70"
-            }`}
-          />
-        ) : (
-          <Icon size={22} color={active === id ? "#FF4D4D" : "rgba(255,255,255,0.6)"} fill={active === id && id === "feed" ? "#FF4D4D" : "transparent"} />
-        )}
+        <div className="relative">
+          {isYouTabWithPic ? (
+            // Google profile picture as the "You" tab affordance — ringed when active.
+            // referrerPolicy avoids Google CDN blocking the request from our origin.
+            <img
+              src={userPicture}
+              alt=""
+              referrerPolicy="no-referrer"
+              data-testid="nav-profile-avatar"
+              className={`w-[26px] h-[26px] rounded-full object-cover ${
+                active === id ? "ring-2 ring-[#FF4D4D] ring-offset-2 ring-offset-black" : "opacity-70"
+              }`}
+            />
+          ) : (
+            <Icon size={22} color={active === id ? "#FF4D4D" : "rgba(255,255,255,0.6)"} fill={active === id && id === "feed" ? "#FF4D4D" : "transparent"} />
+          )}
+          {showDotHere && (
+            <span
+              data-testid="nav-profile-unread-dot"
+              aria-label={`${unreadCount} new match${unreadCount === 1 ? "" : "es"}`}
+              className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#22C55E] ring-2 ring-black animate-pulse"
+            />
+          )}
+        </div>
         <span className={`text-[10px] uppercase tracking-widest font-bold ${active === id ? "text-white" : "text-white/45"}`}>{label}</span>
       </button>
     );

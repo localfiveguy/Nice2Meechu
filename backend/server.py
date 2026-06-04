@@ -787,10 +787,27 @@ async def swipe(req: SwipeReq, user=Depends(current_user)):
     }
 
 
+@api.get("/matches/unread")
+async def matches_unread(user=Depends(current_user)):
+    """Count matches created after the user last visited the Matches screen.
+    Used by the BottomNav to render a green dot on the You-tab avatar."""
+    last_viewed = user.get("last_matches_viewed_at")
+    query = {"user_ids": user["id"]}
+    if last_viewed:
+        query["at"] = {"$gt": last_viewed}
+    count = await db.matches.count_documents(query)
+    return {"count": count}
+
+
 @api.get("/matches")
 async def matches(user=Depends(current_user)):
     cursor = db.matches.find({"user_ids": user["id"]}, {"_id": 0}).sort("at", -1)
     rows = await cursor.to_list(100)
+    # Mark all current matches as "viewed" — drives the unread-dot reset.
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"last_matches_viewed_at": datetime.now(timezone.utc).isoformat()}},
+    )
     if not rows:
         return {"matches": []}
 
