@@ -13,6 +13,8 @@ from dotenv import load_dotenv
 from emergentintegrations.llm.chat import ImageContent, LlmChat, UserMessage
 from fastapi import APIRouter, Cookie, Depends, FastAPI, Header, HTTPException, Response
 from fastapi.staticfiles import StaticFiles
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
 from starlette.middleware.cors import CORSMiddleware
@@ -35,6 +37,7 @@ db = client[os.environ["DB_NAME"]]
 
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 EMERGENT_AUTH_SESSION_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 SESSION_TTL = timedelta(days=7)
 
 app = FastAPI()
@@ -62,6 +65,12 @@ def generate_codename() -> str:
 class SessionExchangeReq(BaseModel):
     session_id: str
     ref: Optional[str] = None  # referrer's handle, if user landed via /?ref=<handle>
+
+
+class GoogleIdTokenReq(BaseModel):
+    """Direct Google OAuth (GIS) — frontend posts the credential JWT here."""
+    credential: str  # Google-issued ID token (JWT)
+    ref: Optional[str] = None
 
 
 class OnboardingReq(BaseModel):
@@ -158,43 +167,35 @@ async def current_user(
 # ---------------------------------------------------------------------------
 @api.get("/")
 async def root():
-    return {"app": "Nice2Meechu", "auth": "google-emergent"}
+    return {"app": "Nice2Meechu", "auth": "google-direct" if GOOGLE_CLIENT_ID else "google-emergent"}
 
 
-@api.post("/auth/session")
-async def auth_session_exchange(req: SessionExchangeReq, response: Response):
-    """Exchange a one-time session_id (from URL fragment) for a persistent session_token."""
-    async with httpx.AsyncClient(timeout=15) as http:
-        try:
-            r = await http.get(EMERGENT_AUTH_SESSION_URL, headers={"X-Session-ID": req.session_id})
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Emergent auth call failed")
-            raise HTTPException(502, f"Auth provider unreachable: {exc}")
-
-    if r.status_code != 200:
-        logger.warning("Emergent auth returned %s: %s", r.status_code, r.text)
-        raise HTTPException(401, "Invalid session_id")
-
-    data = r.json()
-    email = data.get("email")
-    name = data.get("name")
-    picture = data.get("picture")
-    session_token = data.get("session_token")
-    if not (email and session_token):
-        raise HTTPException(500, "Malformed auth response")
-
+# REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+async def _finalize_google_signin(
+    response: Response,
+    *,
+    google_sub: Optional[str],
+    email: str,
+    name: Optional[str],
+    picture: Optional[str],
+    ref: Optional[str],
+    session_token: Optional[str] = None,
+) -> dict:
+    """Create-or-update the user from Google profile info, mint a session_token,
+    set the httpOnly cookie, and return the standard auth response payload.
+    Used by both the new direct-GIS endpoint and the legacy Emergent exchange."""
     # Upsert user by email
     existing = await db.users.find_one({"email": email}, {"_id": 0})
     if existing:
-        await db.users.update_one(
-            {"id": existing["id"]},
-            {"$set": {"name": name, "picture": picture}},
-        )
+        update_fields = {"name": name, "picture": picture}
+        if google_sub and not existing.get("google_sub"):
+            update_fields["google_sub"] = google_sub
+        await db.users.update_one({"id": existing["id"]}, {"$set": update_fields})
         user = await db.users.find_one({"id": existing["id"]}, {"_id": 0})
     else:
         # Resolve optional referrer (by handle). Self-referrals are dropped.
         ref_user_id = None
-        ref_handle = (req.ref or "").strip().lower()
+        ref_handle = (ref or "").strip().lower()
         if ref_handle:
             ref_user = await db.users.find_one({"handle": ref_handle}, {"_id": 0, "id": 1})
             if ref_user:
@@ -205,9 +206,9 @@ async def auth_session_exchange(req: SessionExchangeReq, response: Response):
             "email": email,
             "name": name,
             "picture": picture,
+            "google_sub": google_sub,
             "codename": generate_codename(),
             "handle": None,
-            # Pre-fill first_name from Google "name" — user can still edit on onboarding
             "first_name": (name or "").strip().split(" ")[0] if name else None,
             "vibes": [],
             "language": "en",
@@ -224,29 +225,29 @@ async def auth_session_exchange(req: SessionExchangeReq, response: Response):
         await db.users.insert_one(new_user.copy())
         user = await db.users.find_one({"id": new_user["id"]}, {"_id": 0})
 
-        # Increment a small public stat on the referrer (best-effort)
         if ref_user_id:
             await db.users.update_one(
                 {"id": ref_user_id},
                 {"$inc": {"referral_count": 1}},
             )
 
+    # Mint our own session_token (don't trust Google's lifetime)
+    token = session_token or secrets.token_urlsafe(32)
     expires_at = datetime.now(timezone.utc) + SESSION_TTL
     await db.user_sessions.update_one(
-        {"session_token": session_token},
+        {"session_token": token},
         {"$set": {
             "user_id": user["id"],
-            "session_token": session_token,
+            "session_token": token,
             "expires_at": expires_at,
             "created_at": datetime.now(timezone.utc),
         }},
         upsert=True,
     )
 
-    # Set httpOnly cookie
     response.set_cookie(
         key="session_token",
-        value=session_token,
+        value=token,
         max_age=int(SESSION_TTL.total_seconds()),
         path="/",
         httponly=True,
@@ -254,7 +255,71 @@ async def auth_session_exchange(req: SessionExchangeReq, response: Response):
         samesite="none",
     )
 
-    return {"token": session_token, "user": user, "onboarded": bool(user.get("handle"))}
+    return {"token": token, "user": user, "onboarded": bool(user.get("handle"))}
+
+
+# REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+@api.post("/auth/google")
+async def auth_google_id_token(req: GoogleIdTokenReq, response: Response):
+    """Direct Google OAuth — verify Google-issued ID token (JWT) and sign user in.
+    Frontend uses Google Identity Services (GIS) which returns a `credential` JWT
+    in the popup callback; that JWT is forwarded here for cryptographic verification."""
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(500, "GOOGLE_CLIENT_ID not configured")
+
+    try:
+        # Verifies signature, expiry, audience (aud == our client_id) and issuer.
+        idinfo = google_id_token.verify_oauth2_token(
+            req.credential, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=10
+        )
+    except ValueError as exc:
+        logger.warning("Google ID token verification failed: %s", exc)
+        raise HTTPException(401, "Invalid Google credential")
+
+    email = idinfo.get("email")
+    if not email or not idinfo.get("email_verified", False):
+        raise HTTPException(401, "Google account email not verified")
+
+    return await _finalize_google_signin(
+        response,
+        google_sub=idinfo.get("sub"),
+        email=email,
+        name=idinfo.get("name"),
+        picture=idinfo.get("picture"),
+        ref=req.ref,
+    )
+
+
+@api.post("/auth/session")
+async def auth_session_exchange(req: SessionExchangeReq, response: Response):
+    """Legacy: Exchange a one-time Emergent session_id for a persistent session_token.
+    Kept temporarily for backwards compat — new sign-ins use POST /api/auth/google."""
+    async with httpx.AsyncClient(timeout=15) as http:
+        try:
+            r = await http.get(EMERGENT_AUTH_SESSION_URL, headers={"X-Session-ID": req.session_id})
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Emergent auth call failed")
+            raise HTTPException(502, f"Auth provider unreachable: {exc}")
+
+    if r.status_code != 200:
+        logger.warning("Emergent auth returned %s: %s", r.status_code, r.text)
+        raise HTTPException(401, "Invalid session_id")
+
+    data = r.json()
+    email = data.get("email")
+    session_token = data.get("session_token")
+    if not (email and session_token):
+        raise HTTPException(500, "Malformed auth response")
+
+    return await _finalize_google_signin(
+        response,
+        google_sub=None,
+        email=email,
+        name=data.get("name"),
+        picture=data.get("picture"),
+        ref=req.ref,
+        session_token=session_token,
+    )
 
 
 @api.get("/auth/me")

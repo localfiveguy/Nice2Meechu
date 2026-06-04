@@ -68,17 +68,27 @@ A hyperlocal, video-first social app where users connect by watching short video
 - New GA4 event: `location_changed`.
 - Reverted the short-lived "distance filter" popover (1km/5km/25km/anywhere) — superseded by the location flow.
 
+## Updated (2026-06-04) — Direct Google OAuth (GIS) migration ✅
+- **Replaced Emergent-managed Google Auth with Direct Google Identity Services (GIS).** Removes the "double sign-in" intermediate Emergent auth page — user now sees ONLY the Google consent popup.
+- Frontend: GIS script (`https://accounts.google.com/gsi/client`) loaded via `index.html`. `SignInScreen` now renders the official GIS button via `google.accounts.id.renderButton` (pill, filled_white, "continue_with") and uses `ux_mode: "popup"` with `itp_support: true` for Safari/iOS.
+- Backend: new `POST /api/auth/google` endpoint verifies the Google-issued ID-token JWT cryptographically against Google's public keys (audience check = our `GOOGLE_CLIENT_ID`, issuer + expiry validated). On success it upserts the user (storing `google_sub`) and mints a fresh `session_token` cookie.
+- Shared `_finalize_google_signin()` helper consolidates user-upsert + session-mint logic between the new endpoint and the legacy `/api/auth/session` (kept for backwards compat; no UI surface).
+- Env: `GOOGLE_CLIENT_ID` (backend) + `REACT_APP_GOOGLE_CLIENT_ID` (frontend) added. No Client Secret required — GIS ID-token verification is signature-based, not code-exchange.
+- Google Cloud Console: Authorized JavaScript origins set for both `https://hyperlocal-video.preview.emergentagent.com` and `https://nice2meechu.com`.
+- Verified: GIS button renders on /signin, `/api/auth/google` rejects bogus JWTs (401), seeded session bears authenticated `/api/auth/me`.
+
 ## Prioritized backlog
 - **P1** Real recorded-video upload to object storage (currently `URL.createObjectURL(blob)` — not persistent across sessions).
-- **P1** Live translate-as-you-type preview in Chat before send (reuse `/api/translate`).
+- **P1** GDPR Art. 20 data-export endpoint ("Download my data").
+- **P1** Use Google profile picture as fallback avatar in chat/profile before video is recorded.
+- **P1** Set up `safety@` / `privacy@` mailboxes via Cloudflare Email Routing.
 - **P2** Mark `onboarding_completed`, `community_rules_accepted`, `match_made`, `share_started` as Key Events in GA4 Admin.
 - **P2** Push/online presence — show which matches are live now.
-- **P2** Report / block user.
 - **P2** Decommission old Netlify `nice2meechu` site once Emergent SSL stable ≥7 days.
 - **P3** Voice-note replies; audio translation (TTS over translated text).
 - **P3** Invite-only friends-of-friends discovery.
 - **P3** Split `App.js` into per-screen files once it stops being a single-file brief.
 
 ## Next Tasks
-- Click **Deploy** in Emergent workspace to push the Profile fix to `nice2meechu.com`.
-- (Optional) Move recorded video upload to backend + persistent storage.
+- Validate the new GIS sign-in end-to-end with a real Google account in the preview (one human-click smoke test).
+- Click **Deploy** to push the new auth flow to `nice2meechu.com`.

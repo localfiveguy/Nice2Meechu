@@ -38,6 +38,9 @@
         <meta name="twitter:image" content="/og-default.png" />
 
         <script>window.addEventListener("error",function(e){if(e.error instanceof DOMException&&e.error.name==="DataCloneError"&&e.message&&e.message.includes("PerformanceServerTiming")){e.stopImmediatePropagation();e.preventDefault()}},true);</script>
+        <!-- Google Identity Services (GIS) - direct Google OAuth -->
+        <!-- REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH -->
+        <script src="https://accounts.google.com/gsi/client" async defer></script>
         <script src="https://assets.emergent.sh/scripts/emergent-main.js"></script>
     </head>
     <body>

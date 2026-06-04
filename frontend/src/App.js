@@ -317,14 +317,82 @@ function Splash() {
   );
 }
 
-// ---------- Google Sign-In ----------
+// ---------- Google Sign-In (Direct Google Identity Services / GIS) ----------
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
+
 function SignInScreen() {
-  const startGoogle = () => {
+  const btnRef = useRef(null);
+  const [gisError, setGisError] = useState(null);
+
+  // Called by GIS when the user completes Google sign-in. The `response.credential`
+  // is a Google-issued ID-token JWT we hand off to the backend for verification.
+  const handleCredential = useCallback(async (response) => {
     track("sign_in_started", { method: "google" });
-    const redirectUrl = window.location.origin + "/";
-    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
-  };
+    try {
+      const ref = localStorage.getItem("n2m_ref") || undefined;
+      const { data } = await api.post("/auth/google", {
+        credential: response.credential,
+        ref,
+      });
+      if (data.token) localStorage.setItem("n2m_token", data.token);
+      localStorage.removeItem("n2m_ref");
+      track("sign_in_completed", { onboarded: !!data.onboarded, referred: !!ref });
+      // App-level mount-time hydration will run, but to be snappy we reload
+      // so /auth/me is re-fetched and routeToNext fires immediately.
+      window.location.reload();
+    } catch (err) {
+      console.error("google sign-in failed", err);
+      track("sign_in_failed");
+      toast.error("Sign-in failed. Try again.");
+    }
+  }, []);
+
+  // Initialize GIS and render the official Google button. We retry briefly
+  // because the GIS script loads `async defer` and may not be ready on mount.
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID) {
+      setGisError("Google Sign-In is not configured.");
+      return;
+    }
+    let cancelled = false;
+    let attempts = 0;
+    const tryInit = () => {
+      if (cancelled) return;
+      const gis = window.google?.accounts?.id;
+      if (!gis) {
+        if (attempts++ < 40) return setTimeout(tryInit, 100);
+        setGisError("Couldn't load Google Sign-In. Check your connection.");
+        return;
+      }
+      try {
+        gis.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: handleCredential,
+          ux_mode: "popup",
+          auto_select: false,
+          itp_support: true,
+        });
+        if (btnRef.current) {
+          btnRef.current.innerHTML = "";
+          gis.renderButton(btnRef.current, {
+            type: "standard",
+            theme: "filled_white",
+            size: "large",
+            text: "continue_with",
+            shape: "pill",
+            logo_alignment: "left",
+            width: 280,
+          });
+        }
+      } catch (e) {
+        console.error("GIS init failed", e);
+        setGisError("Sign-in unavailable. Refresh and try again.");
+      }
+    };
+    tryInit();
+    return () => { cancelled = true; };
+  }, [handleCredential]);
 
   return (
     <motion.div
@@ -340,31 +408,23 @@ function SignInScreen() {
         Hyperlocal. Video-first. Anonymous until the spark.
       </p>
 
-      <div className="mt-auto flex flex-col gap-3">
-        <button
-          className="w-full flex items-center justify-center gap-3 rounded-full px-6 py-4 font-bold text-base bg-white text-black hover:bg-white/90 active:scale-[0.98] transition"
-          onClick={startGoogle}
+      <div className="mt-auto flex flex-col items-center gap-3">
+        <div
+          ref={btnRef}
+          className="flex justify-center"
           data-testid="signin-google-button"
-        >
-          <GoogleGlyph />
-          <span>Continue with Google</span>
-        </button>
+          style={{ colorScheme: "light" }}
+        />
+        {gisError && (
+          <p className="text-center text-xs text-red-400" data-testid="signin-error">
+            {gisError}
+          </p>
+        )}
         <p className="text-center text-[11px] text-white/40 font-medium uppercase tracking-widest">
           By continuing you agree to be Nice
         </p>
       </div>
     </motion.div>
-  );
-}
-
-function GoogleGlyph() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true">
-      <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303C33.973 32.91 29.413 36 24 36c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/>
-      <path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/>
-      <path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.193l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.392 0-9.94-3.066-11.283-7.357l-6.54 5.036C9.51 39.556 16.227 44 24 44z"/>
-      <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-.793 2.237-2.231 4.166-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/>
-    </svg>
   );
 }
 
