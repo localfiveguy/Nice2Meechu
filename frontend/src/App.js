@@ -256,6 +256,7 @@ export default function App() {
           )}
           {screen === "matches" && user && (
             <MatchesScreen key="matches"
+              user={user}
               onTab={(s) => setScreen(s)}
               onOpenChat={(m) => { setActiveChat(m); setScreen("chat"); }}
             />
@@ -1341,7 +1342,7 @@ function FeedScreen({ user, setUser, onMatch, onTab }) {
         )}
       </AnimatePresence>
 
-      <BottomNav active="feed" onTab={onTab} />
+      <BottomNav active="feed" onTab={onTab} userPicture={user?.picture} />
     </motion.div>
   );
 }
@@ -1860,7 +1861,7 @@ function MatchCelebration({ data, onClose, onChat }) {
 }
 
 // ---------- Matches list ----------
-function MatchesScreen({ onTab, onOpenChat }) {
+function MatchesScreen({ user, onTab, onOpenChat }) {
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -1904,7 +1905,7 @@ function MatchesScreen({ onTab, onOpenChat }) {
         ))}
       </div>
 
-      <BottomNav active="matches" onTab={onTab} />
+      <BottomNav active="matches" onTab={onTab} userPicture={user?.picture} />
     </motion.div>
   );
 }
@@ -2371,23 +2372,40 @@ function ProfileScreen({ user, setUser, onTab, onLogout, onChangeVideo }) {
         </div>
       </div>
 
-      <BottomNav active="profile" onTab={onTab} />
+      <BottomNav active="profile" onTab={onTab} userPicture={user?.picture} />
     </motion.div>
   );
 }
 
 // ---------- Bottom Nav ----------
-function BottomNav({ active, onTab }) {
-  const Item = ({ id, icon: Icon, label }) => (
-    <button
-      onClick={() => onTab(id)}
-      className="flex flex-col items-center gap-1 flex-1 py-2"
-      data-testid={`nav-${id}`}
-    >
-      <Icon size={22} color={active === id ? "#FF4D4D" : "rgba(255,255,255,0.6)"} fill={active === id && id === "feed" ? "#FF4D4D" : "transparent"} />
-      <span className={`text-[10px] uppercase tracking-widest font-bold ${active === id ? "text-white" : "text-white/45"}`}>{label}</span>
-    </button>
-  );
+function BottomNav({ active, onTab, userPicture }) {
+  const Item = ({ id, icon: Icon, label }) => {
+    const isYouTabWithPic = id === "profile" && userPicture;
+    return (
+      <button
+        onClick={() => onTab(id)}
+        className="flex flex-col items-center gap-1 flex-1 py-2"
+        data-testid={`nav-${id}`}
+      >
+        {isYouTabWithPic ? (
+          // Google profile picture as the "You" tab affordance — ringed when active.
+          // referrerPolicy avoids Google CDN blocking the request from our origin.
+          <img
+            src={userPicture}
+            alt=""
+            referrerPolicy="no-referrer"
+            data-testid="nav-profile-avatar"
+            className={`w-[26px] h-[26px] rounded-full object-cover ${
+              active === id ? "ring-2 ring-[#FF4D4D] ring-offset-2 ring-offset-black" : "opacity-70"
+            }`}
+          />
+        ) : (
+          <Icon size={22} color={active === id ? "#FF4D4D" : "rgba(255,255,255,0.6)"} fill={active === id && id === "feed" ? "#FF4D4D" : "transparent"} />
+        )}
+        <span className={`text-[10px] uppercase tracking-widest font-bold ${active === id ? "text-white" : "text-white/45"}`}>{label}</span>
+      </button>
+    );
+  };
   return (
     <div className="absolute bottom-0 left-0 right-0 z-40 glass-dark border-t border-white/8 flex pb-10 pt-1 px-4" data-testid="bottom-nav">
       <Item id="feed" icon={VideoIcon} label="Feed" />

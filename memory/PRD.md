@@ -68,6 +68,12 @@ A hyperlocal, video-first social app where users connect by watching short video
 - New GA4 event: `location_changed`.
 - Reverted the short-lived "distance filter" popover (1km/5km/25km/anywhere) — superseded by the location flow.
 
+## Updated (2026-06-04 part 2) — Google profile picture as "You" tab affordance ✅
+- Bottom nav: the `You` tab icon now renders the user's Google profile picture (26×26 circle) when `user.picture` is set, falling back to the generic `UserIcon` glyph for legacy users without one. Active state adds a red ring (`ring-2 ring-[#FF4D4D]`) for affordance.
+- `BottomNav` now accepts a `userPicture` prop; all three call sites (`FeedScreen`, `MatchesScreen`, `ProfileScreen`) pass `user.picture`.
+- `<img referrerPolicy="no-referrer">` so Google's CDN doesn't 403 the request from `nice2meechu.com`.
+- Verified in preview: seeded test user with `picture` URL → avatar visible on Feed and on Profile (with red ring when active).
+
 ## Updated (2026-06-04) — Direct Google OAuth (GIS) migration ✅
 - **Replaced Emergent-managed Google Auth with Direct Google Identity Services (GIS).** Removes the "double sign-in" intermediate Emergent auth page — user now sees ONLY the Google consent popup.
 - Frontend: GIS script (`https://accounts.google.com/gsi/client`) loaded via `index.html`. `SignInScreen` now renders the official GIS button via `google.accounts.id.renderButton` (pill, filled_white, "continue_with") and uses `ux_mode: "popup"` with `itp_support: true` for Safari/iOS.
@@ -80,7 +86,6 @@ A hyperlocal, video-first social app where users connect by watching short video
 ## Prioritized backlog
 - **P1** Real recorded-video upload to object storage (currently `URL.createObjectURL(blob)` — not persistent across sessions).
 - **P1** GDPR Art. 20 data-export endpoint ("Download my data").
-- **P1** Use Google profile picture as fallback avatar in chat/profile before video is recorded.
 - **P1** Set up `safety@` / `privacy@` mailboxes via Cloudflare Email Routing.
 - **P2** Mark `onboarding_completed`, `community_rules_accepted`, `match_made`, `share_started` as Key Events in GA4 Admin.
 - **P2** Push/online presence — show which matches are live now.
