@@ -1216,6 +1216,15 @@ function VideoPick({ user, onDone, onSkip }) {
             <div className="text-sm font-bold text-white">Video rejected</div>
             <div className="text-[11px] text-white/70 mt-0.5 leading-snug">{rejectReason}</div>
             <div className="text-[11px] text-white/55 mt-1">Tap the record button to try again.</div>
+            <a
+              href={SAFETY_CONTACT_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block text-[11px] text-[#00E5FF] hover:text-white underline mt-2"
+              data-testid="face-check-reject-contact"
+            >
+              Looks wrong? Contact us →
+            </a>
           </div>
           <button
             onClick={() => setRejectReason(null)}
