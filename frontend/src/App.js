@@ -613,6 +613,8 @@ function Onboarding({ user, onDone }) {
             value={city}
             onChange={(v) => { setCity(v); setCityCoords(null); }}
             onPick={(item) => { setCity(item.value || ""); setCityCoords({ lat: item.lat, lng: item.lng }); }}
+            biasLat={user.lat}
+            biasLng={user.lng}
           />
         </div>
       )}
@@ -728,7 +730,7 @@ function formatCityLabel(p = {}) {
   return parts.join(", ");
 }
 
-function CityAutocomplete({ value, onChange, onPick }) {
+function CityAutocomplete({ value, onChange, onPick, biasLat, biasLng }) {
   const [suggestions, setSuggestions] = useState([]);
   const [open, setOpen] = useState(false);
   const debounceRef = useRef(null);
@@ -741,7 +743,16 @@ function CityAutocomplete({ value, onChange, onPick }) {
     if (!v || v.trim().length < 2) { setSuggestions([]); return; }
     debounceRef.current = setTimeout(async () => {
       try {
-        const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(v)}&limit=5&osm_tag=place:city&osm_tag=place:town&osm_tag=place:village&osm_tag=place:suburb&osm_tag=place:hamlet`;
+        // Geographic bias — if we have the user's coords (captured from
+        // navigator.geolocation after sign-in, see App effect), pass them so
+        // results near them rank first. e.g. typing "Berlin" in Brandenburg
+        // surfaces Berlin, Germany; in New Hampshire surfaces Berlin, NH.
+        // location_bias_scale=0.6 is a moderate bias (not exclusive), and
+        // zoom=10 corresponds to roughly a city-region focus area.
+        let url = `https://photon.komoot.io/api/?q=${encodeURIComponent(v)}&limit=5&osm_tag=place:city&osm_tag=place:town&osm_tag=place:village&osm_tag=place:suburb&osm_tag=place:hamlet`;
+        if (typeof biasLat === "number" && typeof biasLng === "number") {
+          url += `&lat=${biasLat}&lon=${biasLng}&location_bias_scale=0.6&zoom=10`;
+        }
         const r = await fetch(url);
         const data = await r.json();
         const items = (data?.features || []).map((f) => {
@@ -2502,6 +2513,8 @@ function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, onChange
                   value={city}
                   onChange={(v) => { setCity(v); setCityCoords(null); }}
                   onPick={(item) => { setCity(item.value || ""); setCityCoords({ lat: item.lat, lng: item.lng }); }}
+                  biasLat={user.city_lat || user.lat}
+                  biasLng={user.city_lng || user.lng}
                 />
               </div>
               <div>
