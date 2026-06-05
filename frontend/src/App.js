@@ -1565,44 +1565,38 @@ function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
               onPass={() => handleSwipe(i, "pass")}
               muted={muted}
               setMuted={setMutedPersist}
+              positionLabel={`${i + 1}/${feed.length}`}
             />
           </div>
         ))}
       </div>
 
-      {/* Feed playback controls — bottom-left (Back + Restart) and centered
-          counter ("1/12"). The Skip/Like buttons live on each card's right
-          edge (FeedCard) and stay there. This bar floats above BottomNav. */}
+      {/* Left-edge playback controls (Back + Restart) — vertical stack mirroring
+          the right-edge action stack. Lives at mid-height so it never collides
+          with the bottom-nav, Emergent's preview footer, or the captions card. */}
       {!loading && feed.length > 0 && (
         <div
-          className="absolute left-4 right-4 z-30 flex items-center gap-2 pointer-events-none"
-          style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 5rem)" }}
+          className="absolute left-3 top-1/2 -translate-y-1/2 z-30 flex flex-col gap-3 pointer-events-none"
           data-testid="feed-playback-controls"
         >
           <button
             onClick={goBack}
             disabled={activeIdx === 0}
-            className="pointer-events-auto w-10 h-10 rounded-full flex items-center justify-center bg-black/55 backdrop-blur-md text-white/85 hover:text-white disabled:opacity-30 active:scale-95 transition"
+            className="pointer-events-auto w-12 h-12 rounded-full flex items-center justify-center bg-black/55 backdrop-blur-md text-white/85 hover:text-white disabled:opacity-30 active:scale-95 transition"
             aria-label="Previous video"
             data-testid="feed-back-button"
           >
-            <ArrowLeft size={18} />
+            <ArrowLeft size={20} />
           </button>
           <button
             onClick={restart}
             disabled={activeIdx === 0}
-            className="pointer-events-auto w-10 h-10 rounded-full flex items-center justify-center bg-black/55 backdrop-blur-md text-white/85 hover:text-white disabled:opacity-30 active:scale-95 transition"
+            className="pointer-events-auto w-12 h-12 rounded-full flex items-center justify-center bg-black/55 backdrop-blur-md text-white/85 hover:text-white disabled:opacity-30 active:scale-95 transition"
             aria-label="Restart from first video"
             data-testid="feed-restart-button"
           >
-            <RotateCcw size={16} />
+            <RotateCcw size={18} />
           </button>
-          <div
-            className="ml-auto pointer-events-auto px-3 py-1.5 rounded-full bg-black/55 backdrop-blur-md text-[11px] font-bold uppercase tracking-widest text-white/85"
-            data-testid="feed-position-counter"
-          >
-            {activeIdx + 1}<span className="text-white/45 mx-1">/</span>{feed.length}
-          </div>
         </div>
       )}
 
@@ -1964,7 +1958,7 @@ function ChangeLocationScreen({ user, onClose, onChanged }) {
   );
 }
 
-function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, onOpenLocation, muted, setMuted }) {
+function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, onOpenLocation, muted, setMuted, positionLabel }) {
   const vidRef = useRef(null);
   const [translated, setTranslated] = useState("");
   const [showCaption, setShowCaption] = useState(false);
@@ -2062,13 +2056,24 @@ function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, onOpenL
         </span>
       </button>
 
+      {/* Position counter — sits directly under the city pill so the viewer
+          always knows where they are in the city's chronological list. */}
+      {positionLabel && (
+        <div
+          className="absolute top-[3.5rem] right-5 px-2 py-0.5 rounded-full glass-dark text-[10px] uppercase tracking-widest font-bold text-white/75 pointer-events-none"
+          data-testid="feed-position-counter"
+        >
+          {positionLabel}
+        </div>
+      )}
+
       {/* "you've seen this" pill — only renders when the viewer is rewatching
           a video they previously swiped on (via Back / Restart). Subtle so
           it doesn't compete with the codename, but obvious enough that the
           viewer knows their prior decision is on the record. */}
       {item.prior_action === "like" && (
         <div
-          className="absolute top-[3.75rem] right-5 flex items-center gap-1 px-2 py-1 rounded-full bg-[#FF4D4D]/20 ring-1 ring-[#FF4D4D]/40 text-[#FF4D4D] text-[10px] uppercase tracking-widest font-bold"
+          className="absolute top-[5rem] right-5 flex items-center gap-1 px-2 py-1 rounded-full bg-[#FF4D4D]/20 ring-1 ring-[#FF4D4D]/40 text-[#FF4D4D] text-[10px] uppercase tracking-widest font-bold"
           data-testid="feed-prior-action-badge"
         >
           <Heart size={10} fill="#FF4D4D" /> Liked
@@ -2076,13 +2081,12 @@ function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, onOpenL
       )}
       {item.prior_action === "pass" && (
         <div
-          className="absolute top-[3.75rem] right-5 flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 ring-1 ring-white/15 text-white/65 text-[10px] uppercase tracking-widest font-bold"
+          className="absolute top-[5rem] right-5 flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 ring-1 ring-white/15 text-white/65 text-[10px] uppercase tracking-widest font-bold"
           data-testid="feed-prior-action-badge"
         >
           <X size={10} /> Passed
         </div>
       )}
-
       {/* vibes */}
       <div className="absolute top-20 left-5 right-24 flex flex-wrap gap-1.5">
         {(item.vibes || []).slice(0, 4).map((v) => (
