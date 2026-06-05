@@ -1,5 +1,13 @@
 # Nice2Meechu — Product Requirements Doc
 
+## Updated (2026-06-05 part 3) — Feed playback controls + per-city position memory ✅
+- **Backend `/api/feed`**: now returns the FULL set of users in the viewer's city (chronological, oldest-first), not just the unswiped ones. Each item gets `prior_action` (null | "like" | "pass" | "block"). Blocked users still excluded entirely. Also returns `saved_position` from `user.city_positions[city]`.
+- **Backend `/api/swipe`**: now an upsert — re-swiping a target overwrites the prior action. Match logic skips if a match already exists between the pair (Back→Like rewatch is safe and doesn't duplicate matches).
+- **Backend new endpoint** `POST /api/users/me/city-position` — saves `{city, index}` to `user.city_positions[city_lowercase]`. Frontend writes it debounced 600ms after each active-index change.
+- **Backend `/api/cities/popular`**: excludes the requesting user from the count, so "2 PEOPLE in Wildwood" doesn't tick up just because you moved there.
+- **Frontend FeedScreen**: bottom-left overlay now shows `[← Back] [↻ Restart]` and bottom-right shows `[N/Total]` counter (1-indexed). Skip/Like remain on each card's right edge. Restart pops a confirmation modal that explicitly says "won't reset your likes or passes". On feed load: resume from `saved_position` first, else first-unswiped, else 0. Optimistic swipe state — Back/Restart preserves visible state. Auto-advance only fires when the swipe was on the active card (so swiping on a back-viewed video doesn't yank the viewer back to position).
+- **Verified end-to-end via Playwright**: feed loads with 11/11 counter (12 SP demos - 1 self), back button disabled at idx 0, playback controls visible.
+
 ## Updated (2026-06-05 part 2) — Safety/privacy contact swapped from email to Google Form ✅
 - User chose to skip paid email hosting (Network Solutions wanted $2.99/mo; Cloudflare requires DNS migration). Replaced all `mailto:safety@nice2meechu.com` / `mailto:privacy@nice2meechu.com` references with a single Google Form: https://docs.google.com/forms/d/e/1FAIpQLSe-57lGZwk9_6EOD5ZT1nkurdpges3sYznY0QJa5oRrhsZybg/viewform
 - Form auto-emails operator at `localfiveguy@gmail.com` on submit (response notifications turned on in the form's Responses tab).

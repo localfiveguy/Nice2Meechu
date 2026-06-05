@@ -529,6 +529,27 @@ async def me(user=Depends(current_user)):
     return {"user": user}
 
 
+class CityPositionReq(BaseModel):
+    city: str  # lowercase short city name, e.g. "tokyo"
+    index: int  # 0-based position into the feed
+
+
+@api.post("/users/me/city-position")
+async def save_city_position(req: CityPositionReq, user=Depends(current_user)):
+    """Remember the last-watched index per city so the viewer resumes there
+    when they switch away and come back. Stored as a sparse dict on the user
+    record: city_positions: {"tokyo": 5, "berlin": 2}."""
+    city_key = (req.city or "").strip().lower().split(",")[0].strip()
+    if not city_key:
+        raise HTTPException(400, "city required")
+    idx = max(0, int(req.index))
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {f"city_positions.{city_key}": idx}},
+    )
+    return {"ok": True, "city": city_key, "index": idx}
+
+
 @api.delete("/users/me")
 async def delete_my_account(
     user=Depends(current_user),
@@ -999,8 +1020,15 @@ def _is_demo_user(target: dict) -> bool:
 @api.get("/feed")
 async def feed(user=Depends(current_user)):
     await seed_demo_users()
-    swiped = await db.swipes.find({"user_id": user["id"]}, {"_id": 0, "target_user_id": 1}).to_list(2000)
-    swiped_ids = {s["target_user_id"] for s in swiped}
+    # Build a quick map of prior swipe actions so we can mark each feed item
+    # with its `prior_action` (None | "like" | "pass" | "block"). The client
+    # uses this to skip past already-seen videos on initial render — but the
+    # full list is returned so Back / Restart can still navigate to them.
+    swipe_docs = await db.swipes.find(
+        {"user_id": user["id"]}, {"_id": 0, "target_user_id": 1, "action": 1}
+    ).to_list(5000)
+    prior_action_by_id = {s["target_user_id"]: s["action"] for s in swipe_docs}
+    blocked_ids = {tid for tid, action in prior_action_by_id.items() if action == "block"}
     viewer_city_full = (user.get("city") or "").strip()
     viewer_city = viewer_city_full.split(",")[0].strip().lower()
 
@@ -1008,8 +1036,9 @@ async def feed(user=Depends(current_user)):
     # that exact city. If there are none, return an empty feed and let the
     # frontend prompt the user to change location. No silent fallback — the
     # whole point of "near you" is to be honest about it.
+    # Blocked users stay excluded (unlike pass/like which we just mark).
     base_filter = {
-        "id": {"$ne": user["id"], "$nin": list(swiped_ids)},
+        "id": {"$ne": user["id"], "$nin": list(blocked_ids)},
         "video_url": {"$ne": None, "$exists": True},
     }
     candidates: list = []
@@ -1046,8 +1075,16 @@ async def feed(user=Depends(current_user)):
                 "source_lang": c.get("source_lang", "en"),
                 "distance_km": dist,
                 "is_demo": bool(c.get("is_demo")),
+                # null when the viewer hasn't swiped on this user yet; otherwise
+                # "like" or "pass". Lets the client skip past previously-seen
+                # videos by default while still allowing Back/Restart navigation.
+                "prior_action": prior_action_by_id.get(c["id"]),
             }
         )
+
+    # Saved per-city scroll position so the user resumes where they left off
+    # when they switch away from this city and come back. Defaults to None.
+    saved_position = (user.get("city_positions") or {}).get(viewer_city) if viewer_city else None
 
     # Chronological order preserved (oldest first per the user's request) —
     # NO shuffle. The "first in city" video should be the same for every
@@ -1064,7 +1101,7 @@ async def feed(user=Depends(current_user)):
         })
         city_stats = {"total": city_total, "remaining": len(out)}
 
-    return {"feed": out[:20], "city_stats": city_stats}
+    return {"feed": out[:60], "city_stats": city_stats, "saved_position": saved_position}
 
 
 async def _check_mutual_match(target: dict, viewer_id: str) -> bool:
@@ -1078,20 +1115,38 @@ async def _check_mutual_match(target: dict, viewer_id: str) -> bool:
 
 @api.post("/swipe")
 async def swipe(req: SwipeReq, user=Depends(current_user)):
-    await db.swipes.insert_one(
-        {
+    # Upsert so users can re-watch a video (via Back / Restart) and change
+    # their mind without duplicate-swipe rows piling up. If they previously
+    # liked and now pass, the new action wins for any FUTURE feed/match
+    # computations — but we DO NOT retroactively undo an already-created
+    # match (that would yank a chat from the other party with no warning).
+    await db.swipes.update_one(
+        {"user_id": user["id"], "target_user_id": req.target_user_id},
+        {"$set": {
             "id": str(uuid.uuid4()),
             "user_id": user["id"],
             "target_user_id": req.target_user_id,
             "action": req.action,
             "at": datetime.now(timezone.utc).isoformat(),
-        }
+        }},
+        upsert=True,
     )
     if req.action != "like":
         return {"match": False}
 
     target = await db.users.find_one({"id": req.target_user_id}, {"_id": 0})
-    if not target or not await _check_mutual_match(target, user["id"]):
+    if not target:
+        return {"match": False}
+
+    # If the pair is already matched (e.g., a Back-then-like re-watch), don't
+    # spawn a duplicate match.
+    existing = await db.matches.find_one(
+        {"user_ids": sorted([user["id"], req.target_user_id])}, {"_id": 0, "id": 1}
+    )
+    if existing:
+        return {"match": True, "match_id": existing["id"], "already_matched": True}
+
+    if not await _check_mutual_match(target, user["id"]):
         return {"match": False}
 
     match_id = str(uuid.uuid4())

@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Heart, X, MapPin, Languages, ArrowRight, ArrowLeft, Sparkles,
   Send, MessageCircle, User as UserIcon, Video as VideoIcon, Camera,
-  Globe, Check, LogOut, Pause, Share2, Copy, AlertTriangle,
+  Globe, Check, LogOut, Pause, Share2, Copy, AlertTriangle, RotateCcw,
 } from "lucide-react";
 import "@/App.css";
 import { initAnalytics, pageview, track } from "./analytics";
@@ -1274,16 +1274,30 @@ function VideoPick({ user, onDone, onSkip }) {
 
 // ---------- Feed ----------
 function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
+  // We now keep the FULL feed (including videos the viewer already swiped on)
+  // so Back/Restart can navigate to them. `prior_action` on each item tracks
+  // pass/like state; on initial mount we auto-scroll to the first unswiped.
   const [feed, setFeed] = useState([]);
-  // city_stats.total = users in this city we've ever seen (excluding self);
-  // city_stats.remaining = users we haven't yet swiped on. Lets the empty
-  // state say "you've watched everyone" vs "no one is here yet".
   const [cityStats, setCityStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeIdx, setActiveIdx] = useState(0);
   const [locationOpen, setLocationOpen] = useState(false);
+  const [confirmRestart, setConfirmRestart] = useState(false);
   const scrollRef = useRef(null);
   const itemRefs = useRef([]);
+  const programmaticScrollUntil = useRef(0);
+  // Stable lowercase city key for /users/me/city-position requests.
+  const cityKey = (user?.city || "").split(",")[0].trim().toLowerCase();
+
+  const scrollToIdx = useCallback((idx, behavior = "smooth") => {
+    const el = itemRefs.current[idx];
+    if (!el) return;
+    // Lock out the intersection observer briefly so the active-index doesn't
+    // chase the scroll animation past our destination.
+    programmaticScrollUntil.current = Date.now() + 700;
+    setActiveIdx(idx);
+    el.scrollIntoView({ behavior, block: "start" });
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1291,14 +1305,39 @@ function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
       const { data } = await api.get("/feed");
       setFeed(data.feed);
       setCityStats(data.city_stats || null);
-    } catch (e) {
+      // Pick the initial index in this priority order:
+      //   1. Saved per-city position (where the viewer left off last time)
+      //   2. First unswiped video (so you don't auto-rewatch by default)
+      //   3. 0 (fallback)
+      const total = (data.feed || []).length;
+      let startIdx = 0;
+      if (typeof data.saved_position === "number" && data.saved_position < total) {
+        startIdx = data.saved_position;
+      } else {
+        const firstUnswiped = (data.feed || []).findIndex((it) => !it.prior_action);
+        startIdx = firstUnswiped >= 0 ? firstUnswiped : 0;
+      }
+      // Defer until after render so item refs exist.
+      setTimeout(() => scrollToIdx(startIdx, "auto"), 30);
+    } catch {
       toast.error("Couldn't load feed");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [scrollToIdx]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Persist the active index every time it changes (debounced via the swipe
+  // / scroll handlers — this effect just fires once per landed index). Server
+  // is idempotent so duplicate writes are fine.
+  useEffect(() => {
+    if (!cityKey || loading || !feed.length) return;
+    const id = setTimeout(() => {
+      api.post("/users/me/city-position", { city: cityKey, index: activeIdx }).catch(() => {});
+    }, 600);
+    return () => clearTimeout(id);
+  }, [activeIdx, cityKey, loading, feed.length]);
 
   const handleLocationChanged = (updatedUser) => {
     setLocationOpen(false);
@@ -1311,6 +1350,9 @@ function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
     if (!scrollRef.current) return;
     const obs = new IntersectionObserver(
       (entries) => {
+        // Ignore observer updates during a programmatic scroll so we don't
+        // snap activeIdx around mid-animation.
+        if (Date.now() < programmaticScrollUntil.current) return;
         entries.forEach((entry) => {
           const idx = Number(entry.target.dataset.idx);
           if (entry.isIntersecting && entry.intersectionRatio > 0.6) {
@@ -1327,20 +1369,42 @@ function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
   const handleSwipe = async (idx, action) => {
     const item = feed[idx];
     if (!item) return;
+    // Optimistic: mark the swipe action locally so the next render shows the
+    // updated prior_action immediately (avoids a flash of "unliked" on Back).
+    setFeed((f) => f.map((it, i) => (i === idx ? { ...it, prior_action: action } : it)));
     try {
       const { data } = await api.post("/swipe", { target_user_id: item.id, action });
       track(`swipe_${action}`, { target_lang: item.source_lang });
-      // remove from feed
-      setFeed((f) => f.filter((x) => x.id !== item.id));
-      if (data.match) {
+      if (data.match && !data.already_matched) {
         track("match_made");
         onMatch(data);
-      } else if (action === "like") {
+      } else if (action === "like" && !data.match) {
         toast("👋 Liked.", { duration: 1200 });
       }
     } catch {
       toast.error("Swipe failed");
+      // Roll back the optimistic update.
+      setFeed((f) => f.map((it, i) => (i === idx ? { ...it, prior_action: item.prior_action } : it)));
+      return;
     }
+    // Auto-advance to the next video, but only if we're currently AT this idx
+    // — we don't want to scroll the user away if they're already deeper in
+    // the feed (e.g. they hit Like on a previously-watched video via Back).
+    if (activeIdx === idx && idx < feed.length - 1) {
+      setTimeout(() => scrollToIdx(idx + 1), 200);
+    }
+  };
+
+  const goBack = () => {
+    if (activeIdx > 0) scrollToIdx(activeIdx - 1);
+  };
+  const restart = () => {
+    if (feed.length === 0) return;
+    setConfirmRestart(true);
+  };
+  const doRestart = () => {
+    setConfirmRestart(false);
+    scrollToIdx(0);
   };
 
   return (
@@ -1489,6 +1553,72 @@ function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
           </div>
         ))}
       </div>
+
+      {/* Feed playback controls — bottom-left (Back + Restart) and centered
+          counter ("1/12"). The Skip/Like buttons live on each card's right
+          edge (FeedCard) and stay there. This bar floats above BottomNav. */}
+      {!loading && feed.length > 0 && (
+        <div
+          className="absolute left-4 right-4 z-30 flex items-center gap-2 pointer-events-none"
+          style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 5rem)" }}
+          data-testid="feed-playback-controls"
+        >
+          <button
+            onClick={goBack}
+            disabled={activeIdx === 0}
+            className="pointer-events-auto w-10 h-10 rounded-full flex items-center justify-center bg-black/55 backdrop-blur-md text-white/85 hover:text-white disabled:opacity-30 active:scale-95 transition"
+            aria-label="Previous video"
+            data-testid="feed-back-button"
+          >
+            <ArrowLeft size={18} />
+          </button>
+          <button
+            onClick={restart}
+            disabled={activeIdx === 0}
+            className="pointer-events-auto w-10 h-10 rounded-full flex items-center justify-center bg-black/55 backdrop-blur-md text-white/85 hover:text-white disabled:opacity-30 active:scale-95 transition"
+            aria-label="Restart from first video"
+            data-testid="feed-restart-button"
+          >
+            <RotateCcw size={16} />
+          </button>
+          <div
+            className="ml-auto pointer-events-auto px-3 py-1.5 rounded-full bg-black/55 backdrop-blur-md text-[11px] font-bold uppercase tracking-widest text-white/85"
+            data-testid="feed-position-counter"
+          >
+            {activeIdx + 1}<span className="text-white/45 mx-1">/</span>{feed.length}
+          </div>
+        </div>
+      )}
+
+      {confirmRestart && (
+        <div
+          className="absolute inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm px-6"
+          data-testid="feed-restart-confirm"
+        >
+          <div className="bg-[#0c0c10] border border-white/10 rounded-3xl p-6 max-w-[320px] w-full flex flex-col gap-3 shadow-2xl">
+            <div className="font-display text-xl font-black">Restart {user.city?.split(",")[0]}?</div>
+            <p className="text-sm text-white/65 leading-snug">
+              Watch the city from the beginning again? This won't reset your likes or passes.
+            </p>
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={() => setConfirmRestart(false)}
+                className="flex-1 btn-ghost"
+                data-testid="feed-restart-cancel"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={doRestart}
+                className="flex-1 btn-primary"
+                data-testid="feed-restart-confirm-btn"
+              >
+                Restart
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <AnimatePresence>
         {locationOpen && (
