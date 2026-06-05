@@ -1566,6 +1566,8 @@ function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
               muted={muted}
               setMuted={setMutedPersist}
               positionLabel={`${i + 1}/${feed.length}`}
+              isLastInCity={i === feed.length - 1}
+              onRestart={restart}
             />
           </div>
         ))}
@@ -1958,7 +1960,7 @@ function ChangeLocationScreen({ user, onClose, onChanged }) {
   );
 }
 
-function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, onOpenLocation, muted, setMuted, positionLabel }) {
+function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, onOpenLocation, muted, setMuted, positionLabel, isLastInCity, onRestart }) {
   const vidRef = useRef(null);
   const [translated, setTranslated] = useState("");
   const [showCaption, setShowCaption] = useState(false);
@@ -2132,9 +2134,26 @@ function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, onOpenL
         >
           <AlertTriangle size={16} />
         </button>
-        <button className="btn-icon" style={{ background: "rgba(255,255,255,0.12)" }} onClick={onPass} data-testid="feed-pass-button">
-          <X size={22} />
-        </button>
+        {/* On the final video in this city, the Skip button morphs into a
+            "Restart from the top" button — passing on the last video has no
+            "next" to go to anyway, so we repurpose the slot for the action
+            most users actually want there (rewatch from #1). */}
+        {isLastInCity ? (
+          <button
+            className="btn-icon"
+            style={{ background: "rgba(255,255,255,0.12)" }}
+            onClick={onRestart}
+            data-testid="feed-end-restart-button"
+            aria-label="Restart from the first video in this city"
+            title="You've reached the end — tap to start over"
+          >
+            <RotateCcw size={22} />
+          </button>
+        ) : (
+          <button className="btn-icon" style={{ background: "rgba(255,255,255,0.12)" }} onClick={onPass} data-testid="feed-pass-button">
+            <X size={22} />
+          </button>
+        )}
         <button
           className="btn-icon"
           style={{ background: "linear-gradient(180deg,#FF6B6B,#FF3D3D)", boxShadow: "0 10px 30px -8px rgba(255,77,77,0.7)" }}
