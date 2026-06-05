@@ -33,6 +33,7 @@ const Shell = ({ title, children, onBack }) => (
       <div className="prose prose-invert text-white/85 text-sm leading-relaxed space-y-4">{children}</div>
       <div className="mt-12 text-xs text-white/40 border-t border-white/10 pt-6">
         Contact: <a className="text-[#00E5FF] underline" href={SAFETY_CONTACT_URL} target="_blank" rel="noopener noreferrer">submit a form</a>
+        <span className="ml-1">— a human usually replies within 24 hours.</span>
       </div>
     </div>
   </div>
