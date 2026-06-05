@@ -1,4 +1,5 @@
 """Nice2Meechu backend - Google OAuth (Emergent), anonymous video feed, AI translation."""
+import asyncio
 import logging
 import os
 import re
@@ -181,6 +182,20 @@ async def current_user(
     user = await _resolve_user_from_token(token)
     if not user:
         raise HTTPException(401, "Invalid or expired session")
+
+    # Track activity for the 90-day inactivity sweep. Fire-and-forget so it
+    # doesn't slow the hot path. Motor's update_one IS a coroutine, but to
+    # wrap it correctly with create_task we use ensure_future via a helper.
+    async def _touch_seen() -> None:
+        try:
+            await db.users.update_one(
+                {"id": user["id"]},
+                {"$set": {"last_seen_at": datetime.now(timezone.utc).isoformat()}},
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    asyncio.create_task(_touch_seen())
     return user
 
 
@@ -675,6 +690,72 @@ async def admin_funnel(user=Depends(current_user)):
         "funnel": funnel,
         "recent": {"signups_7d": signups_7d, "signups_30d": signups_30d},
         "top_cities": top_cities,
+    }
+
+
+@api.post("/admin/inactive-cleanup")
+async def admin_inactive_cleanup(days: int = 90, dry_run: bool = True, user=Depends(current_user)):
+    """Delete intro videos (from GCS) for users who haven't signed in within
+    the last `days` days. Sets `video_url` to None on the user record so they
+    re-record on next sign-in. Keeps the user account itself intact (only the
+    video is removed) — that's friendlier than full account deletion AND
+    keeps storage costs predictable.
+
+    `dry_run=True` (the default) returns the would-affect set without doing
+    anything. Pass `?dry_run=false` to actually delete.
+    """
+    _require_admin(user)
+    if days < 14:
+        raise HTTPException(400, "Minimum days=14 to avoid accidents")
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    # We treat both "never tracked" AND "last_seen_at < cutoff" as inactive.
+    # Filter to users who actually have an uploaded video to clean (GCS URL).
+    query = {
+        "is_demo": {"$ne": True},
+        "video_url": {"$regex": r"^https?://"},
+        "$or": [
+            {"last_seen_at": {"$lt": cutoff}},
+            {"last_seen_at": {"$exists": False}},
+        ],
+    }
+    candidates = await db.users.find(query, {"_id": 0, "id": 1, "email": 1, "video_url": 1, "last_seen_at": 1}).to_list(5000)
+
+    if dry_run:
+        return {
+            "dry_run": True,
+            "cutoff": cutoff,
+            "candidate_count": len(candidates),
+            "candidates": [{"id": c["id"], "email": c.get("email"), "last_seen_at": c.get("last_seen_at")} for c in candidates[:50]],
+        }
+
+    # Live mode — delete from GCS and null out the URL.
+    bucket = _get_gcs_bucket()
+    deleted_keys: list = []
+    failed_keys: list = []
+    for c in candidates:
+        url = c.get("video_url") or ""
+        # Object key looks like user_videos/<uid>.<ext>; derive from the URL.
+        m = re.search(r"/nicemeechu/(user_videos/[^?]+)", url)
+        if not m:
+            continue
+        key = m.group(1)
+        try:
+            await run_in_threadpool(lambda k=key: bucket.blob(k).delete())
+            deleted_keys.append(key)
+        except Exception as exc:  # noqa: BLE001
+            failed_keys.append({"key": key, "error": str(exc)})
+        await db.users.update_one(
+            {"id": c["id"]},
+            {"$set": {"video_url": None, "transcript": None, "inactivity_cleaned_at": datetime.now(timezone.utc).isoformat()}},
+        )
+
+    return {
+        "dry_run": False,
+        "cutoff": cutoff,
+        "candidate_count": len(candidates),
+        "deleted_count": len(deleted_keys),
+        "failed": failed_keys,
     }
 
 
