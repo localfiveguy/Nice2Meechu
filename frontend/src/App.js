@@ -65,7 +65,7 @@ async function translate(text, target_lang, source_lang) {
   }
 }
 
-import { CookieConsentBanner, getCookieConsent, PrivacyPolicyPage, TermsOfServicePage } from "./legal/LegalPages";
+import { CookieConsentBanner, getCookieConsent, PrivacyPolicyPage, SAFETY_CONTACT_URL, TermsOfServicePage } from "./legal/LegalPages";
 
 // ---------- Share helpers ----------
 // Robust copy that works even in cross-origin iframes (Emergent preview) where
@@ -1923,7 +1923,7 @@ function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, onOpenL
               toast.success("Thanks for reporting. We won't show this user again.");
               onPass();
             } catch {
-              toast.error("Couldn't submit report — email safety@nice2meechu.com");
+              toast.error("Couldn't submit report — please submit our safety form instead");
             }
           }}
           data-testid="feed-report-button"
@@ -2425,7 +2425,7 @@ function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, onChange
                   <span className="text-white/20">·</span>
                   <a href="/terms" className="hover:text-white underline" data-testid="profile-terms-link">Terms</a>
                   <span className="text-white/20">·</span>
-                  <a href="mailto:safety@nice2meechu.com" className="hover:text-white underline" data-testid="profile-safety-link">Report safety</a>
+                  <a href={SAFETY_CONTACT_URL} target="_blank" rel="noopener noreferrer" className="hover:text-white underline" data-testid="profile-safety-link">Report safety</a>
                 </div>
                 <button
                   className="text-white/70 hover:text-white text-xs underline mt-1"
@@ -2446,7 +2446,7 @@ function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, onChange
                       toast.success("Your data was downloaded");
                     } catch (err) {
                       console.error(err);
-                      toast.error("Couldn't export — please email privacy@nice2meechu.com");
+                      toast.error("Couldn't export — please submit our privacy form instead");
                     }
                   }}
                   data-testid="profile-data-export"
@@ -2466,7 +2466,7 @@ function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, onChange
                       localStorage.removeItem("n2m_token");
                       setTimeout(() => { window.location.href = "/"; }, 500);
                     } catch (e) {
-                      toast.error("Couldn't delete account — please email privacy@nice2meechu.com");
+                      toast.error("Couldn't delete account — please submit our privacy form instead");
                     }
                   }}
                   data-testid="profile-delete-account"

@@ -1,6 +1,13 @@
 /* eslint-disable react/no-unescaped-entities */
 import React from "react";
 
+// Public contact form (Google Form) — used for safety reports, privacy
+// requests (GDPR access/erasure), and general legal questions. We use one
+// form for everything because (a) it auto-emails the operator on submit,
+// (b) it gives structured data instead of free-form mailto threads, and
+// (c) it works without paid email hosting.
+export const SAFETY_CONTACT_URL = "https://docs.google.com/forms/d/e/1FAIpQLSe-57lGZwk9_6EOD5ZT1nkurdpges3sYznY0QJa5oRrhsZybg/viewform";
+
 // ---------------------------------------------------------------------------
 // Privacy Policy + Terms of Service — DRAFT v1, 2026-06-03.
 //
@@ -25,7 +32,7 @@ const Shell = ({ title, children, onBack }) => (
       <p className="text-xs text-white/40 uppercase tracking-widest mb-8">Effective Jun 3, 2026 · Draft v1</p>
       <div className="prose prose-invert text-white/85 text-sm leading-relaxed space-y-4">{children}</div>
       <div className="mt-12 text-xs text-white/40 border-t border-white/10 pt-6">
-        Contact: <a className="text-[#00E5FF] underline" href="mailto:privacy@nice2meechu.com">privacy@nice2meechu.com</a>
+        Contact: <a className="text-[#00E5FF] underline" href={SAFETY_CONTACT_URL} target="_blank" rel="noopener noreferrer">submit a form</a>
       </div>
     </div>
   </div>
@@ -81,7 +88,7 @@ export function PrivacyPolicyPage({ onBack }) {
 
       <H2>6. Your rights</H2>
       <UL>
-        <li><b>Access</b> — request a copy of your data (write to <a className="text-[#00E5FF] underline" href="mailto:privacy@nice2meechu.com">privacy@nice2meechu.com</a>).</li>
+        <li><b>Access</b> — request a copy of your data (use the in-app "Download my data" button on your Profile, or <a className="text-[#00E5FF] underline" href={SAFETY_CONTACT_URL} target="_blank" rel="noopener noreferrer">submit a privacy request</a>).</li>
         <li><b>Erasure</b> — tap "Delete my account" inside the app; we wipe your profile, videos, messages, matches and sessions immediately.</li>
         <li><b>Rectification</b> — edit your profile any time.</li>
         <li><b>Portability</b> — request a JSON export of your data.</li>
@@ -96,7 +103,7 @@ export function PrivacyPolicyPage({ onBack }) {
       <P>Some intro videos and profiles in the feed are AI-generated personas created with OpenAI Sora 2, clearly labelled "AI demo" on the card. They exist to seed the experience and may auto-match with you. They do not represent real people.</P>
 
       <H2>9. Safety & illegal content</H2>
-      <P>To report suspected child sexual abuse material (CSAM), terrorism, immediate harm, or any DSA-actionable content, email <a className="text-[#00E5FF] underline" href="mailto:safety@nice2meechu.com">safety@nice2meechu.com</a> or use the in-app Report button.</P>
+      <P>To report suspected child sexual abuse material (CSAM), terrorism, immediate harm, or any DSA-actionable content, <a className="text-[#00E5FF] underline" href={SAFETY_CONTACT_URL} target="_blank" rel="noopener noreferrer">submit a safety report</a> or use the in-app Report button.</P>
 
       <H2>10. Changes</H2>
       <P>We will notify you in-app and via the email on file before material changes take effect.</P>

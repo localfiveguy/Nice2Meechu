@@ -1,5 +1,12 @@
 # Nice2Meechu — Product Requirements Doc
 
+## Updated (2026-06-05 part 2) — Safety/privacy contact swapped from email to Google Form ✅
+- User chose to skip paid email hosting (Network Solutions wanted $2.99/mo; Cloudflare requires DNS migration). Replaced all `mailto:safety@nice2meechu.com` / `mailto:privacy@nice2meechu.com` references with a single Google Form: https://docs.google.com/forms/d/e/1FAIpQLSe-57lGZwk9_6EOD5ZT1nkurdpges3sYznY0QJa5oRrhsZybg/viewform
+- Form auto-emails operator at `localfiveguy@gmail.com` on submit (response notifications turned on in the form's Responses tab).
+- Touched: `LegalPages.jsx` (Privacy Policy + Terms contact, GDPR access link, CSAM section), `App.js` (Profile "Report safety" link, delete-account toast, download-data toast, report-user error toast). All open in new tab with `rel="noopener noreferrer"`.
+- Exported `SAFETY_CONTACT_URL` constant from LegalPages so it's a single source of truth.
+- ⚠️ Side effect: the docs reference `/app/EMAIL_ROUTING_SETUP.md` is now obsolete — we never set up domain email. Keeping it for posterity but noting it's not active.
+
 ## Updated (2026-06-05) — GCS migration COMPLETE ✅
 - Replaced local-disk write in `POST /api/users/video/upload` with Google Cloud Storage upload to `gs://nicemeechu/user_videos/<uid>.<ext>`. Files now persist across container restarts and redeploys.
 - Per-object `publicRead` ACL — individual videos playable via `<video src=...>`, bucket itself stays unlisted.
