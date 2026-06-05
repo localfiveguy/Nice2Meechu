@@ -1283,6 +1283,20 @@ function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
   const [activeIdx, setActiveIdx] = useState(0);
   const [locationOpen, setLocationOpen] = useState(false);
   const [confirmRestart, setConfirmRestart] = useState(false);
+  // Mute preference is feed-wide, not per-card. Persisted to localStorage so
+  // the user's choice survives reloads / app re-opens. Defaults to muted
+  // (true) because browsers won't autoplay audio unless the user first
+  // explicitly tapped to unmute — we'd just produce silent video either way.
+  const [muted, setMuted] = useState(() => {
+    try { return localStorage.getItem("n2m_feed_muted") !== "0"; } catch { return true; }
+  });
+  const setMutedPersist = useCallback((nextOrFn) => {
+    setMuted((prev) => {
+      const next = typeof nextOrFn === "function" ? nextOrFn(prev) : nextOrFn;
+      try { localStorage.setItem("n2m_feed_muted", next ? "1" : "0"); } catch { /* localStorage full / disabled */ }
+      return next;
+    });
+  }, []);
   const scrollRef = useRef(null);
   const itemRefs = useRef([]);
   const programmaticScrollUntil = useRef(0);
@@ -1549,6 +1563,8 @@ function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
               onOpenLocation={() => setLocationOpen(true)}
               onLike={() => handleSwipe(i, "like")}
               onPass={() => handleSwipe(i, "pass")}
+              muted={muted}
+              setMuted={setMutedPersist}
             />
           </div>
         ))}
@@ -1948,12 +1964,11 @@ function ChangeLocationScreen({ user, onClose, onChanged }) {
   );
 }
 
-function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, onOpenLocation }) {
+function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, onOpenLocation, muted, setMuted }) {
   const vidRef = useRef(null);
   const [translated, setTranslated] = useState("");
   const [showCaption, setShowCaption] = useState(false);
   const [revealed, setRevealed] = useState(false);
-  const [muted, setMuted] = useState(true);
 
   useEffect(() => {
     if (!vidRef.current) return;
