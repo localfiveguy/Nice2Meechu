@@ -779,6 +779,8 @@ function CityAutocomplete({ value, onChange, onPick, biasLat, biasLng }) {
     setOpen(false);
   };
 
+  const hasBias = typeof biasLat === "number" && typeof biasLng === "number";
+
   return (
     <div className="relative" data-testid="city-autocomplete">
       <input
@@ -791,6 +793,14 @@ function CityAutocomplete({ value, onChange, onPick, biasLat, biasLng }) {
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         data-testid="onboarding-city-input"
       />
+      {hasBias && (
+        <p
+          className="mt-1.5 text-[10px] text-white/45 flex items-center gap-1"
+          data-testid="city-autocomplete-bias-hint"
+        >
+          <MapPin size={10} className="text-[#00E5FF]" /> Sorted by closest to you
+        </p>
+      )}
       {open && suggestions.length > 0 && (
         <div className="absolute z-30 left-0 right-0 mt-2 rounded-2xl border border-white/10 bg-[#0c0c10] overflow-hidden shadow-2xl">
           {suggestions.map((s, i) => (
