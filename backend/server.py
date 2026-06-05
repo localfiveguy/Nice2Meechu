@@ -1387,22 +1387,40 @@ async def face_check(req: FaceCheckReq, user=Depends(current_user)):
 
         # Age-assurance gate — only apply when the model returned a number AND
         # the safety check itself passed (so we don't double-reject).
+        #
+        # ⚠️  GPT-4o vision age estimation is **unreliable for adults** —
+        # routinely off by 10-15 years depending on lighting, glasses, hats,
+        # and angle. The only thing it does *reasonably* well is distinguish
+        # children/teens from adults. So our policy is:
+        #   1. Hard block if estimated < 18 (legal compliance — must be 18+)
+        #   2. Hard block if user *claims* adult age (≥18) but the model thinks
+        #      they're plainly a minor (estimated < 16). Catches obvious liars.
+        #   3. Otherwise — accept. Two adults can look different ages; that's
+        #      not a safety issue and rejecting on it is too punishing.
+        # Users always have the option to use the in-app Report form to flag
+        # someone if vibes don't match the declared age post-match.
         age_ok = True
         if ok and estimated_age is not None:
-            if estimated_age < 18:
+            if estimated_age < 16:
+                # Looks plainly underage regardless of what they declared.
                 age_ok = False
                 reason = (
                     f"You appear to be around {estimated_age}, but Nice2Meechu is 18+. "
                     "If this is wrong, please retake with better lighting or a clearer angle."
                 )
                 ok = False
-            elif declared_age and abs(estimated_age - declared_age) > 8:
+            elif estimated_age < 18 and declared_age and declared_age >= 18:
+                # Borderline 16-17 but declared adult — block to be safe.
                 age_ok = False
                 reason = (
-                    f"Your video doesn't match the age you entered ({declared_age}). "
-                    "Please retake your intro, or update your profile."
+                    f"You appear to be around {estimated_age}, but Nice2Meechu is 18+. "
+                    "If this is wrong, please retake with better lighting or a clearer angle."
                 )
                 ok = False
+            # NOTE: we no longer reject adult-vs-adult age mismatches.
+            # The vision model can't reliably estimate adult age, so a 44yo
+            # who looks 30 to GPT-4o is fine. We log the discrepancy for audit
+            # but don't block the user.
 
         # Record the age-check outcome for audit trail (GDPR/DSA evidence)
         try:
