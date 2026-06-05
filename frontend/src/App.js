@@ -2047,6 +2047,27 @@ function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, onOpenL
         </span>
       </button>
 
+      {/* "you've seen this" pill — only renders when the viewer is rewatching
+          a video they previously swiped on (via Back / Restart). Subtle so
+          it doesn't compete with the codename, but obvious enough that the
+          viewer knows their prior decision is on the record. */}
+      {item.prior_action === "like" && (
+        <div
+          className="absolute top-[3.75rem] right-5 flex items-center gap-1 px-2 py-1 rounded-full bg-[#FF4D4D]/20 ring-1 ring-[#FF4D4D]/40 text-[#FF4D4D] text-[10px] uppercase tracking-widest font-bold"
+          data-testid="feed-prior-action-badge"
+        >
+          <Heart size={10} fill="#FF4D4D" /> Liked
+        </div>
+      )}
+      {item.prior_action === "pass" && (
+        <div
+          className="absolute top-[3.75rem] right-5 flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 ring-1 ring-white/15 text-white/65 text-[10px] uppercase tracking-widest font-bold"
+          data-testid="feed-prior-action-badge"
+        >
+          <X size={10} /> Passed
+        </div>
+      )}
+
       {/* vibes */}
       <div className="absolute top-20 left-5 right-24 flex flex-wrap gap-1.5">
         {(item.vibes || []).slice(0, 4).map((v) => (
