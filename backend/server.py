@@ -469,14 +469,17 @@ CURATED_CITIES = [
 
 
 @api.get("/cities/popular")
-async def cities_popular():
+async def cities_popular(user=Depends(current_user)):
     """Returns curated top-12 cities merged with real signup counts.
-    `people` is the total number of users with intros in that city (NOT
-    per-viewer "remaining" — keeping it stable so the list doesn't shrink
-    as a single viewer watches). Real cities not in the curated list are
-    appended (require city_lat/city_lng)."""
+    `people` is the number of users in that city EXCLUDING the requesting
+    user themselves — so when you move to a new city, the count there
+    reflects "OTHER people here", not "all people including me". This keeps
+    the badge stable as the viewer moves around (it doesn't tick up by 1
+    just because they switched their location). Real cities not in the
+    curated list are appended (require city_lat/city_lng)."""
     pipeline = [
         {"$match": {
+            "id": {"$ne": user["id"]},
             "city": {"$nin": [None, ""]},
             "video_url": {"$ne": None, "$exists": True},
         }},
