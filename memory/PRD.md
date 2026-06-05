@@ -1,5 +1,16 @@
 # Nice2Meechu — Product Requirements Doc
 
+## Updated (2026-06-05) — GCS migration COMPLETE ✅
+- Replaced local-disk write in `POST /api/users/video/upload` with Google Cloud Storage upload to `gs://nicemeechu/user_videos/<uid>.<ext>`. Files now persist across container restarts and redeploys.
+- Per-object `publicRead` ACL — individual videos playable via `<video src=...>`, bucket itself stays unlisted.
+- Used `google-cloud-storage` + `run_in_threadpool` to keep the async event loop free. SpooledTemporaryFile buffers up to 4 MB in RAM, spills to disk for larger files. 25 MB cap retained.
+- Cross-extension cleanup retained (Safari mp4 ↔ Chrome webm).
+- Env vars: `GCP_PROJECT_ID=gen-lang-client-0271718241`, `GCS_BUCKET=nicemeechu`, `GOOGLE_APPLICATION_CREDENTIALS=/app/backend/gcs-credentials.json`.
+- Service account `nice2meechu-video-uploader@gen-lang-client-0271718241.iam.gserviceaccount.com` with role `Storage Object Admin` on the bucket. Bucket location: `us-east1`, fine-grained access control, public access prevention OFF.
+- Verified end-to-end: 2 MB mp4 → 200 + GCS public URL → anonymous fetch returns 200 with correct `Content-Type: video/mp4` and exact byte size; bad MIME → 415; unauth → 401.
+- ⚠️ Service account key was pasted in chat during setup — recommend rotating it after deploy.
+
+
 ## Original Problem Statement
 A hyperlocal, video-first social app where users connect by watching short video introductions instead of looking at static photos. Anonymity until matching, low-friction onboarding, simulated real-time AI audio translation to break language barriers.
 

@@ -12,8 +12,10 @@ import httpx
 from dotenv import load_dotenv
 from emergentintegrations.llm.chat import ImageContent, LlmChat, UserMessage
 from fastapi import APIRouter, Cookie, Depends, FastAPI, File, Header, HTTPException, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 from google.auth.transport import requests as google_requests
+from google.cloud import storage as gcs_storage
 from google.oauth2 import id_token as google_id_token
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
@@ -39,7 +41,26 @@ EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 EMERGENT_AUTH_SESSION_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
+GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "")
+GCS_BUCKET = os.environ.get("GCS_BUCKET", "")
 SESSION_TTL = timedelta(days=7)
+
+# Lazily-initialized GCS client — None until first use. Avoids crashing on
+# startup if credentials are missing in development; raises clearly at upload time.
+_gcs_client: Optional[gcs_storage.Client] = None
+_gcs_bucket: Optional[gcs_storage.Bucket] = None
+
+
+def _get_gcs_bucket() -> gcs_storage.Bucket:
+    """Return the configured GCS bucket, initializing the client on first call."""
+    global _gcs_client, _gcs_bucket
+    if _gcs_bucket is not None:
+        return _gcs_bucket
+    if not (GCP_PROJECT_ID and GCS_BUCKET):
+        raise HTTPException(500, "GCS_BUCKET / GCP_PROJECT_ID not configured")
+    _gcs_client = gcs_storage.Client(project=GCP_PROJECT_ID)
+    _gcs_bucket = _gcs_client.bucket(GCS_BUCKET)
+    return _gcs_bucket
 
 app = FastAPI()
 api = APIRouter(prefix="/api")
@@ -592,7 +613,7 @@ async def admin_funnel(user=Depends(current_user)):
     set_city = await db.users.count_documents({**real_users_q, "city": {"$nin": [None, ""]}})
     recorded_video = await db.users.count_documents({
         **real_users_q,
-        "video_url": {"$regex": r"^/api/user-videos/"},  # only real recordings, not demo URLs
+        "video_url": {"$regex": r"^https?://"},  # only real recordings (HTTP/GCS URLs)
     })
 
     # Distinct real-user IDs who liked someone / ended up in a match.
@@ -702,59 +723,70 @@ async def block_user(req: BlockReq, user=Depends(current_user)):
 
 @api.post("/users/video/upload")
 async def upload_video_file(file: UploadFile = File(...), user=Depends(current_user)):
-    """Persist a user-recorded intro to disk and return a stable public URL.
-    Replaces the previous flow which stored `URL.createObjectURL(blob)` —
-    those blob URLs dropped the moment the tab closed, so returning users
-    effectively had no profile video. Now the file is written under
-    /app/backend/user_videos/<uid>.<ext> and served via /api/user-videos/<uid>.<ext>.
-    Overwrites any previous recording for the same user."""
-    # Accept WebM (MediaRecorder default on Chromium) and MP4 (Safari).
+    """Persist a user-recorded intro to Google Cloud Storage and return a stable
+    public URL. Replaces the previous local-disk write — local disk in Emergent's
+    container is ephemeral, so videos would disappear on redeploy. Files are now
+    stored under gs://nicemeechu/user_videos/<uid>.<ext> with a per-object
+    publicRead ACL (bucket itself stays unlisted). Overwrites any previous
+    recording for the same user."""
     ALLOWED = {"video/webm": "webm", "video/mp4": "mp4"}
     ext = ALLOWED.get((file.content_type or "").lower())
     if not ext:
         raise HTTPException(415, f"Unsupported video type: {file.content_type}")
 
-    # 25 MB cap — well above what 15s of 720p VP9/H264 should produce, but
-    # protects the disk from runaway uploads. We stream-read in chunks so a
-    # malicious client can't OOM us before we trip the limit.
+    # 25 MB cap. We stream-read into a SpooledTemporaryFile so we can validate
+    # size before talking to GCS — and so a malicious client can't OOM us.
     MAX_BYTES = 25 * 1024 * 1024
-    target = _USER_VIDEOS_DIR / f"{user['id']}.{ext}"
-
-    # Clean up the other-extension file if the user previously recorded in a
-    # different browser (e.g. Safari MP4 then Chrome WebM) so we don't serve stale.
-    other_ext = "mp4" if ext == "webm" else "webm"
-    other = _USER_VIDEOS_DIR / f"{user['id']}.{other_ext}"
-    if other.exists():
-        try:
-            other.unlink()
-        except OSError:
-            pass
-
+    import tempfile
+    spool = tempfile.SpooledTemporaryFile(max_size=4 * 1024 * 1024, mode="w+b")
     total = 0
-    with target.open("wb") as out:
+    try:
         while True:
-            chunk = await file.read(1 << 20)  # 1 MB
+            chunk = await file.read(1 << 20)
             if not chunk:
                 break
             total += len(chunk)
             if total > MAX_BYTES:
-                out.close()
-                try:
-                    target.unlink()
-                except OSError:
-                    pass
+                spool.close()
                 raise HTTPException(413, "Video exceeds 25 MB limit")
-            out.write(chunk)
+            spool.write(chunk)
 
-    if total < 1024:  # < 1 KB → empty/corrupt
+        if total < 1024:
+            raise HTTPException(400, "Empty or corrupt video file")
+
+        spool.seek(0)
+        bucket = _get_gcs_bucket()
+        # If the user previously recorded in a different browser (Safari mp4 ↔
+        # Chrome webm), nuke the other extension so we don't serve stale.
+        other = bucket.blob(f"user_videos/{user['id']}.{'mp4' if ext == 'webm' else 'webm'}")
+        if other.exists():
+            try:
+                other.delete()
+            except Exception:
+                pass
+
+        blob = bucket.blob(f"user_videos/{user['id']}.{ext}")
+        blob.cache_control = "public, max-age=31536000"
+        ct = file.content_type
+
+        def _upload() -> None:
+            blob.upload_from_file(
+                spool,
+                content_type=ct,
+                rewind=True,
+                predefined_acl="publicRead",
+                timeout=120,
+            )
+
+        await run_in_threadpool(_upload)
+    finally:
         try:
-            target.unlink()
-        except OSError:
+            spool.close()
+        except Exception:
             pass
-        raise HTTPException(400, "Empty or corrupt video file")
 
-    # Cache-bust the URL so the <video> element refetches after re-recording.
-    video_url = f"/api/user-videos/{user['id']}.{ext}?v={int(datetime.now(timezone.utc).timestamp())}"
+    # Cache-bust query so the <video> element refetches after re-record.
+    video_url = f"{blob.public_url}?v={int(datetime.now(timezone.utc).timestamp())}"
     return {"video_url": video_url, "bytes": total}
 
 

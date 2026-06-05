@@ -80,3 +80,5 @@ memory/test_credentials.md
 
 # Mobile development
 android-sdk/
+# GCS service account key (never commit)
+backend/gcs-credentials.json
