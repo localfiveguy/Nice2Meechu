@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Heart, X, MapPin, Languages, ArrowRight, ArrowLeft, Sparkles,
   Send, MessageCircle, User as UserIcon, Video as VideoIcon, Camera,
-  Globe, Check, LogOut, Pause, Share2, Copy, AlertTriangle, RotateCcw,
+  Globe, Check, LogOut, Pause, Play, Share2, Copy, AlertTriangle, RotateCcw,
 } from "lucide-react";
 import "@/App.css";
 import { initAnalytics, pageview, track } from "./analytics";
@@ -1297,6 +1297,11 @@ function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
       return next;
     });
   }, []);
+  // Pause state applies to the active video only. Resets to playing whenever
+  // the user swipes to a different video — TikTok/Reels behavior, where
+  // pause is intentionally per-clip and you can't accidentally end up on
+  // a silent paused feed without realizing.
+  const [paused, setPaused] = useState(false);
   const scrollRef = useRef(null);
   const itemRefs = useRef([]);
   const programmaticScrollUntil = useRef(0);
@@ -1310,6 +1315,7 @@ function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
     // chase the scroll animation past our destination.
     programmaticScrollUntil.current = Date.now() + 700;
     setActiveIdx(idx);
+    setPaused(false);  // resume play on every navigation
     el.scrollIntoView({ behavior, block: "start" });
   }, []);
 
@@ -1370,7 +1376,10 @@ function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
         entries.forEach((entry) => {
           const idx = Number(entry.target.dataset.idx);
           if (entry.isIntersecting && entry.intersectionRatio > 0.6) {
-            setActiveIdx(idx);
+            setActiveIdx((prev) => {
+              if (prev !== idx) setPaused(false);  // swipe→reset to playing
+              return idx;
+            });
           }
         });
       },
@@ -1568,6 +1577,7 @@ function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
               positionLabel={`${i + 1}/${feed.length}`}
               isLastInCity={i === feed.length - 1}
               onRestart={restart}
+              paused={paused}
             />
           </div>
         ))}
@@ -1598,6 +1608,14 @@ function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
             data-testid="feed-restart-button"
           >
             <RotateCcw size={18} />
+          </button>
+          <button
+            onClick={() => setPaused((p) => !p)}
+            className="pointer-events-auto w-12 h-12 rounded-full flex items-center justify-center bg-black/55 backdrop-blur-md text-white/85 hover:text-white active:scale-95 transition"
+            aria-label={paused ? "Resume video" : "Pause video"}
+            data-testid="feed-pause-button"
+          >
+            {paused ? <Play size={18} fill="currentColor" /> : <Pause size={18} fill="currentColor" />}
           </button>
         </div>
       )}
@@ -1960,7 +1978,7 @@ function ChangeLocationScreen({ user, onClose, onChanged }) {
   );
 }
 
-function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, onOpenLocation, muted, setMuted, positionLabel, isLastInCity, onRestart }) {
+function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, onOpenLocation, muted, setMuted, positionLabel, isLastInCity, onRestart, paused }) {
   const vidRef = useRef(null);
   const [translated, setTranslated] = useState("");
   const [showCaption, setShowCaption] = useState(false);
@@ -1971,7 +1989,7 @@ function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, onOpenL
     if (isActive) {
       vidRef.current.currentTime = 0;
       vidRef.current.muted = muted;
-      vidRef.current.play().catch(() => {});
+      if (!paused) vidRef.current.play().catch(() => {});
       // start translation
       setShowCaption(false);
       setTranslated("");
@@ -1984,7 +2002,17 @@ function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, onOpenL
     } else {
       vidRef.current.pause();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, item.transcript, item.source_lang, myLang, muted]);
+
+  // Respond to pause/play toggles WITHOUT restarting the video from t=0.
+  // This is a separate effect from the activation one above so that hitting
+  // Pause then Resume on the same clip preserves the playhead.
+  useEffect(() => {
+    if (!vidRef.current || !isActive) return;
+    if (paused) vidRef.current.pause();
+    else vidRef.current.play().catch(() => {});
+  }, [paused, isActive]);
 
   return (
     <div className="absolute inset-0">
