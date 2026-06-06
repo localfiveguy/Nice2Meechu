@@ -12,7 +12,8 @@ from typing import List, Optional
 import httpx
 from dotenv import load_dotenv
 from emergentintegrations.llm.chat import ImageContent, LlmChat, UserMessage
-from fastapi import APIRouter, Cookie, Depends, FastAPI, File, Header, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Cookie, Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
+from fastapi.responses import RedirectResponse
 from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 from google.auth.transport import requests as google_requests
@@ -296,6 +297,44 @@ async def _finalize_google_signin(
 
 
 # REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+@api.post("/auth/google-redirect")
+async def auth_google_redirect(request: Request, credential: str = Form(...), g_csrf_token: Optional[str] = Form(None)):
+    """Redirect-mode counterpart of /auth/google. Used as `login_uri` for GIS
+    when `ux_mode: "redirect"` — Google posts the JWT credential here via
+    standard form-encoded POST, we verify, mint a session, set the cookie,
+    and 303-redirect the user back to the app root. Required for iOS Safari
+    where popup-mode OAuth is blocked outright by ITP. The g_csrf_token form
+    field is GIS's own double-submit cookie check — we accept it transparently."""
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(500, "GOOGLE_CLIENT_ID not configured")
+    try:
+        idinfo = google_id_token.verify_oauth2_token(
+            credential, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=60
+        )
+    except ValueError as exc:
+        logger.warning("Google redirect-mode token verification failed: %s", exc)
+        # Send the user back to the splash so they can retry — embed reason
+        # in the URL so the frontend can show a toast.
+        return RedirectResponse(url="/?auth_error=invalid_credential", status_code=303)
+
+    email = idinfo.get("email")
+    if not email or not idinfo.get("email_verified", False):
+        return RedirectResponse(url="/?auth_error=email_unverified", status_code=303)
+
+    # Re-use the shared sign-in finalizer so the redirect path goes through
+    # the same upsert + session-mint code as the popup path.
+    resp = RedirectResponse(url="/", status_code=303)
+    await _finalize_google_signin(
+        resp,
+        google_sub=idinfo.get("sub"),
+        email=email,
+        name=idinfo.get("name"),
+        picture=idinfo.get("picture"),
+        ref=None,
+    )
+    return resp
+
+
 @api.post("/auth/google")
 async def auth_google_id_token(req: GoogleIdTokenReq, response: Response):
     """Direct Google OAuth — verify Google-issued ID token (JWT) and sign user in.
@@ -305,16 +344,15 @@ async def auth_google_id_token(req: GoogleIdTokenReq, response: Response):
         raise HTTPException(500, "GOOGLE_CLIENT_ID not configured")
 
     try:
-        # Verifies signature, expiry, audience (aud == our client_id) and issuer.
-        # clock_skew_in_seconds=60 is Google's own recommended default — covers
-        # phones whose clocks have drifted on cellular (very common on iOS).
-        # We were previously at 10s which was rejecting legitimate sign-ins.
         idinfo = google_id_token.verify_oauth2_token(
             req.credential, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=60
         )
     except ValueError as exc:
         logger.warning("Google ID token verification failed: %s", exc)
-        raise HTTPException(401, "Invalid Google credential")
+        # Surface the specific failure reason so the frontend toast can show
+        # it. Helps diagnose iOS Safari edge cases (clock drift, audience
+        # mismatch, ITP-corrupted token, etc.) without needing log access.
+        raise HTTPException(401, f"Invalid Google credential: {exc}")
 
     email = idinfo.get("email")
     if not email or not idinfo.get("email_verified", False):

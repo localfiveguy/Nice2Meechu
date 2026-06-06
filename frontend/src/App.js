@@ -420,7 +420,10 @@ function SignInScreen() {
     } catch (err) {
       console.error("google sign-in failed", err);
       track("sign_in_failed");
-      toast.error("Sign-in failed. Try again.");
+      // Show the specific error from the server (audience mismatch, expired,
+      // etc.) so users/testers can report exactly what's failing.
+      const detail = err?.response?.data?.detail;
+      toast.error(detail ? `Sign-in failed: ${detail}` : "Sign-in failed. Try again.");
     }
   }, []);
 
