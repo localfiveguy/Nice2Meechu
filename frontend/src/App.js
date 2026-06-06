@@ -532,8 +532,49 @@ function Onboarding({ user, onDone }) {
   const [firstName, setFirstName] = useState(user.first_name || "");
   const [city, setCity] = useState(user.city || "");
   const [cityCoords, setCityCoords] = useState(null); // {lat, lng} when picked from autocomplete
+  const [autoCityTried, setAutoCityTried] = useState(false);
+  const [autoCityLoading, setAutoCityLoading] = useState(false);
   const [age, setAge] = useState(user.age ? String(user.age) : "");
   const [loading, setLoading] = useState(false);
+
+  // Try to auto-fill the city from the user's geolocation when they land on
+  // the city step. Reverse-geocodes lat/lng → "City, Country" via Photon
+  // (same provider as autocomplete, no extra dep). Only fires:
+  //   - on first visit to step 1
+  //   - if the city field is empty (don't overwrite a manual entry)
+  //   - if we have user.lat/lng from the App-level geolocation grab
+  // Best-effort: any failure is silent, the user can still type it.
+  useEffect(() => {
+    if (step !== 1 || autoCityTried || city.trim().length > 0) return;
+    const lat = user.lat;
+    const lng = user.lng;
+    if (typeof lat !== "number" || typeof lng !== "number") return;
+    setAutoCityTried(true);
+    setAutoCityLoading(true);
+    (async () => {
+      try {
+        const r = await fetch(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}&limit=1`);
+        const j = await r.json();
+        const p = j?.features?.[0]?.properties;
+        if (!p) return;
+        // Photon's nearest feature for a coord is usually a building/POI —
+        // pick the human-readable place fields we know exist: city / town /
+        // village fallback chain. Country gets appended so the user sees the
+        // full disambiguated label, matching what autocomplete returns.
+        const placeName = p.city || p.town || p.village || p.county || p.name;
+        const country = p.country;
+        if (!placeName) return;
+        const label = country ? `${placeName}, ${country}` : placeName;
+        setCity(label);
+        setCityCoords({ lat, lng });
+        track("onboarding_city_auto_filled", { source: "reverse_geocode" });
+      } catch {
+        // network / parse failure — silently fall back to manual typing
+      } finally {
+        setAutoCityLoading(false);
+      }
+    })();
+  }, [step, autoCityTried, city, user.lat, user.lng]);
 
   const total = 3;
   const next = () => setStep((s) => Math.min(total - 1, s + 1));
@@ -616,6 +657,16 @@ function Onboarding({ user, onDone }) {
             biasLat={user.lat}
             biasLng={user.lng}
           />
+          {autoCityLoading && (
+            <p className="mt-2 text-[11px] text-white/45 flex items-center gap-1" data-testid="onboarding-city-detecting">
+              <MapPin size={11} className="text-white/45 animate-pulse" /> Detecting your city…
+            </p>
+          )}
+          {!autoCityLoading && autoCityTried && cityCoords && (
+            <p className="mt-2 text-[11px] text-white/55 flex items-center gap-1" data-testid="onboarding-city-detected">
+              <MapPin size={11} className="text-[#00E5FF]" /> Detected from your location — change if wrong
+            </p>
+          )}
         </div>
       )}
 
