@@ -445,10 +445,15 @@ function SignInScreen() {
         return;
       }
       try {
+        const apiBase = process.env.REACT_APP_BACKEND_URL || "";
         gis.initialize({
           client_id: GOOGLE_CLIENT_ID,
           callback: handleCredential,
-          ux_mode: "popup",
+          // popup is blocked on iOS Safari (ITP) — fall back to redirect mode
+          // where Google form-POSTs the credential to our backend endpoint.
+          // The endpoint sets the session cookie and 303-redirects to /.
+          ux_mode: "redirect",
+          login_uri: `${apiBase}/api/auth/google-redirect`,
           auto_select: false,
           itp_support: true,
         });
