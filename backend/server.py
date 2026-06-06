@@ -306,8 +306,11 @@ async def auth_google_id_token(req: GoogleIdTokenReq, response: Response):
 
     try:
         # Verifies signature, expiry, audience (aud == our client_id) and issuer.
+        # clock_skew_in_seconds=60 is Google's own recommended default — covers
+        # phones whose clocks have drifted on cellular (very common on iOS).
+        # We were previously at 10s which was rejecting legitimate sign-ins.
         idinfo = google_id_token.verify_oauth2_token(
-            req.credential, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=10
+            req.credential, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=60
         )
     except ValueError as exc:
         logger.warning("Google ID token verification failed: %s", exc)
