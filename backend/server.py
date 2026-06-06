@@ -824,7 +824,12 @@ async def block_user(req: BlockReq, user=Depends(current_user)):
         {"$set": {"user_id": user["id"], "target_user_id": req.target_user_id, "action": "block", "at": datetime.now(timezone.utc).isoformat()}},
         upsert=True,
     )
-    return {"ok": True}
+    # Also unmatch — delete any existing match between the pair so the chat
+    # disappears from BOTH sides. Block is the strongest action: target can
+    # no longer appear in feed, send messages, or read prior conversation.
+    pair = sorted([user["id"], req.target_user_id])
+    deleted = await db.matches.delete_many({"user_ids": pair})
+    return {"ok": True, "unmatched": deleted.deleted_count}
 
 @api.post("/users/video/upload")
 async def upload_video_file(file: UploadFile = File(...), user=Depends(current_user)):
