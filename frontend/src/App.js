@@ -2843,6 +2843,14 @@ function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, onChange
     } finally { setSaving(false); }
   };
 
+  // Mobile keyboards bury the Save button under the keyboard — let Enter
+  // submit the form from any of the text inputs, same shortcut as onboarding.
+  const onEnterSave = (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    if (!saving && canSave) save();
+  };
+
   return (
     <motion.div
       className="absolute inset-0 flex flex-col bg-black overflow-hidden"
@@ -2962,6 +2970,8 @@ function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, onChange
                   value={firstName}
                   maxLength={40}
                   onChange={(e) => setFirstName(e.target.value)}
+                  onKeyDown={onEnterSave}
+                  enterKeyHint="done"
                   data-testid="profile-firstname-input"
                 />
               </div>
@@ -2973,6 +2983,7 @@ function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, onChange
                   onPick={(item) => { setCity(item.value || ""); setCityCoords({ lat: item.lat, lng: item.lng }); }}
                   biasLat={user.city_lat || user.lat}
                   biasLng={user.city_lng || user.lng}
+                  onEnter={() => { if (!saving && canSave) save(); }}
                 />
               </div>
               <div>
@@ -2983,6 +2994,8 @@ function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, onChange
                   value={age}
                   maxLength={3}
                   onChange={(e) => setAge(e.target.value.replace(/\D/g, ""))}
+                  onKeyDown={onEnterSave}
+                  enterKeyHint="done"
                   data-testid="profile-age-input"
                 />
               </div>
