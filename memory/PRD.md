@@ -1,5 +1,13 @@
 # Nice2Meechu — Product Requirements Doc
 
+## Updated (2026-02-07) — iOS Safari Google Sign-In fix (redirect-mode) + automated inactive-video cleanup ✅
+- **iOS Safari sign-in fix**: GIS popup mode is blocked by iOS WebKit ITP, leaving iPhone users unable to sign in. `SignInScreen` now detects iOS (`isIosWebkit()` checks UA + iPadOS `MacIntel`/touch heuristic) and switches `ux_mode` to `"redirect"` on iOS only — desktop + Android keep popup mode for the snappier UX.
+- **Backend `/api/auth/google-redirect`**: now accepts `?ref=<handle>` query param so referral codes survive the iOS redirect path (popup path keeps reading from localStorage). Returns 303 → `/?auth_error=<code>` on failure; `App.js` mount-time hydration now reads `auth_error` and toasts the user.
+- **⚠️ User action required**: register the redirect URI `https://<your-prod-domain>/api/auth/google-redirect` AND the preview URI under "Authorized redirect URIs" in the Google Cloud Console OAuth 2.0 Client settings. Without it Google will reject the redirect.
+- **Automated inactive cleanup**: `_run_inactive_cleanup()` helper extracted from the admin endpoint. New `@app.on_event("startup")` spawns `_inactive_cleanup_loop` — sleeps 15min, then runs `dry_run=False` cleanup every 24h. Tunable via `INACTIVE_CLEANUP_ENABLED` / `INACTIVE_CLEANUP_DAYS` / `INACTIVE_CLEANUP_INTERVAL_SECONDS` / `INACTIVE_CLEANUP_INITIAL_DELAY_SECONDS`. Manual admin curl still works.
+- Backend testing: 18/18 in-scope tests pass (TestGoogleRedirectMode, TestGoogleIdTokenPopup, TestAdminGate, TestRoot, TestAuthGuard). iPhone happy-path verification deferred to user.
+
+
 ## Updated (2026-06-05 part 3) — Feed playback controls + per-city position memory ✅
 - **Backend `/api/feed`**: now returns the FULL set of users in the viewer's city (chronological, oldest-first), not just the unswiped ones. Each item gets `prior_action` (null | "like" | "pass" | "block"). Blocked users still excluded entirely. Also returns `saved_position` from `user.city_positions[city]`.
 - **Backend `/api/swipe`**: now an upsert — re-swiping a target overwrites the prior action. Match logic skips if a match already exists between the pair (Back→Like rewatch is safe and doesn't duplicate matches).
