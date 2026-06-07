@@ -13,7 +13,7 @@ import httpx
 from dotenv import load_dotenv
 from emergentintegrations.llm.chat import ImageContent, LlmChat, UserMessage
 from fastapi import APIRouter, Cookie, Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 from google.auth.transport import requests as google_requests
@@ -1746,6 +1746,23 @@ async def og_card(handle: str):
 # ---------------------------------------------------------------------------
 # App wiring
 # ---------------------------------------------------------------------------
+@api.get("/handoff.md")
+async def get_handoff_doc():
+    """Serve the live engineering handoff doc as a download. Used when the
+    operator wants the latest fork notes saved locally without having to clone
+    the repo. The handoff lives at the repo root (/app/handoff.md) and is
+    rewritten in-place by the agent at the end of each fork — so this endpoint
+    always serves the freshest copy."""
+    path = Path("/app/handoff.md")
+    if not path.is_file():
+        raise HTTPException(404, "handoff.md not found")
+    return FileResponse(
+        path,
+        media_type="text/markdown; charset=utf-8",
+        filename="nice2meechu-handoff.md",
+    )
+
+
 app.include_router(api)
 
 # Serve sample intro videos through the backend so the production CDN
@@ -1767,6 +1784,7 @@ app.mount("/api/user-videos", StaticFiles(directory=str(_USER_VIDEOS_DIR)), name
 _SHARE_CARDS_DIR = Path("/app/share_cards")
 if _SHARE_CARDS_DIR.is_dir():
     app.mount("/api/share-cards", StaticFiles(directory=str(_SHARE_CARDS_DIR)), name="share_cards")
+
 
 app.add_middleware(
     CORSMiddleware,
