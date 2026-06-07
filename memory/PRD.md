@@ -1,6 +1,17 @@
 # Nice2Meechu — Product Requirements Doc
 
+## Updated (2026-02-07) — Split monolithic App.js into per-screen modules ♻️
+
+- **App.js**: 3090 → 292 lines (~90% reduction). Now a pure orchestrator (routing, auth lifecycle, top-level state).
+- **New structure** under `/app/frontend/src/`:
+  - `lib/` — `api.js` (axios client + translate + share helpers), `constants.js` (LANG_OPTIONS, EMOJIS, COMMUNITY_RULES, GOOGLE_CLIENT_ID), `cityFormat.js` (Photon label formatting), `ua.js` (iOS WebKit detection).
+  - `components/` — 7 reusable components: VideoEl, CityAutocomplete, SignaturePad, BottomNav, ShareCard, MatchCelebration, FeedCard.
+  - `screens/` — 10 screen files, one per route: Splash, SignInScreen, AuthCallback, Onboarding, CommunityRulesScreen, VideoPick, FeedScreen, ChangeLocationScreen, MatchesScreen, ChatScreen, ProfileScreen.
+- **Zero behavioral changes** — pure structural refactor. Build compiles cleanly. Sign-in screen renders identically. No new console errors.
+- Largest single file is now FeedScreen.js (404 lines), down from a 3090-line god file. All other files <330 lines.
+
 ## Updated (2026-02-07) — iOS Safari Google Sign-In fix (redirect-mode) + automated inactive-video cleanup ✅
+
 - **iOS Safari sign-in fix**: GIS popup mode is blocked by iOS WebKit ITP, leaving iPhone users unable to sign in. `SignInScreen` now detects iOS (`isIosWebkit()` checks UA + iPadOS `MacIntel`/touch heuristic) and switches `ux_mode` to `"redirect"` on iOS only — desktop + Android keep popup mode for the snappier UX.
 - **Backend `/api/auth/google-redirect`**: now accepts `?ref=<handle>` query param so referral codes survive the iOS redirect path (popup path keeps reading from localStorage). Returns 303 → `/?auth_error=<code>` on failure; `App.js` mount-time hydration now reads `auth_error` and toasts the user.
 - **⚠️ User action required**: register the redirect URI `https://<your-prod-domain>/api/auth/google-redirect` AND the preview URI under "Authorized redirect URIs" in the Google Cloud Console OAuth 2.0 Client settings. Without it Google will reject the redirect.
