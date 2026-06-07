@@ -1,7 +1,7 @@
 import React, { useRef, useState } from "react";
 import { MapPin } from "lucide-react";
 import { formatCityLabel } from "../lib/cityFormat";
-import { useDropdownDirection } from "../lib/useDropdownDirection";
+import { useDropdownPlacement } from "../lib/useDropdownDirection";
 
 export function CityAutocomplete({ value, onChange, onPick, biasLat, biasLng, onEnter }) {
   const [suggestions, setSuggestions] = useState([]);
@@ -11,8 +11,10 @@ export function CityAutocomplete({ value, onChange, onPick, biasLat, biasLng, on
   const showDropdown = open && suggestions.length > 0;
   // Flip the dropdown above the input on mobile when the keyboard would
   // otherwise cover the suggestions (common on Android where the input sits
-  // mid-screen and the keyboard takes the bottom 40-50%).
-  const direction = useDropdownDirection(inputRef, showDropdown);
+  // mid-screen and the keyboard takes the bottom 40-50%). The hook also
+  // returns a maxHeight so the dropdown stays scrollable inside the
+  // visible viewport instead of clipping the top items.
+  const { direction, maxHeight } = useDropdownPlacement(inputRef, showDropdown);
 
   const onInput = (e) => {
     const v = e.target.value;
@@ -96,9 +98,10 @@ export function CityAutocomplete({ value, onChange, onPick, biasLat, biasLng, on
       )}
       {showDropdown && (
         <div
-          className={`absolute z-30 left-0 right-0 rounded-2xl border border-white/10 bg-[#0c0c10] overflow-hidden shadow-2xl ${
+          className={`absolute z-30 left-0 right-0 rounded-2xl border border-white/10 bg-[#0c0c10] overflow-y-auto shadow-2xl ${
             direction === "up" ? "bottom-full mb-2" : "top-full mt-2"
           }`}
+          style={{ maxHeight: `${maxHeight}px` }}
           data-testid={`city-autocomplete-dropdown-${direction}`}
         >
           {suggestions.map((s, i) => (

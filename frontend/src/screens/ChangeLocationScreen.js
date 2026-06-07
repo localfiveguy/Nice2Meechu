@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { ArrowRight, MapPin, Sparkles, X } from "lucide-react";
 import { api } from "../lib/api";
 import { formatCityLabel } from "../lib/cityFormat";
-import { useDropdownDirection } from "../lib/useDropdownDirection";
+import { useDropdownPlacement } from "../lib/useDropdownDirection";
 import { track } from "../analytics";
 
 export function ChangeLocationScreen({ user, onClose, onChanged }) {
@@ -24,8 +24,9 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
   // Flip suggestions above the input on mobile when the keyboard would
   // otherwise cover them — the modal's header pins the input near the top
   // but on phones the keyboard pushes the viewport down so room-below
-  // shrinks quickly.
-  const dropDirection = useDropdownDirection(searchInputRef, hasSuggestions);
+  // shrinks quickly. We also cap the dropdown height so it stays scrollable
+  // inside the visible viewport.
+  const { direction: dropDirection, maxHeight: dropMaxHeight } = useDropdownPlacement(searchInputRef, hasSuggestions);
 
   // Load popular cities once on mount
   useEffect(() => {
@@ -234,9 +235,10 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
           <Sparkles size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
           {hasSuggestions && (
             <div
-              className={`absolute left-0 right-0 glass-dark rounded-2xl border border-white/10 max-h-64 overflow-y-auto z-10 shadow-2xl ${
+              className={`absolute left-0 right-0 glass-dark rounded-2xl border border-white/10 overflow-y-auto z-10 shadow-2xl ${
                 dropDirection === "up" ? "bottom-full mb-1" : "top-full mt-1"
               }`}
+              style={{ maxHeight: `${dropMaxHeight}px` }}
               data-testid={`change-location-suggestions-${dropDirection}`}
             >
               {suggestions.map((s, i) => (
