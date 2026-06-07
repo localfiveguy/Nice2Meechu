@@ -180,7 +180,7 @@ export function VideoPick({ user, onDone, onSkip }) {
         </button>
       )}
       <h2 className="font-display text-3xl font-black leading-tight">Intro<br/>video<span style={{ color: "#FF4D4D" }}>.</span></h2>
-      <p className="mt-3 text-sm text-white/55">Keep it under 7 seconds. Use the script below word-for-word, or remix it.</p>
+      <p className="mt-3 text-sm text-white/55">Keep it under 7 seconds. Use the script below word-for-word.</p>
 
       {/* Dynamic script panel */}
       <div className="mt-5 rounded-2xl glass-dark border border-[#FF4D4D]/25 p-4" data-testid="intro-script">

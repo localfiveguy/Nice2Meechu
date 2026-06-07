@@ -179,12 +179,8 @@ export function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, 
           <X size={10} /> Passed
         </div>
       )}
-      {/* vibes */}
-      <div className="absolute top-20 left-5 right-24 flex flex-wrap gap-1.5">
-        {(item.vibes || []).slice(0, 4).map((v) => (
-          <span key={v} className="text-[10px] uppercase tracking-widest font-bold px-2 py-1 rounded-full glass-dark text-white/80">{v}</span>
-        ))}
-      </div>
+      {/* vibes pills removed by request — they cluttered the badge stack and
+          weren't meaningful enough (random sample from a small pool) to keep. */}
 
       {/* translation overlay */}
       {showCaption && (
