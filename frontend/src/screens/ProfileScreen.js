@@ -3,7 +3,8 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { Globe, LogOut, MapPin, Video as VideoIcon } from "lucide-react";
 import { api } from "../lib/api";
-import { EMOJIS, LANG_OPTIONS } from "../lib/constants";
+import { LANG_OPTIONS } from "../lib/constants";
+import { AvatarThumb } from "../components/AvatarThumb";
 import { BottomNav } from "../components/BottomNav";
 import { CityAutocomplete } from "../components/CityAutocomplete";
 import { ShareCard } from "../components/ShareCard";
@@ -18,7 +19,6 @@ export function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, o
   const [cityCoords, setCityCoords] = useState(null);
   const [age, setAge] = useState(user.age ? String(user.age) : "");
   const [language, setLanguage] = useState(user.language || "en");
-  const [emoji, setEmoji] = useState(user.avatar_emoji || "🌙");
   const [saving, setSaving] = useState(false);
 
   const ageNum = parseInt(age, 10);
@@ -36,7 +36,6 @@ export function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, o
         city: city.trim(),
         age: ageNum,
         language,
-        avatar_emoji: emoji,
         city_lat: cityCoords?.lat ?? null,
         city_lng: cityCoords?.lng ?? null,
       });
@@ -79,7 +78,7 @@ export function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, o
 
         <div className="mt-auto glass-dark rounded-3xl p-5 mt-8">
           <div className="flex items-center gap-3">
-            <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-white/8 text-2xl">{user.avatar_emoji}</div>
+            <AvatarThumb videoUrl={user.video_url} fallback={user.codename || user.handle} className="w-14 h-14 rounded-2xl" />
             <div>
               <div className="text-xs uppercase tracking-widest font-bold text-white/50">codename · {user.codename}</div>
               <div className="font-display text-xl font-black">@{user.handle}</div>
@@ -212,16 +211,6 @@ export function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, o
               >
                 {LANG_OPTIONS.map((l) => <option key={l.code} value={l.code} className="bg-black">{l.name}</option>)}
               </select>
-              <div className="flex flex-wrap gap-1.5">
-                {EMOJIS.map((e) => (
-                  <button
-                    key={e}
-                    onClick={() => setEmoji(e)}
-                    className={`w-10 h-10 rounded-xl text-lg ${emoji === e ? "ring-2 ring-[#FF4D4D] bg-white/10" : "bg-white/5"}`}
-                    data-testid={`profile-emoji-${e}`}
-                  >{e}</button>
-                ))}
-              </div>
               <button className="btn-primary" onClick={save} disabled={saving || !canSave} data-testid="profile-save">
                 {saving ? "Saving…" : "Save"}
               </button>

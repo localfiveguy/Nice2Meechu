@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { toast } from "sonner";
 import { Sparkles, Share2, Copy, Check } from "lucide-react";
 import { copyToClipboard, shareOrCopy } from "../lib/api";
+import { AvatarThumb } from "./AvatarThumb";
 import { track } from "../analytics";
 
 export function ShareCard({ user }) {
@@ -44,7 +45,7 @@ export function ShareCard({ user }) {
     <div className="mt-5 rounded-3xl overflow-hidden border border-white/10" data-testid="profile-share-card">
       {/* Preview strip */}
       <div className="relative px-5 py-4 flex items-center gap-3" style={{ background: "linear-gradient(135deg, rgba(255,77,77,0.18), rgba(0,229,255,0.12))" }}>
-        <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-black/40 text-2xl">{user.avatar_emoji}</div>
+        <AvatarThumb videoUrl={user.video_url} fallback={user.codename} className="w-12 h-12 rounded-2xl" />
         <div className="flex-1 min-w-0">
           <div className="text-[10px] uppercase tracking-widest font-bold text-white/55">your invite card</div>
           <div className="font-display font-black text-lg leading-tight truncate">{user.codename}</div>

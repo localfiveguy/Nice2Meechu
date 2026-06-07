@@ -5,6 +5,7 @@ import {
   Heart, X, MapPin, Languages, AlertTriangle, RotateCcw,
 } from "lucide-react";
 import { api, translate } from "../lib/api";
+import { AvatarThumb } from "./AvatarThumb";
 import { track } from "../analytics";
 
 export function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, onOpenLocation, muted, setMuted, positionLabel, isLastInCity, onRestart, paused }) {
@@ -102,8 +103,8 @@ export function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, 
 
       {/* anonymity codename */}
       <div className="absolute top-5 left-5 flex items-center gap-2 glass-dark px-3 py-1.5 rounded-full" data-testid="feed-codename-badge">
-        <div className="w-8 h-8 rounded-full flex items-center justify-center bg-white/10 text-lg">
-          <span className={revealed ? "identity-clear" : "identity-blur"}>{item.avatar_emoji || "🌙"}</span>
+        <div className={`w-8 h-8 rounded-full overflow-hidden ring-1 ring-white/15 ${revealed ? "identity-clear" : "identity-blur"}`}>
+          <AvatarThumb videoUrl={item.video_url} fallback={item.codename} className="w-8 h-8 rounded-full" />
         </div>
         <span className="font-display font-bold text-sm tracking-tight">{item.codename}</span>
         {item.is_demo && (
