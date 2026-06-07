@@ -85,7 +85,9 @@ class TestRoot:
         assert r.status_code == 200
         d = r.json()
         assert d["app"] == "Nice2Meechu"
-        assert d["auth"] == "google-emergent"
+        # Direct GIS mode is active when GOOGLE_CLIENT_ID is configured.
+        assert d["auth"] in ("google-direct", "google-emergent")
+        assert d["auth"] == "google-direct", f"Expected google-direct (GOOGLE_CLIENT_ID set), got {d['auth']}"
 
 
 # ---------- auth ----------
@@ -387,3 +389,79 @@ class TestReferral:
             assert bob["referrer_handle"] == ref_handle
         finally:
             mongo.users.delete_many({"id": bob_id})
+
+
+# ---------- iOS Safari redirect-mode Google OAuth ----------
+class TestGoogleRedirectMode:
+    """Verify the new /api/auth/google-redirect endpoint behaves gracefully
+    on invalid credentials and supports the `ref` query-string for referrals.
+
+    Real Google-issued JWTs cannot be minted in tests — only negative-path
+    checks for the verification failure branch are covered here. The happy
+    path is verified manually on an iPhone.
+    """
+
+    def _post_no_redirect(self, url, data, params=None):
+        # Use form-encoded POST without auto-following redirects so we can
+        # observe the 303 Location header directly.
+        return requests.post(
+            url,
+            data=data,  # form-encoded — endpoint uses Form(...)
+            params=params or {},
+            allow_redirects=False,
+            timeout=15,
+        )
+
+    def test_redirect_invalid_credential_returns_303(self):
+        r = self._post_no_redirect(
+            f"{API}/auth/google-redirect",
+            data={"credential": "obviously-not-a-real-jwt", "g_csrf_token": "abc123"},
+        )
+        assert r.status_code == 303, f"expected 303 redirect, got {r.status_code}: {r.text[:200]}"
+        loc = r.headers.get("Location", "") or r.headers.get("location", "")
+        assert "auth_error=invalid_credential" in loc, f"Location was: {loc!r}"
+
+    def test_redirect_invalid_credential_with_ref_param(self):
+        r = self._post_no_redirect(
+            f"{API}/auth/google-redirect",
+            data={"credential": "still-not-a-real-jwt", "g_csrf_token": "xyz"},
+            params={"ref": "alice"},
+        )
+        # Ref is accepted but path short-circuits at verification → still 303.
+        assert r.status_code == 303
+        loc = r.headers.get("Location", "") or r.headers.get("location", "")
+        assert "auth_error=invalid_credential" in loc, f"Location was: {loc!r}"
+
+    def test_redirect_missing_credential_returns_422(self):
+        # Form field missing → FastAPI should reject with 422 (not 500).
+        r = self._post_no_redirect(
+            f"{API}/auth/google-redirect",
+            data={"g_csrf_token": "abc"},  # no `credential`
+        )
+        assert r.status_code in (422, 400), f"got {r.status_code}: {r.text[:200]}"
+
+
+# ---------- Popup-mode Google OAuth regression ----------
+class TestGoogleIdTokenPopup:
+    def test_invalid_credential_returns_401_json(self, session):
+        r = session.post(f"{API}/auth/google", json={"credential": "not-a-real-jwt"})
+        assert r.status_code == 401, f"expected 401, got {r.status_code}: {r.text[:200]}"
+        # Must be JSON with `detail`, not a 500/HTML.
+        ct = r.headers.get("content-type", "")
+        assert "application/json" in ct, f"content-type was {ct!r}"
+        body = r.json()
+        assert "detail" in body and body["detail"], f"missing/empty detail: {body}"
+        # Detail should mention the credential failure
+        assert "credential" in body["detail"].lower() or "invalid" in body["detail"].lower()
+
+    def test_missing_credential_returns_422(self, session):
+        r = session.post(f"{API}/auth/google", json={})
+        assert r.status_code == 422
+
+
+# ---------- Admin auth gate ----------
+class TestAdminGate:
+    def test_inactive_cleanup_requires_auth(self, session):
+        r = session.post(f"{API}/admin/inactive-cleanup?days=90&dry_run=true")
+        # No bearer/cookie → must be 401, not 500.
+        assert r.status_code == 401, f"expected 401, got {r.status_code}: {r.text[:200]}"

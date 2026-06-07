@@ -246,6 +246,19 @@ export default function App() {
   // Standard mount-time hydration when NOT coming back from OAuth callback
   useEffect(() => {
     if (initialHasSessionId) return; // AuthCallback flow handles auth instead
+    // Surface ?auth_error=... from the redirect-mode Google flow so the user
+    // sees a toast instead of a silent failure. Strip it from the URL.
+    const url = new URL(window.location.href);
+    const authError = url.searchParams.get("auth_error");
+    if (authError) {
+      url.searchParams.delete("auth_error");
+      window.history.replaceState(null, "", url.pathname + (url.search || "") + url.hash);
+      const messages = {
+        invalid_credential: "Sign-in failed — please try again.",
+        email_unverified: "Your Google email isn't verified.",
+      };
+      toast.error(messages[authError] || "Sign-in failed. Try again.");
+    }
     (async () => {
       try {
         const { data } = await api.get("/auth/me");
@@ -397,6 +410,19 @@ function Splash() {
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
 
+// iOS Safari (and in-app webviews on iOS — they all use WebKit) blocks the
+// popup-mode GIS flow under Intelligent Tracking Prevention. Detect those
+// browsers and force GIS into redirect mode where Google form-POSTs the
+// credential straight to our backend. Desktop + Android Chrome keep popup
+// mode because it's a snappier UX.
+function isIosWebkit() {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  // iPad on iPadOS 13+ reports as "MacIntel" with touch support — still WebKit.
+  const isIpadOs = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+  return /iPad|iPhone|iPod/.test(ua) || isIpadOs;
+}
+
 function SignInScreen() {
   const btnRef = useRef(null);
   const [gisError, setGisError] = useState(null);
@@ -446,14 +472,25 @@ function SignInScreen() {
       }
       try {
         const apiBase = process.env.REACT_APP_BACKEND_URL || "";
+        const useRedirect = isIosWebkit();
+        // Persist a referral hint for the redirect-mode flow — `handleCredential`
+        // pulls it from localStorage so the popup path keeps working, but the
+        // redirect path can't pass it through Google so the backend reads it
+        // from a query-string `state` we tack onto `login_uri` below.
+        const ref = localStorage.getItem("n2m_ref") || "";
+        const loginUri = ref
+          ? `${apiBase}/api/auth/google-redirect?ref=${encodeURIComponent(ref)}`
+          : `${apiBase}/api/auth/google-redirect`;
         gis.initialize({
           client_id: GOOGLE_CLIENT_ID,
+          // Popup mode invokes `callback`; redirect mode ignores it and POSTs
+          // straight to `login_uri` — Google requires callback to be defined
+          // regardless, so we always pass it.
           callback: handleCredential,
-          // popup is blocked on iOS Safari (ITP) — fall back to redirect mode
-          // where Google form-POSTs the credential to our backend endpoint.
-          // The endpoint sets the session cookie and 303-redirects to /.
-          ux_mode: "redirect",
-          login_uri: `${apiBase}/api/auth/google-redirect`,
+          // iOS Safari blocks popup OAuth (ITP). Use redirect on iOS only;
+          // desktop + Android stay on popup for the snappier UX.
+          ux_mode: useRedirect ? "redirect" : "popup",
+          login_uri: loginUri,
           auto_select: false,
           itp_support: true,
         });

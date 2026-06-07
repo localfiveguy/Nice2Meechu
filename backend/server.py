@@ -298,13 +298,22 @@ async def _finalize_google_signin(
 
 # REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 @api.post("/auth/google-redirect")
-async def auth_google_redirect(request: Request, credential: str = Form(...), g_csrf_token: Optional[str] = Form(None)):
+async def auth_google_redirect(
+    request: Request,
+    credential: str = Form(...),
+    g_csrf_token: Optional[str] = Form(None),
+    ref: Optional[str] = None,
+):
     """Redirect-mode counterpart of /auth/google. Used as `login_uri` for GIS
     when `ux_mode: "redirect"` — Google posts the JWT credential here via
     standard form-encoded POST, we verify, mint a session, set the cookie,
     and 303-redirect the user back to the app root. Required for iOS Safari
     where popup-mode OAuth is blocked outright by ITP. The g_csrf_token form
-    field is GIS's own double-submit cookie check — we accept it transparently."""
+    field is GIS's own double-submit cookie check — we accept it transparently.
+
+    `ref` is passed as a query-string param from the frontend's `login_uri`
+    (because Google's redirect flow strips localStorage). It's a referral
+    handle if the user landed via someone's invite link."""
     if not GOOGLE_CLIENT_ID:
         raise HTTPException(500, "GOOGLE_CLIENT_ID not configured")
     try:
@@ -330,7 +339,7 @@ async def auth_google_redirect(request: Request, credential: str = Form(...), g_
         email=email,
         name=idinfo.get("name"),
         picture=idinfo.get("picture"),
-        ref=None,
+        ref=ref,
     )
     return resp
 
@@ -758,6 +767,71 @@ async def admin_funnel(user=Depends(current_user)):
     }
 
 
+async def _run_inactive_cleanup(days: int, dry_run: bool) -> dict:
+    """Internal worker for inactive-user video cleanup. Pulled out of the API
+    handler so the same logic can be invoked by the daily background scheduler.
+
+    Deletes intro videos from GCS for users who haven't signed in within the
+    last `days` days, then nulls `video_url`/`transcript` on the user record
+    so they re-record on next sign-in. The user account itself is preserved.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    query = {
+        "is_demo": {"$ne": True},
+        "video_url": {"$regex": r"^https?://"},
+        "$or": [
+            {"last_seen_at": {"$lt": cutoff}},
+            {"last_seen_at": {"$exists": False}},
+        ],
+    }
+    candidates = await db.users.find(
+        query,
+        {"_id": 0, "id": 1, "email": 1, "video_url": 1, "last_seen_at": 1},
+    ).to_list(5000)
+
+    if dry_run:
+        return {
+            "dry_run": True,
+            "cutoff": cutoff,
+            "candidate_count": len(candidates),
+            "candidates": [
+                {"id": c["id"], "email": c.get("email"), "last_seen_at": c.get("last_seen_at")}
+                for c in candidates[:50]
+            ],
+        }
+
+    bucket = _get_gcs_bucket()
+    deleted_keys: list = []
+    failed_keys: list = []
+    for c in candidates:
+        url = c.get("video_url") or ""
+        m = re.search(r"/nicemeechu/(user_videos/[^?]+)", url)
+        if not m:
+            continue
+        key = m.group(1)
+        try:
+            await run_in_threadpool(lambda k=key: bucket.blob(k).delete())
+            deleted_keys.append(key)
+        except Exception as exc:  # noqa: BLE001
+            failed_keys.append({"key": key, "error": str(exc)})
+        await db.users.update_one(
+            {"id": c["id"]},
+            {"$set": {
+                "video_url": None,
+                "transcript": None,
+                "inactivity_cleaned_at": datetime.now(timezone.utc).isoformat(),
+            }},
+        )
+
+    return {
+        "dry_run": False,
+        "cutoff": cutoff,
+        "candidate_count": len(candidates),
+        "deleted_count": len(deleted_keys),
+        "failed": failed_keys,
+    }
+
+
 @api.post("/admin/inactive-cleanup")
 async def admin_inactive_cleanup(days: int = 90, dry_run: bool = True, user=Depends(current_user)):
     """Delete intro videos (from GCS) for users who haven't signed in within
@@ -772,56 +846,7 @@ async def admin_inactive_cleanup(days: int = 90, dry_run: bool = True, user=Depe
     _require_admin(user)
     if days < 14:
         raise HTTPException(400, "Minimum days=14 to avoid accidents")
-
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    # We treat both "never tracked" AND "last_seen_at < cutoff" as inactive.
-    # Filter to users who actually have an uploaded video to clean (GCS URL).
-    query = {
-        "is_demo": {"$ne": True},
-        "video_url": {"$regex": r"^https?://"},
-        "$or": [
-            {"last_seen_at": {"$lt": cutoff}},
-            {"last_seen_at": {"$exists": False}},
-        ],
-    }
-    candidates = await db.users.find(query, {"_id": 0, "id": 1, "email": 1, "video_url": 1, "last_seen_at": 1}).to_list(5000)
-
-    if dry_run:
-        return {
-            "dry_run": True,
-            "cutoff": cutoff,
-            "candidate_count": len(candidates),
-            "candidates": [{"id": c["id"], "email": c.get("email"), "last_seen_at": c.get("last_seen_at")} for c in candidates[:50]],
-        }
-
-    # Live mode — delete from GCS and null out the URL.
-    bucket = _get_gcs_bucket()
-    deleted_keys: list = []
-    failed_keys: list = []
-    for c in candidates:
-        url = c.get("video_url") or ""
-        # Object key looks like user_videos/<uid>.<ext>; derive from the URL.
-        m = re.search(r"/nicemeechu/(user_videos/[^?]+)", url)
-        if not m:
-            continue
-        key = m.group(1)
-        try:
-            await run_in_threadpool(lambda k=key: bucket.blob(k).delete())
-            deleted_keys.append(key)
-        except Exception as exc:  # noqa: BLE001
-            failed_keys.append({"key": key, "error": str(exc)})
-        await db.users.update_one(
-            {"id": c["id"]},
-            {"$set": {"video_url": None, "transcript": None, "inactivity_cleaned_at": datetime.now(timezone.utc).isoformat()}},
-        )
-
-    return {
-        "dry_run": False,
-        "cutoff": cutoff,
-        "candidate_count": len(candidates),
-        "deleted_count": len(deleted_keys),
-        "failed": failed_keys,
-    }
+    return await _run_inactive_cleanup(days=days, dry_run=dry_run)
 
 
 @api.post("/users/report")
@@ -1710,6 +1735,46 @@ async def _retire_legacy_sample_demos():
             logger.info("Retired %d legacy stock-video demo users", result.deleted_count)
     except Exception:  # noqa: BLE001
         logger.exception("legacy demo cleanup failed (non-fatal)")
+
+
+# Daily inactivity-cleanup background loop. Runs every 24h while the process
+# is alive — sleeps an initial delay first so the first pass doesn't compete
+# with cold-start traffic. Toggleable via INACTIVE_CLEANUP_ENABLED env var.
+_INACTIVE_CLEANUP_TASK: Optional[asyncio.Task] = None
+
+
+async def _inactive_cleanup_loop():
+    enabled = os.environ.get("INACTIVE_CLEANUP_ENABLED", "true").lower() in ("1", "true", "yes")
+    if not enabled:
+        logger.info("Inactive-cleanup scheduler disabled via env")
+        return
+    days = int(os.environ.get("INACTIVE_CLEANUP_DAYS", "90"))
+    interval_s = int(os.environ.get("INACTIVE_CLEANUP_INTERVAL_SECONDS", str(24 * 60 * 60)))
+    # Initial delay (15 min) keeps the heavy GCS sweep out of cold-start traffic.
+    await asyncio.sleep(int(os.environ.get("INACTIVE_CLEANUP_INITIAL_DELAY_SECONDS", "900")))
+    while True:
+        try:
+            result = await _run_inactive_cleanup(days=days, dry_run=False)
+            logger.info(
+                "Inactive-cleanup pass complete: %d candidates, %d deleted",
+                result.get("candidate_count", 0),
+                result.get("deleted_count", 0),
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("Inactive-cleanup pass failed (will retry next cycle)")
+        await asyncio.sleep(interval_s)
+
+
+@app.on_event("startup")
+async def _start_inactive_cleanup_scheduler():
+    global _INACTIVE_CLEANUP_TASK
+    _INACTIVE_CLEANUP_TASK = asyncio.create_task(_inactive_cleanup_loop())
+
+
+@app.on_event("shutdown")
+async def _stop_inactive_cleanup_scheduler():
+    if _INACTIVE_CLEANUP_TASK and not _INACTIVE_CLEANUP_TASK.done():
+        _INACTIVE_CLEANUP_TASK.cancel()
 
 
 @app.on_event("shutdown")
