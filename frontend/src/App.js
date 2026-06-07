@@ -1996,6 +1996,14 @@ function ChangeLocationScreen({ user, onClose, onChanged }) {
             placeholder="Search a city…"
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              e.preventDefault();
+              // Enter picks the top suggestion — saves a tap on mobile where
+              // the keyboard hides the rest of the screen.
+              if (suggestions.length > 0) pickSuggestion(suggestions[0]);
+            }}
+            enterKeyHint="go"
             data-testid="change-location-search-input"
             autoComplete="off"
           />
@@ -2713,6 +2721,7 @@ function ChatScreen({ me, match, onBack }) {
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && send()}
+            enterKeyHint="send"
             data-testid="chat-input"
           />
           <button
