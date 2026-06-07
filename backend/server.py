@@ -1033,6 +1033,36 @@ _DEMO_HANDLE_POOL = [
 ]
 
 
+def _demo_handle_for(p: dict) -> str:
+    """Generate a stable, human-readable handle for a demo persona that matches
+    what their Sora 2 audio actually says. We pair the spoken first name with
+    a short city slug for uniqueness across the catalogue, e.g.
+    `sarah.newyork`, `yui.tokyo`, `lucas.saopaulo`. Falls back to the persona
+    idx if a name is missing.
+    """
+    name = (p.get("name") or "").strip().lower()
+    city = (p.get("city") or "").strip().lower()
+    # City slug: collapse to alphanumerics so "São Paulo" → "saopaulo",
+    # "New York" → "newyork", non-ASCII letters get stripped (Photon labels
+    # are city-name only at this point so this is safe).
+    city_slug = "".join(c for c in city if c.isalnum())
+    if not name:
+        return f"demo{p.get('idx', 0):02d}"
+    return f"{name}.{city_slug}" if city_slug else name
+
+
+def _demo_codename_for(p: dict) -> str:
+    """Public-facing codename for a demo user. Uses the spoken first name so
+    the badge on the feed card matches what viewers actually hear in the
+    AI-generated audio (e.g. "Sarah" — same name the video says). For real
+    users we still generate the anonymous Adj+Noun codename via
+    `generate_codename()`; demos are explicitly labelled "✨ AI demo" in the
+    UI so showing the name doesn't violate the anonymity promise.
+    """
+    name = (p.get("name") or "").strip()
+    return name or f"Demo {p.get('idx', 0):02d}"
+
+
 async def seed_demo_users():
     personas = _load_demo_personas()
     if not personas:
@@ -1046,6 +1076,26 @@ async def seed_demo_users():
     stale = existing - desired_ids
     if stale:
         await db.users.delete_many({"id": {"$in": list(stale)}})
+
+    # Align ALL existing demos' codename + handle to the name-from-audio
+    # scheme — older seeds used random "Velvet Fox"-style codenames and a
+    # random handle pool which created the audio-vs-badge mismatch
+    # ("Hi! My name is Sarah!" + codename "Neon Comet"). One $set per persona
+    # is cheap (max 78 rows) and idempotent so re-runs are no-ops.
+    for p in personas:
+        uid = f"demo-{p['idx']:02d}"
+        if uid not in existing:
+            continue
+        await db.users.update_one(
+            {"id": uid},
+            {"$set": {
+                "codename": _demo_codename_for(p),
+                "handle": _demo_handle_for(p),
+                "first_name": p.get("name") or None,
+                "transcript": p.get("transcript", ""),
+            }},
+        )
+
     missing = desired_ids - existing
     if not missing:
         return
@@ -1053,8 +1103,7 @@ async def seed_demo_users():
         uid = f"demo-{p['idx']:02d}"
         if uid not in missing:
             continue
-        handle = _DEMO_HANDLE_POOL[p["idx"] % len(_DEMO_HANDLE_POOL)]
-        first_name = p.get("name") or handle.title()
+        first_name = p.get("name") or f"Demo {p['idx']:02d}"
         await db.users.insert_one(
             {
                 "id": uid,
@@ -1064,8 +1113,8 @@ async def seed_demo_users():
                 "name": first_name,
                 "picture": None,
                 "first_name": first_name,
-                "handle": handle,
-                "codename": generate_codename(),
+                "handle": _demo_handle_for(p),
+                "codename": _demo_codename_for(p),
                 "city": p["city"],
                 "city_lat": p["lat"],
                 "city_lng": p["lng"],
