@@ -12,6 +12,9 @@ export function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, 
   const [translated, setTranslated] = useState("");
   const [showCaption, setShowCaption] = useState(false);
   const [revealed] = useState(false);
+  // AI demos: briefly flash a "hear me say my name" hint when the card first
+  // becomes active. Goes away after 2.4s so it doesn't crowd the badge stack.
+  const [demoNameHint, setDemoNameHint] = useState(false);
 
   useEffect(() => {
     if (!vidRef.current) return;
@@ -22,6 +25,18 @@ export function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, 
       // start translation
       setShowCaption(false);
       setTranslated("");
+      // Show the demo "hear me say my name" pill on activation (AI demos only)
+      // and auto-dismiss after a short read.
+      if (item.is_demo) {
+        setDemoNameHint(true);
+        const hintT = setTimeout(() => setDemoNameHint(false), 2400);
+        const t = setTimeout(async () => {
+          const out = await translate(item.transcript, myLang, item.source_lang);
+          setTranslated(out);
+          setShowCaption(true);
+        }, 600);
+        return () => { clearTimeout(t); clearTimeout(hintT); };
+      }
       const t = setTimeout(async () => {
         const out = await translate(item.transcript, myLang, item.source_lang);
         setTranslated(out);
@@ -30,9 +45,10 @@ export function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, 
       return () => clearTimeout(t);
     } else {
       vidRef.current.pause();
+      setDemoNameHint(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, item.transcript, item.source_lang, myLang, muted]);
+  }, [isActive, item.transcript, item.source_lang, myLang, muted, item.is_demo]);
 
   // Respond to pause/play toggles WITHOUT restarting the video from t=0.
   // This is a separate effect from the activation one above so that hitting
@@ -100,6 +116,23 @@ export function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, 
           </span>
         )}
       </div>
+
+      {/* AI demo: "hear me say my name" hint — fades in for ~2.4s on activation
+          to prime the viewer that the audio actually speaks the codename, which
+          is a key differentiator from text-based dating apps. */}
+      {item.is_demo && demoNameHint && (
+        <motion.div
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.25 }}
+          className="absolute top-[3.4rem] left-5 px-2.5 py-1 rounded-full bg-[#00E5FF]/15 ring-1 ring-[#00E5FF]/40 text-[#00E5FF] text-[10px] uppercase tracking-widest font-bold flex items-center gap-1 pointer-events-none shadow-lg"
+          data-testid="feed-demo-name-hint"
+        >
+          <span aria-hidden>🎬</span>
+          <span>hear me say my name</span>
+        </motion.div>
+      )}
 
       {/* distance / location pill — tap to change feed location */}
       <button
