@@ -630,6 +630,17 @@ function Onboarding({ user, onDone }) {
     (step === 1 && city.trim().length >= 2) ||
     (step === 2 && !isNaN(ageNum) && ageNum >= 13 && ageNum <= 120);
 
+  // Mobile keyboards bury the Continue button under the keyboard, so users
+  // reach for the Enter key instead. Wire it up: Enter on any input runs the
+  // same action as tapping Continue — next step on 0/1, submit on 2.
+  const onEnterSubmit = (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    if (!canNext) return;
+    if (step < total - 1) next();
+    else if (!loading) submit();
+  };
+
   // detect browser language for auto-translation
   const browserLang = (typeof navigator !== "undefined" && navigator.language?.slice(0, 2)) || "en";
 
@@ -687,6 +698,8 @@ function Onboarding({ user, onDone }) {
             value={firstName}
             maxLength={40}
             onChange={(e) => setFirstName(e.target.value)}
+            onKeyDown={onEnterSubmit}
+            enterKeyHint="next"
             data-testid="onboarding-name-input"
           />
         </div>
@@ -701,6 +714,7 @@ function Onboarding({ user, onDone }) {
             onPick={(item) => { setCity(item.value || ""); setCityCoords({ lat: item.lat, lng: item.lng }); }}
             biasLat={user.lat}
             biasLng={user.lng}
+            onEnter={() => { if (canNext) next(); }}
           />
           {autoCityLoading && (
             <p className="mt-2 text-[11px] text-white/45 flex items-center gap-1" data-testid="onboarding-city-detecting">
@@ -726,6 +740,8 @@ function Onboarding({ user, onDone }) {
             value={age}
             maxLength={3}
             onChange={(e) => setAge(e.target.value.replace(/\D/g, ""))}
+            onKeyDown={onEnterSubmit}
+            enterKeyHint="done"
             data-testid="onboarding-age-input"
           />
           <p className="mt-3 text-xs text-white/40">You must be at least 13 to use Nice2Meechu.</p>
@@ -826,7 +842,7 @@ function formatCityLabel(p = {}) {
   return parts.join(", ");
 }
 
-function CityAutocomplete({ value, onChange, onPick, biasLat, biasLng }) {
+function CityAutocomplete({ value, onChange, onPick, biasLat, biasLng, onEnter }) {
   const [suggestions, setSuggestions] = useState([]);
   const [open, setOpen] = useState(false);
   const debounceRef = useRef(null);
@@ -887,6 +903,19 @@ function CityAutocomplete({ value, onChange, onPick, biasLat, biasLng }) {
         onChange={onInput}
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter") return;
+          e.preventDefault();
+          // Mobile-keyboard Enter behavior: prefer the top suggestion if the
+          // autocomplete dropdown is open & has results, otherwise hand off
+          // to the parent (advances the onboarding step).
+          if (open && suggestions.length > 0) {
+            pick(suggestions[0]);
+          } else if (onEnter) {
+            onEnter();
+          }
+        }}
+        enterKeyHint="next"
         data-testid="onboarding-city-input"
       />
       {hasBias && (
