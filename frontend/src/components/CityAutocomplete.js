@@ -1,11 +1,18 @@
 import React, { useRef, useState } from "react";
 import { MapPin } from "lucide-react";
 import { formatCityLabel } from "../lib/cityFormat";
+import { useDropdownDirection } from "../lib/useDropdownDirection";
 
 export function CityAutocomplete({ value, onChange, onPick, biasLat, biasLng, onEnter }) {
   const [suggestions, setSuggestions] = useState([]);
   const [open, setOpen] = useState(false);
   const debounceRef = useRef(null);
+  const inputRef = useRef(null);
+  const showDropdown = open && suggestions.length > 0;
+  // Flip the dropdown above the input on mobile when the keyboard would
+  // otherwise cover the suggestions (common on Android where the input sits
+  // mid-screen and the keyboard takes the bottom 40-50%).
+  const direction = useDropdownDirection(inputRef, showDropdown);
 
   const onInput = (e) => {
     const v = e.target.value;
@@ -56,6 +63,7 @@ export function CityAutocomplete({ value, onChange, onPick, biasLat, biasLng, on
   return (
     <div className="relative" data-testid="city-autocomplete">
       <input
+        ref={inputRef}
         autoFocus
         className="n2m-input"
         placeholder="Start typing your city…"
@@ -86,8 +94,13 @@ export function CityAutocomplete({ value, onChange, onPick, biasLat, biasLng, on
           <MapPin size={10} className="text-[#00E5FF]" /> Sorted by closest to you
         </p>
       )}
-      {open && suggestions.length > 0 && (
-        <div className="absolute z-30 left-0 right-0 mt-2 rounded-2xl border border-white/10 bg-[#0c0c10] overflow-hidden shadow-2xl">
+      {showDropdown && (
+        <div
+          className={`absolute z-30 left-0 right-0 rounded-2xl border border-white/10 bg-[#0c0c10] overflow-hidden shadow-2xl ${
+            direction === "up" ? "bottom-full mb-2" : "top-full mt-2"
+          }`}
+          data-testid={`city-autocomplete-dropdown-${direction}`}
+        >
           {suggestions.map((s, i) => (
             <button
               key={`${s.label}-${i}`}
