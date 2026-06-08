@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { ArrowLeft, ArrowRight, MapPin } from "lucide-react";
 import { api } from "../lib/api";
+import { stripCityNoise } from "../lib/cityFormat";
 import { CityAutocomplete } from "../components/CityAutocomplete";
 import { track } from "../analytics";
 
@@ -40,7 +41,7 @@ export function Onboarding({ user, onDone }) {
         // pick the human-readable place fields we know exist: city / town /
         // village fallback chain. Country gets appended so the user sees the
         // full disambiguated label, matching what autocomplete returns.
-        const placeName = p.city || p.town || p.village || p.county || p.name;
+        const placeName = stripCityNoise(p.city || p.town || p.village || p.county || p.name);
         const country = p.country;
         if (!placeName) return;
         const label = country ? `${placeName}, ${country}` : placeName;

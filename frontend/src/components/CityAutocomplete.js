@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { MapPin } from "lucide-react";
-import { formatCityLabel } from "../lib/cityFormat";
+import { dedupeCitySuggestions, formatCityLabel, stripCityNoise } from "../lib/cityFormat";
 import { useDropdownPlacement } from "../lib/useDropdownDirection";
 
 export function CityAutocomplete({ value, onChange, onPick, biasLat, biasLng, onEnter }) {
@@ -52,13 +52,18 @@ export function CityAutocomplete({ value, onChange, onPick, biasLat, biasLng, on
           const p = f.properties || {};
           const coords = f.geometry?.coordinates || []; // [lng, lat]
           return {
-            label: formatCityLabel(p),
-            value: p.name,
+            label: formatCityLabel(p),                  // already noise-stripped
+            value: stripCityNoise(p.name),              // ensure saved name is clean
+            name: p.name,
+            state: p.state,
+            country: p.country,
             lat: coords[1] ?? null,
             lng: coords[0] ?? null,
           };
         });
-        setSuggestions(items);
+        // Collapse "Voorhees Township" + "Voorhees" into one entry so the
+        // dropdown doesn't show what users perceive as duplicates.
+        setSuggestions(dedupeCitySuggestions(items));
       } catch (err) {
         console.error("city autocomplete failed", err);
       }

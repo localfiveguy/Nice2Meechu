@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { ArrowRight, MapPin, Sparkles, X } from "lucide-react";
 import { api } from "../lib/api";
-import { formatCityLabel } from "../lib/cityFormat";
+import { dedupeCitySuggestions, formatCityLabel, stripCityNoise } from "../lib/cityFormat";
 import { useDropdownPlacement } from "../lib/useDropdownDirection";
 import { track } from "../analytics";
 
@@ -112,8 +112,9 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
         const items = (j.features || []).map((f) => {
           const p = f.properties || {};
           return {
-            value: formatCityLabel(p),
-            city: p.name,
+            value: formatCityLabel(p),                  // noise-stripped via helper
+            city: stripCityNoise(p.name),               // saved name should be clean
+            name: p.name,
             state: p.state,
             country: p.country,
             country_code: (p.countrycode || "").toLowerCase(),
@@ -121,7 +122,9 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
             lng: f.geometry.coordinates[0],
           };
         });
-        setSuggestions(items);
+        // Collapse "Voorhees Township" + "Voorhees" into a single suggestion
+        // so neighbors don't get sorted into different city buckets.
+        setSuggestions(dedupeCitySuggestions(items));
       } catch (err) {
         // Surface the error in console so production-only failures (Photon
         // outage, CORS, network) can be diagnosed from devtools without
