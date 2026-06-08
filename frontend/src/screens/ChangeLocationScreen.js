@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { ArrowRight, MapPin, Sparkles, X } from "lucide-react";
@@ -235,13 +235,17 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
           <Sparkles size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
           {hasSuggestions && (
             <div
+              ref={dropdownRef}
               className={`absolute left-0 right-0 glass-dark rounded-2xl border border-white/10 overflow-y-auto z-10 shadow-2xl ${
                 dropDirection === "up" ? "bottom-full mb-1" : "top-full mt-1"
               }`}
               style={{ maxHeight: `${dropMaxHeight}px` }}
               data-testid={`change-location-suggestions-${dropDirection}`}
             >
-              {suggestions.map((s, i) => (
+              {/* When opening upward, reverse the list so the top-ranked
+                  suggestion sits at the BOTTOM — closest to the input the
+                  user is typing in. Matches expected mobile/macOS autocomplete UX. */}
+              {(dropDirection === "up" ? [...suggestions].reverse() : suggestions).map((s, i) => (
                 <button
                   key={`${s.value}-${i}`}
                   onClick={() => pickSuggestion(s)}

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { MapPin } from "lucide-react";
 import { formatCityLabel } from "../lib/cityFormat";
 import { useDropdownPlacement } from "../lib/useDropdownDirection";
@@ -8,6 +8,7 @@ export function CityAutocomplete({ value, onChange, onPick, biasLat, biasLng, on
   const [open, setOpen] = useState(false);
   const debounceRef = useRef(null);
   const inputRef = useRef(null);
+  const dropdownRef = useRef(null);
   const showDropdown = open && suggestions.length > 0;
   // Flip the dropdown above the input on mobile when the keyboard would
   // otherwise cover the suggestions (common on Android where the input sits
@@ -15,6 +16,17 @@ export function CityAutocomplete({ value, onChange, onPick, biasLat, biasLng, on
   // returns a maxHeight so the dropdown stays scrollable inside the
   // visible viewport instead of clipping the top items.
   const { direction, maxHeight } = useDropdownPlacement(inputRef, showDropdown);
+
+  // When the dropdown opens upward, the best-match suggestion is rendered at
+  // the BOTTOM (reversed below). If the content overflows the maxHeight, the
+  // default scroll position would show the worst matches at the top of the
+  // viewport and clip the best match. Force-scroll to bottom so the best
+  // match (closest to the input) is always visible to the user.
+  useLayoutEffect(() => {
+    if (showDropdown && direction === "up" && dropdownRef.current) {
+      dropdownRef.current.scrollTop = dropdownRef.current.scrollHeight;
+    }
+  }, [showDropdown, direction, suggestions, maxHeight]);
 
   const onInput = (e) => {
     const v = e.target.value;
@@ -98,13 +110,18 @@ export function CityAutocomplete({ value, onChange, onPick, biasLat, biasLng, on
       )}
       {showDropdown && (
         <div
+          ref={dropdownRef}
           className={`absolute z-30 left-0 right-0 rounded-2xl border border-white/10 bg-[#0c0c10] overflow-y-auto shadow-2xl ${
             direction === "up" ? "bottom-full mb-2" : "top-full mt-2"
           }`}
           style={{ maxHeight: `${maxHeight}px` }}
           data-testid={`city-autocomplete-dropdown-${direction}`}
         >
-          {suggestions.map((s, i) => (
+          {/* When opening upward, reverse the list so the top-ranked suggestion
+              sits at the BOTTOM — closest to the input the user is typing in.
+              This matches macOS/Slack autocomplete UX where "best match next
+              to my cursor" is the expected reading order. */}
+          {(direction === "up" ? [...suggestions].reverse() : suggestions).map((s, i) => (
             <button
               key={`${s.label}-${i}`}
               onMouseDown={(e) => e.preventDefault()}
