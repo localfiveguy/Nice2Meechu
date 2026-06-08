@@ -20,6 +20,7 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
   const debounceRef = useRef(null);
   const mapTapRef = useRef(null);
   const searchInputRef = useRef(null);
+  const dropdownRef = useRef(null);
   const hasSuggestions = suggestions.length > 0;
   // Flip suggestions above the input on mobile when the keyboard would
   // otherwise cover them — the modal's header pins the input near the top
@@ -27,6 +28,56 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
   // shrinks quickly. We also cap the dropdown height so it stays scrollable
   // inside the visible viewport.
   const { direction: dropDirection, maxHeight: dropMaxHeight } = useDropdownPlacement(searchInputRef, hasSuggestions);
+
+  // Compute viewport-fixed coords for the dropdown. We can't use simple
+  // `position: absolute` here because the input lives inside an
+  // `overflow-y-auto` scroll container — an absolute child rendered above
+  // (with `bottom-full`) gets clipped by the scroll container's overflow
+  // box and becomes invisible. Position: fixed escapes that boundary entirely.
+  const [dropdownStyle, setDropdownStyle] = useState({ display: "none" });
+  useLayoutEffect(() => {
+    if (!hasSuggestions || !searchInputRef.current) {
+      setDropdownStyle({ display: "none" });
+      return undefined;
+    }
+    const recompute = () => {
+      const el = searchInputRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const style = {
+        position: "fixed",
+        left: rect.left,
+        width: rect.width,
+        maxHeight: dropMaxHeight,
+        zIndex: 60,
+      };
+      if (dropDirection === "up") style.bottom = window.innerHeight - rect.top + 4;
+      else style.top = rect.bottom + 4;
+      setDropdownStyle(style);
+    };
+    recompute();
+    const vv = window.visualViewport;
+    vv?.addEventListener("resize", recompute);
+    vv?.addEventListener("scroll", recompute);
+    window.addEventListener("resize", recompute);
+    window.addEventListener("scroll", recompute, true);
+    return () => {
+      vv?.removeEventListener("resize", recompute);
+      vv?.removeEventListener("scroll", recompute);
+      window.removeEventListener("resize", recompute);
+      window.removeEventListener("scroll", recompute, true);
+    };
+  }, [hasSuggestions, dropDirection, dropMaxHeight, suggestions]);
+
+  // When the dropdown opens upward, the best-match suggestion is rendered at
+  // the BOTTOM (reversed below). If content overflows maxHeight, default
+  // scroll position would clip the best match. Force-scroll to bottom so the
+  // top-ranked match (closest to the input) is always visible.
+  useLayoutEffect(() => {
+    if (hasSuggestions && dropDirection === "up" && dropdownRef.current) {
+      dropdownRef.current.scrollTop = dropdownRef.current.scrollHeight;
+    }
+  }, [hasSuggestions, dropDirection, suggestions, dropMaxHeight, dropdownStyle]);
 
   // Load popular cities once on mount
   useEffect(() => {
@@ -49,7 +100,14 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
     if (v.trim().length < 2) { setSuggestions([]); return; }
     debounceRef.current = setTimeout(async () => {
       try {
-        const r = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(v)}&limit=6&layer=city`);
+        // Use the same broad OSM-tag set as the Onboarding CityAutocomplete
+        // — `&layer=city` alone misses townships like "Voorhees Township"
+        // and suburbs that don't carry the `place:city` tag, so the dropdown
+        // would silently return zero results for partially-typed queries
+        // and look "broken" to the user. Towns / villages / suburbs / hamlets
+        // are all valid Nice2Meechu locales (we're hyperlocal, not metro-only).
+        const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(v)}&limit=6&osm_tag=place:city&osm_tag=place:town&osm_tag=place:village&osm_tag=place:suburb&osm_tag=place:hamlet`;
+        const r = await fetch(url);
         const j = await r.json();
         const items = (j.features || []).map((f) => {
           const p = f.properties || {};
@@ -64,7 +122,12 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
           };
         });
         setSuggestions(items);
-      } catch (err) { console.warn("city autocomplete failed", err); }
+      } catch (err) {
+        // Surface the error in console so production-only failures (Photon
+        // outage, CORS, network) can be diagnosed from devtools without
+        // changing UI state — the dropdown just stays empty.
+        console.warn("city autocomplete failed", err);
+      }
     }, 220);
   };
 
@@ -236,10 +299,8 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
           {hasSuggestions && (
             <div
               ref={dropdownRef}
-              className={`absolute left-0 right-0 glass-dark rounded-2xl border border-white/10 overflow-y-auto z-10 shadow-2xl ${
-                dropDirection === "up" ? "bottom-full mb-1" : "top-full mt-1"
-              }`}
-              style={{ maxHeight: `${dropMaxHeight}px` }}
+              className={`glass-dark rounded-2xl border border-white/10 overflow-y-auto shadow-2xl`}
+              style={dropdownStyle}
               data-testid={`change-location-suggestions-${dropDirection}`}
             >
               {/* When opening upward, reverse the list so the top-ranked
