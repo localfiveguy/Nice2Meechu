@@ -1845,6 +1845,70 @@ async def _start_inactive_cleanup_scheduler():
     _INACTIVE_CLEANUP_TASK = asyncio.create_task(_inactive_cleanup_loop())
 
 
+# Mirror of the frontend `stripCityNoise()` (lib/cityFormat.js) — keeps the
+# rules identical so saved city strings match what the autocomplete returns
+# for new users. Strips municipal-classification suffixes/prefixes that locals
+# don't say out loud ("Voorhees Township" → "Voorhees"). Without this, the
+# user typing "Voorhees" in the feed picker gets bucketed away from existing
+# users who saved their city as the full legal name.
+_CITY_NOISE_SUFFIX_RE = re.compile(
+    r"\s+(?:Township|Twp\.?|Borough)\s*$",
+    re.IGNORECASE,
+)
+_CITY_NOISE_PREFIX_RE = re.compile(
+    r"^(?:City of|Town of|Borough of|Township of)\s+",
+    re.IGNORECASE,
+)
+
+
+def _strip_city_noise(name: Optional[str]) -> Optional[str]:
+    if not name or not isinstance(name, str):
+        return name
+    out = name.strip()
+    out = _CITY_NOISE_PREFIX_RE.sub("", out)
+    out = _CITY_NOISE_SUFFIX_RE.sub("", out)
+    return out.strip()
+
+
+@app.on_event("startup")
+async def _migrate_strip_city_noise():
+    """One-shot retro-cleanup: any user whose stored `city` carries a
+    " Township" / " Twp." / " Borough" suffix gets it stripped, so they
+    rejoin the same feed bucket as users who picked the clean name. Safe
+    to re-run on every startup — Mongo's update_one is idempotent and the
+    query only touches matching docs."""
+    try:
+        # Mongo regex match — same pattern as the Python re above (case-insensitive).
+        query = {
+            "$or": [
+                {"city": {"$regex": r"\s+(Township|Twp\.?|Borough)(,|$)", "$options": "i"}},
+                {"city": {"$regex": r"^(City of|Town of|Borough of|Township of)\s+", "$options": "i"}},
+            ]
+        }
+        cursor = db.users.find(query, {"_id": 0, "id": 1, "city": 1})
+        updates = 0
+        async for u in cursor:
+            old = u.get("city") or ""
+            # The `city` is stored as "Place, State, Country" — only the first
+            # part (place name) carries the noise, so split, clean, re-join.
+            parts = [seg.strip() for seg in old.split(",")]
+            if not parts:
+                continue
+            cleaned_first = _strip_city_noise(parts[0])
+            if cleaned_first == parts[0]:
+                continue
+            new_city = ", ".join([cleaned_first] + parts[1:])
+            await db.users.update_one(
+                {"id": u["id"]},
+                {"$set": {"city": new_city}},
+            )
+            updates += 1
+        if updates:
+            logger.info("City-noise migration: cleaned %d user city strings", updates)
+    except Exception:  # noqa: BLE001
+        logger.exception("City-noise migration failed (non-fatal)")
+
+
 @app.on_event("shutdown")
 async def _stop_inactive_cleanup_scheduler():
     if _INACTIVE_CLEANUP_TASK and not _INACTIVE_CLEANUP_TASK.done():
