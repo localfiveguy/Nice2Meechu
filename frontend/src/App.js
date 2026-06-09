@@ -228,7 +228,11 @@ export default function App() {
             <Onboarding key="onb" user={user} onDone={(u) => { setUser(u); setScreen("community-rules"); }} />
           )}
           {screen === "community-rules" && user && (
-            <CommunityRulesScreen key="rules" onDone={(u) => { setUser(u); setScreen("video-pick"); }} />
+            <CommunityRulesScreen
+              key="rules"
+              onDone={(u) => { setUser(u); setScreen("video-pick"); }}
+              onOpenLegal={openLegal}
+            />
           )}
           {screen === "video-pick" && user && (
             <VideoPick

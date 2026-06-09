@@ -7,7 +7,7 @@ import { COMMUNITY_RULES } from "../lib/constants";
 import { SignaturePad } from "../components/SignaturePad";
 import { track } from "../analytics";
 
-export function CommunityRulesScreen({ onDone }) {
+export function CommunityRulesScreen({ onDone, onOpenLegal }) {
   const [checked, setChecked] = useState(() => COMMUNITY_RULES.map(() => false));
   const [loading, setLoading] = useState(false);
   const [hasSig, setHasSig] = useState(false);
@@ -85,6 +85,30 @@ export function CommunityRulesScreen({ onDone }) {
       >
         {loading ? "Saving…" : "Accept & Continue"}
       </button>
+
+      {/* Legal links — let users read what they're agreeing to without
+          leaving the rules screen. Clicking either pops a full-screen overlay
+          rendering the same PrivacyPolicyPage / TermsOfServicePage that the
+          /privacy and /terms routes show. */}
+      <div className="mt-4 flex justify-center gap-5 text-xs text-white/55">
+        <button
+          type="button"
+          onClick={() => onOpenLegal?.("terms")}
+          className="underline hover:text-white transition"
+          data-testid="rules-terms-link"
+        >
+          Terms of Service
+        </button>
+        <span className="text-white/20">·</span>
+        <button
+          type="button"
+          onClick={() => onOpenLegal?.("privacy")}
+          className="underline hover:text-white transition"
+          data-testid="rules-privacy-link"
+        >
+          Privacy Policy
+        </button>
+      </div>
     </motion.div>
   );
 }
