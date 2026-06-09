@@ -86,11 +86,9 @@ export function CommunityRulesScreen({ onDone, onOpenLegal }) {
         {loading ? "Saving…" : "Accept & Continue"}
       </button>
 
-      {/* Legal links — let users read what they're agreeing to without
-          leaving the rules screen. Clicking either pops a full-screen overlay
-          rendering the same PrivacyPolicyPage / TermsOfServicePage that the
-          /privacy and /terms routes show. */}
-      <div className="mt-4 flex justify-center gap-5 text-xs text-white/55">
+      {/* Legal links — left-aligned so the "Made with Emergent" badge on the
+          right side doesn't visually conflict with them on mobile. */}
+      <div className="mt-4 flex justify-start gap-4 text-xs text-white/55">
         <button
           type="button"
           onClick={() => onOpenLegal?.("terms")}
