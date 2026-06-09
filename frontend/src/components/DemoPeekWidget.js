@@ -22,6 +22,7 @@ import { VideoEl } from "./VideoEl";
 export function DemoPeekWidget() {
   const [demos, setDemos] = useState([]);
   const [idx, setIdx] = useState(0);
+  const [muted, setMuted] = useState(true);
   const [dismissed, setDismissed] = useState(() => {
     if (typeof window === "undefined") return false;
     return window.sessionStorage.getItem("n2m_demo_peek_dismissed") === "1";
@@ -54,6 +55,18 @@ export function DemoPeekWidget() {
     setIdx((i) => (demos.length === 0 ? 0 : (i + 1) % demos.length));
   }, [demos.length]);
 
+  // Toggle audio. The video element's `muted` boolean prop won't always
+  // sync mid-playback via React's diffing alone, so we mirror the change
+  // onto the underlying DOM node too — same belt-and-suspenders pattern
+  // we use in FeedCard.
+  const toggleMute = () => {
+    setMuted((m) => {
+      const next = !m;
+      if (vidRef.current) vidRef.current.muted = next;
+      return next;
+    });
+  };
+
   const dismiss = () => {
     setDismissed(true);
     if (typeof window !== "undefined") {
@@ -74,6 +87,19 @@ export function DemoPeekWidget() {
       className="fixed bottom-5 right-5 z-30 w-[136px]"
       data-testid="demo-peek-widget"
     >
+      {/* Top label — invites the user to tap the video to enable audio.
+          Switches to a "sound on" indicator once they've engaged so they
+          can see the current state at a glance. */}
+      <div
+        className={`mb-1.5 px-2 py-1 rounded-full text-[9px] uppercase tracking-widest font-bold text-center flex items-center justify-center gap-1 ${
+          muted
+            ? "bg-[#00E5FF]/15 ring-1 ring-[#00E5FF]/45 text-[#00E5FF] animate-pulse"
+            : "bg-white/8 ring-1 ring-white/20 text-white/70"
+        }`}
+        data-testid="demo-peek-label"
+      >
+        {muted ? <>🔊 Tap to hear</> : <>🔈 Sound on</>}
+      </div>
       <div className="rounded-2xl overflow-hidden border border-white/15 bg-black shadow-2xl shadow-black/60 relative">
         {/* Dismiss button — small × in the top-left so it doesn't steal focus
             from the codename/city badges on the top-right. */}
@@ -87,13 +113,13 @@ export function DemoPeekWidget() {
           <X size={12} />
         </button>
 
-        {/* Video — tapping anywhere on the video advances to the next demo
-            so a curious visitor can browse multiple examples quickly. */}
+        {/* Video — tapping the video toggles audio. Auto-advances to the
+            next demo when the current clip ends (via `onEnded`). */}
         <button
           type="button"
-          onClick={advance}
+          onClick={toggleMute}
           className="block w-full aspect-[9/16] relative active:scale-[0.99] transition"
-          aria-label={`Example intro from ${current.codename}${cityShort ? " in " + cityShort : ""} — tap for next`}
+          aria-label={muted ? "Tap to hear this intro" : "Tap to mute"}
           data-testid="demo-peek-video-button"
         >
           <VideoEl
@@ -101,7 +127,7 @@ export function DemoPeekWidget() {
             src={current.video_url}
             autoPlay
             loop={false}
-            muted
+            muted={muted}
             playsInline
             preload="metadata"
             onEnded={advance}
@@ -124,14 +150,6 @@ export function DemoPeekWidget() {
           </div>
         </button>
       </div>
-      {/* Caption under the card — tells the visitor what they're looking at
-          without taking up vertical space inside the card itself. */}
-      <p
-        className="mt-1.5 px-1 text-[9px] uppercase tracking-widest font-bold text-white/55 text-center leading-tight"
-        data-testid="demo-peek-caption"
-      >
-        🎬 Example intro<br />tap for next
-      </p>
     </motion.div>
   );
 }
