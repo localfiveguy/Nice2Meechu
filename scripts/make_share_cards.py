@@ -96,7 +96,7 @@ def card_story_minimal():
 
     # Tiny top label
     f_small = font(34, bold=True)
-    draw.text((80, 110), "HYPERLOCAL · VIDEO-FIRST", font=f_small, fill=(255, 255, 255, 200))
+    draw.text((80, 110), "MEET THE WORLD · VIDEO-FIRST", font=f_small, fill=(255, 255, 255, 200))
 
     # Stacked wordmark — left aligned, takes most of the upper third
     wordmark(draw, 80, 220, size=230, layout="stacked")
@@ -151,7 +151,7 @@ def card_feed_square():
 
     # Tagline single line
     f_tag = font(44, bold=True)
-    draw.text((70, 590), "Hyperlocal. Video-first.", font=f_tag, fill=WHITE)
+    draw.text((70, 590), "Meet the world.", font=f_tag, fill=WHITE)
     draw.text((70, 650), "Anonymous until the ", font=f_tag, fill=WHITE)
     tail_x = 70 + text_w(draw, "Anonymous until the ", f_tag)
     draw.text((tail_x, 650), "spark.", font=f_tag, fill=CYAN)
@@ -240,7 +240,7 @@ def card_story_qr():
     url_w = text_w(draw, URL, f_url)
     draw.text(((W - url_w) // 2, card_y + card_h + 60), URL, font=f_url, fill=WHITE)
     f_foot = font(26, bold=True)
-    foot = "HYPERLOCAL · VIDEO-FIRST · ANONYMOUS UNTIL THE SPARK"
+    foot = "MEET THE WORLD · VIDEO-FIRST · ANONYMOUS UNTIL THE SPARK"
     foot_w = text_w(draw, foot, f_foot)
     draw.text(((W - foot_w) // 2, card_y + card_h + 130), foot, font=f_foot, fill=(255, 255, 255, 150))
 

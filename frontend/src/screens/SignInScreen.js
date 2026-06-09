@@ -115,7 +115,7 @@ export function SignInScreen() {
         <br />Meechu<span style={{ color: "#00E5FF" }}>.</span>
       </div>
       <p className="mt-4 text-sm text-white/55 font-medium leading-relaxed max-w-[280px]">
-        Hyperlocal. Video-first. Anonymous until the spark.
+        Meet the world. Video-first. Anonymous until the spark.
       </p>
 
       <div className="mt-auto flex flex-col items-center gap-3">

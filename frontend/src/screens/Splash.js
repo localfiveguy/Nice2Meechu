@@ -16,7 +16,7 @@ export function Splash() {
           </div>
         </div>
         <p className="mt-6 text-sm text-white/55 font-medium max-w-[260px] mx-auto leading-relaxed">
-          Hyperlocal. Video-first. Anonymous until the spark.
+          Meet the world. Video-first. Anonymous until the spark.
         </p>
       </div>
     </motion.div>
