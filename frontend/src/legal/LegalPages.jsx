@@ -35,6 +35,17 @@ const Shell = ({ title, children, onBack }) => (
         Contact: <a className="text-[#00E5FF] underline" href={SAFETY_CONTACT_URL} target="_blank" rel="noopener noreferrer">submit a form</a>
         <span className="ml-1">— a human usually replies within 24 hours.</span>
       </div>
+      {/* Bottom back button — long policy text means users who scroll to the
+          end shouldn't have to scroll back to the top header to dismiss the
+          page. Same styling as the primary buttons elsewhere so it's
+          recognisable as an actionable control, not a link. */}
+      <button
+        onClick={onBack}
+        className="mt-8 w-full btn-primary flex items-center justify-center gap-2"
+        data-testid="legal-back-bottom"
+      >
+        ← Back
+      </button>
     </div>
   </div>
 );
