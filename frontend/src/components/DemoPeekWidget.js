@@ -129,6 +129,15 @@ export function DemoPeekWidget() {
       className="fixed bottom-5 right-5 z-30 w-[136px]"
       data-testid="demo-peek-widget"
     >
+      {/* Headline label — explains what the widget IS so first-time visitors
+          understand the demo videos below are examples to inspire their own
+          intro, not real users they can interact with from the sign-in page. */}
+      <div
+        className="mb-1.5 text-[9px] uppercase tracking-widest font-bold text-white/85 text-center leading-snug"
+        data-testid="demo-peek-headline"
+      >
+        Examples of what<br />your intro should be<span className="text-[#FF4D4D]">:</span>
+      </div>
       {/* Top label — invites the user to tap the video to enable audio.
           Switches to a "sound on" indicator once they've engaged so they
           can see the current state at a glance. */}
