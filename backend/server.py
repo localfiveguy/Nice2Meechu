@@ -518,6 +518,37 @@ CURATED_CITIES = [
 ]
 
 
+@api.get("/demos/sample")
+async def demos_sample(limit: int = 12):
+    """PUBLIC endpoint (no auth) that returns a randomized subset of AI demo
+    users so the sign-in landing page can show example intro videos to
+    pre-signup visitors — they can watch what a "good" intro looks like
+    before committing to recording their own. Caller passes `limit` (default
+    12, capped at 30 to keep payload small). Only safe, public-facing fields
+    are returned: id, codename, city, video_url, source_lang, language. We
+    deliberately do NOT include emails, geolocation precision, or anything
+    PII-adjacent."""
+    limit = max(1, min(limit, 30))
+    # Pull a small random sample. Mongo's $sample is single-pass and won't
+    # scan the whole collection, but to keep it deterministic-ish for the
+    # short widget cycle we shuffle the result client-side too.
+    pipeline = [
+        {"$match": {"is_demo": True, "video_url": {"$exists": True, "$ne": None}}},
+        {"$sample": {"size": limit}},
+        {"$project": {
+            "_id": 0,
+            "id": 1,
+            "codename": 1,
+            "city": 1,
+            "video_url": 1,
+            "source_lang": 1,
+            "language": 1,
+        }},
+    ]
+    demos = await db.users.aggregate(pipeline).to_list(limit)
+    return {"demos": demos}
+
+
 @api.get("/cities/popular")
 async def cities_popular(user=Depends(current_user)):
     """Returns curated top-12 cities merged with real signup counts.
