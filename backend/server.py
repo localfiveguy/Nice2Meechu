@@ -551,13 +551,13 @@ async def demos_sample(limit: int = 12):
 
 @api.get("/cities/popular")
 async def cities_popular(user=Depends(current_user)):
-    """Returns curated top-12 cities merged with real signup counts.
-    `people` is the number of users in that city EXCLUDING the requesting
-    user themselves — so when you move to a new city, the count there
-    reflects "OTHER people here", not "all people including me". This keeps
-    the badge stable as the viewer moves around (it doesn't tick up by 1
-    just because they switched their location). Real cities not in the
-    curated list are appended (require city_lat/city_lng)."""
+    """Returns every city that has at least one OTHER user with a recorded
+    intro, merged on top of the curated cities. `people` is the number of
+    users in that city EXCLUDING the requesting user themselves — so when
+    you move to a new city, the count there reflects "OTHER people here",
+    not "all people including me". This keeps the badge stable as the viewer
+    moves around (it doesn't tick up by 1 just because they switched their
+    location). Real cities not in the curated list are appended."""
     pipeline = [
         {"$match": {
             "id": {"$ne": user["id"]},
@@ -568,11 +568,16 @@ async def cities_popular(user=Depends(current_user)):
             "_id": {"$toLower": "$city"},
             "raw_city": {"$first": "$city"},
             "count": {"$sum": 1},
-            "lat": {"$first": "$city_lat"},
-            "lng": {"$first": "$city_lng"},
+            # Coalesce: prefer the explicit city center, fall back to the
+            # user's own geolocation when the city center wasn't recorded
+            # (older signups, manual onboarding, etc.). Without this fallback
+            # real cities like "Voorhees, NJ, USA" — where users only have
+            # `lat`/`lng` but no `city_lat`/`city_lng` — were silently dropped.
+            "lat": {"$first": {"$ifNull": ["$city_lat", "$lat"]}},
+            "lng": {"$first": {"$ifNull": ["$city_lng", "$lng"]}},
         }},
     ]
-    rows = await db.users.aggregate(pipeline).to_list(500)
+    rows = await db.users.aggregate(pipeline).to_list(2000)
 
     out = []
     matched_keys = set()
@@ -586,23 +591,30 @@ async def cities_popular(user=Depends(current_user)):
                 matched_keys.add(key)
         out.append({**c, "people": people})
 
-    # Append real-only cities that weren't matched to a curated entry AND have coords.
+    # Append every real-only city that wasn't matched to a curated entry AND
+    # has any usable coordinates. We bias toward inclusion: a city missing
+    # coords falls back to (0, 0) — visible in the list as a navigable entry
+    # even if "Use my current location" would be more accurate.
     for r in rows:
         key = r["_id"]
         if key in matched_keys:
-            continue
-        if r.get("lat") is None or r.get("lng") is None:
             continue
         parts = [p.strip() for p in (r.get("raw_city") or "").split(",")]
         city = parts[0] or "Unknown"
         country = parts[-1] if len(parts) > 1 else ""
         out.append({
             "city": city, "country": country, "country_code": "", "flag": "🌍",
-            "lat": float(r["lat"]), "lng": float(r["lng"]), "people": int(r["count"]),
+            "lat": float(r["lat"]) if r.get("lat") is not None else 0.0,
+            "lng": float(r["lng"]) if r.get("lng") is not None else 0.0,
+            "people": int(r["count"]),
         })
 
+    # Cities with zero OTHER people get sorted to the bottom (still listed
+    # so the operator can audit, but the engaged ones surface first). Cap
+    # at 200 — well above any realistic city count for the friends-and-family
+    # rollout but small enough to render without virtualization.
     out.sort(key=lambda x: (-x["people"], x["city"]))
-    return {"cities": out[:20]}
+    return {"cities": out[:200]}
 
 
 @api.get("/users/me")
