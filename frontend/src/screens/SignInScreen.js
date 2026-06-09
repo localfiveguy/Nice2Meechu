@@ -4,7 +4,6 @@ import { toast } from "sonner";
 import { api } from "../lib/api";
 import { GOOGLE_CLIENT_ID } from "../lib/constants";
 import { isIosWebkit } from "../lib/ua";
-import { DemoPeekWidget } from "../components/DemoPeekWidget";
 import { track } from "../analytics";
 
 // ---------- Google Sign-In (Direct Google Identity Services / GIS) ----------
@@ -135,12 +134,6 @@ export function SignInScreen() {
           By continuing you agree to be Nice
         </p>
       </div>
-
-      {/* Floating demo-video preview pinned to the bottom-right corner so
-          pre-signup visitors can watch real example intros before they
-          decide to record their own — removes the "what does a good
-          intro look like?" friction. */}
-      <DemoPeekWidget />
     </motion.div>
   );
 }

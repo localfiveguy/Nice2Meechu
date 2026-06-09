@@ -18,6 +18,7 @@ import { MatchesScreen } from "./screens/MatchesScreen";
 import { ChatScreen } from "./screens/ChatScreen";
 import { ProfileScreen } from "./screens/ProfileScreen";
 
+import { DemoPeekWidget } from "./components/DemoPeekWidget";
 import { MatchCelebration } from "./components/MatchCelebration";
 
 // ---------- Top-level App orchestrator ----------
@@ -290,6 +291,16 @@ export default function App() {
             />
           )}
         </AnimatePresence>
+
+        {/* Demo-peek widget persists across the entire pre-recording journey
+            (sign-in → onboarding → community rules) so new users can keep
+            referring to example intros while filling in their info. Hidden
+            the moment they hit the VideoPick recording screen so it doesn't
+            compete with their own camera preview, and on every authenticated
+            screen after that (feed/matches/chat/profile) where it'd be noise. */}
+        {["splash", "signin", "onboarding", "community-rules"].includes(screen) && (
+          <DemoPeekWidget />
+        )}
       </div>
     </div>
   );
