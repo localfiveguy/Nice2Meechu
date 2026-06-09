@@ -54,6 +54,9 @@ export function DemoPeekWidget() {
   const advance = useCallback(() => {
     setIdx((i) => (demos.length === 0 ? 0 : (i + 1) % demos.length));
   }, [demos.length]);
+  const goPrev = useCallback(() => {
+    setIdx((i) => (demos.length === 0 ? 0 : (i - 1 + demos.length) % demos.length));
+  }, [demos.length]);
 
   // Toggle audio. The video element's `muted` boolean prop won't always
   // sync mid-playback via React's diffing alone, so we mirror the change
@@ -65,6 +68,45 @@ export function DemoPeekWidget() {
       if (vidRef.current) vidRef.current.muted = next;
       return next;
     });
+  };
+
+  // TikTok-style vertical swipe gestures on the preview card:
+  //   swipe UP   → advance to next demo
+  //   swipe DOWN → go back to previous demo
+  //   tap       → toggle mute (handled by onClick below)
+  // We track touchstart Y and decide on touchend: anything >30px vertical
+  // movement is treated as a swipe (not a tap). Below the threshold falls
+  // through to the click handler so a normal tap still toggles audio.
+  const touchStartRef = useRef({ y: 0, t: 0, swiped: false });
+  const onTouchStart = (e) => {
+    touchStartRef.current = {
+      y: e.touches?.[0]?.clientY ?? 0,
+      t: Date.now(),
+      swiped: false,
+    };
+  };
+  const onTouchEnd = (e) => {
+    const start = touchStartRef.current;
+    const endY = e.changedTouches?.[0]?.clientY ?? start.y;
+    const dy = endY - start.y;
+    const dt = Date.now() - start.t;
+    // Treat as swipe if >30px AND <500ms (fast flick) — slower long drags
+    // are likely accidental scrolls and shouldn't trigger navigation.
+    if (Math.abs(dy) > 30 && dt < 500) {
+      touchStartRef.current.swiped = true;
+      e.preventDefault();
+      if (dy < 0) advance();   // finger moved UP → next
+      else goPrev();           // finger moved DOWN → previous
+    }
+  };
+  // Suppress the click handler when a swipe was just registered, so the
+  // mute doesn't accidentally toggle at the end of a flick gesture.
+  const onClick = () => {
+    if (touchStartRef.current.swiped) {
+      touchStartRef.current.swiped = false;
+      return;
+    }
+    toggleMute();
   };
 
   const dismiss = () => {
@@ -117,9 +159,11 @@ export function DemoPeekWidget() {
             next demo when the current clip ends (via `onEnded`). */}
         <button
           type="button"
-          onClick={toggleMute}
-          className="block w-full aspect-[9/16] relative active:scale-[0.99] transition"
-          aria-label={muted ? "Tap to hear this intro" : "Tap to mute"}
+          onClick={onClick}
+          onTouchStart={onTouchStart}
+          onTouchEnd={onTouchEnd}
+          className="block w-full aspect-[9/16] relative active:scale-[0.99] transition touch-none"
+          aria-label={muted ? "Tap to hear, swipe up for next, swipe down for previous" : "Tap to mute, swipe up for next, swipe down for previous"}
           data-testid="demo-peek-video-button"
         >
           <VideoEl
