@@ -15,8 +15,11 @@ export function VideoPick({ user, onDone, onSkip }) {
   const streamRef = useRef(null);
   const [recording, setRecording] = useState(false);
   const [recordedBlob, setRecordedBlob] = useState(null);
+  const [secondsLeft, setSecondsLeft] = useState(0);   // live countdown shown over the camera
   const recorderRef = useRef(null);
+  const countdownRef = useRef(null);
   const [rejectReason, setRejectReason] = useState(null);
+  const MAX_SECONDS = 7;
 
   const firstName = user?.first_name || "there";
   const city = user?.city || "your city";
@@ -147,16 +150,28 @@ export function VideoPick({ user, onDone, onSkip }) {
       r.start();
       recorderRef.current = r;
       setRecording(true);
-      // auto-stop at 7 seconds (matches the "7-second intro" script copy)
+      // Live countdown — show remaining seconds over the camera preview so
+      // the user can pace themselves through the script. Ticks every 1s
+      // until it reaches 0, then the auto-stop fires.
+      setSecondsLeft(MAX_SECONDS);
+      if (countdownRef.current) clearInterval(countdownRef.current);
+      countdownRef.current = setInterval(() => {
+        setSecondsLeft((s) => (s > 0 ? s - 1 : 0));
+      }, 1000);
+      // auto-stop at MAX_SECONDS (matches the "7-second intro" script copy)
       setTimeout(() => {
         if (recorderRef.current?.state === "recording") {
           recorderRef.current.stop();
           setRecording(false);
         }
-      }, 7000);
+        if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
+        setSecondsLeft(0);
+      }, MAX_SECONDS * 1000);
     } else {
       recorderRef.current?.stop();
       setRecording(false);
+      if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
+      setSecondsLeft(0);
     }
   };
 
@@ -263,6 +278,19 @@ export function VideoPick({ user, onDone, onSkip }) {
             data-testid="record-review-badge"
           >
             <span>👀</span><span>Review before posting</span>
+          </div>
+        )}
+        {/* Live countdown overlay — only visible while actively recording.
+            Big numeric so it's readable from arm's length while the user is
+            reciting their script. */}
+        {recording && !recordedBlob && (
+          <div
+            className="absolute top-3 right-3 px-3 py-1.5 rounded-full bg-[#FF4D4D]/90 text-white font-display font-black text-lg leading-none shadow-lg pointer-events-none flex items-center gap-1.5"
+            data-testid="record-countdown"
+            aria-live="polite"
+          >
+            <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+            <span>{secondsLeft}s</span>
           </div>
         )}
       </div>
