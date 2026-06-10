@@ -195,25 +195,58 @@ export function VideoPick({ user, onDone, onSkip }) {
       </div>
 
       <div className="mt-4 relative aspect-[3/4] rounded-3xl overflow-hidden bg-black">
-        <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
+        {/* Recording view: live camera feed until a clip is captured.
+            Playback view: the captured blob with native HTML5 controls so
+            the user can review (play/scrub/replay) before posting. */}
+        {recordedBlob ? (
+          <video
+            key={recordedBlob.size /* force a fresh element when re-recorded */}
+            src={URL.createObjectURL(recordedBlob)}
+            className="w-full h-full object-cover"
+            playsInline
+            autoPlay
+            loop
+            controls
+            data-testid="record-playback-video"
+          />
+        ) : (
+          <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
+        )}
         {!streamRef.current && !recordedBlob && (
           <div className="absolute inset-0 flex items-center justify-center text-white/40 text-sm">
             Press record to start
           </div>
         )}
+        {/* Action button: record (initial), pause (mid-recording), or
+            re-record (after a clip is captured — pops the blob and brings
+            the live camera back so the user can try again). */}
         <div className="absolute bottom-5 left-0 right-0 flex justify-center">
-          <button
-            className={`btn-icon ${recording ? "record-ring" : ""}`}
-            onClick={toggleRecord}
-            data-testid="record-toggle-button"
-            style={{ background: recording ? "#FF4D4D" : "rgba(255,255,255,0.15)" }}
-          >
-            {recording ? <Pause size={22} /> : <Camera size={22} />}
-          </button>
+          {recordedBlob ? (
+            <button
+              onClick={() => { setRecordedBlob(null); setRejectReason(null); }}
+              className="px-4 py-2 rounded-full glass-dark border border-white/15 text-white text-xs font-bold uppercase tracking-widest active:scale-95 transition flex items-center gap-1.5"
+              data-testid="record-retake-button"
+              aria-label="Re-record intro video"
+            >
+              <Camera size={14} /> Re-record
+            </button>
+          ) : (
+            <button
+              className={`btn-icon ${recording ? "record-ring" : ""}`}
+              onClick={toggleRecord}
+              data-testid="record-toggle-button"
+              style={{ background: recording ? "#FF4D4D" : "rgba(255,255,255,0.15)" }}
+            >
+              {recording ? <Pause size={22} /> : <Camera size={22} />}
+            </button>
+          )}
         </div>
         {recordedBlob && (
-          <div className="absolute top-3 left-3 text-xs glass-dark px-2 py-1 rounded-full font-bold">
-            Recorded ✓
+          <div
+            className="absolute top-3 left-3 text-xs glass-dark px-2 py-1 rounded-full font-bold flex items-center gap-1"
+            data-testid="record-review-badge"
+          >
+            <span>👀</span><span>Review before posting</span>
           </div>
         )}
       </div>
