@@ -210,7 +210,23 @@ export function VideoPick({ user, onDone, onSkip }) {
             data-testid="record-playback-video"
           />
         ) : (
-          <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
+          /* Ref callback re-attaches the active MediaStream whenever this
+             element remounts — necessary after returning from the playback
+             view via "Re-record", otherwise the new <video> has no srcObject
+             and stays black even though MediaRecorder still has the stream. */
+          <video
+            ref={(el) => {
+              videoRef.current = el;
+              if (el && streamRef.current && el.srcObject !== streamRef.current) {
+                el.srcObject = streamRef.current;
+                el.play().catch(() => {});
+              }
+            }}
+            className="w-full h-full object-cover"
+            muted
+            playsInline
+            autoPlay
+          />
         )}
         {!streamRef.current && !recordedBlob && (
           <div className="absolute inset-0 flex items-center justify-center text-white/40 text-sm">
