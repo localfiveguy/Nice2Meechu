@@ -66,7 +66,7 @@ export function PrivacyPolicyPage({ onBack }) {
         <li><b>Content you create:</b> recorded intro video, transcript, chat messages, swipe actions, signature image, community-rules acceptance.</li>
         <li><b>Biometric data (special category):</b> a single still frame extracted from your intro video is sent to OpenAI's content-safety vision model to verify there is a single human face and no prohibited content. The image is not stored after the check.</li>
         <li><b>Device & log:</b> IP address, user agent, timestamps of requests, cookies.</li>
-        <li><b>Analytics:</b> Google Analytics 4 events (page views, key actions) — only if you accept the cookie banner.</li>
+        <li><b>Analytics:</b> Google Analytics 4 events (page views, important milestones like clicking a sign-up button) — only if you accept the cookie banner.</li>
       </UL>
 
       <H2>2. Why we use it (lawful bases)</H2>
