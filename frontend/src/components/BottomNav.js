@@ -68,20 +68,26 @@ export function BottomNav({ active, onTab, userPicture, unreadCount = 0, userHan
         <Item id="matches" icon={Heart} label="Matches" />
         <Item id="profile" icon={UserIcon} label="You" />
       </div>
-      {/* Persistent share-app affordance — tucked below the tab strip so it's
-          always one tap away no matter what screen the user is on. Subtle
-          styling (dashed top divider, small text) keeps it from competing
-          with the primary nav above. */}
-      <button
-        type="button"
-        onClick={handleShare}
-        className="mt-1 mx-auto flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] uppercase tracking-widest font-bold text-white/65 hover:text-white border border-white/10 hover:border-white/25 active:scale-95 transition"
-        data-testid="bottom-nav-share"
-        aria-label="Share Nice2Meechu with a friend"
-      >
-        <Share2 size={11} className="text-[#FF4D4D]" />
-        <span>Share this app</span>
-      </button>
+      {/* Persistent share-app affordance — positioned directly under the FEED
+          tab (left third) so it visually anchors to a primary action. Empty
+          spacer flex slots reserve the middle/right thirds and keep the share
+          pill aligned with the tab above it regardless of screen width. */}
+      <div className="mt-1 flex">
+        <div className="flex-1 flex justify-center">
+          <button
+            type="button"
+            onClick={handleShare}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] uppercase tracking-widest font-bold text-white/65 hover:text-white border border-white/10 hover:border-white/25 active:scale-95 transition"
+            data-testid="bottom-nav-share"
+            aria-label="Share Nice2Meechu with a friend"
+          >
+            <Share2 size={11} className="text-[#FF4D4D]" />
+            <span>Share this app</span>
+          </button>
+        </div>
+        <div className="flex-1" aria-hidden />
+        <div className="flex-1" aria-hidden />
+      </div>
     </div>
   );
 }
