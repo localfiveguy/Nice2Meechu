@@ -1,8 +1,29 @@
 import React from "react";
-import { Heart, User as UserIcon, Video as VideoIcon } from "lucide-react";
+import { Heart, Share2, User as UserIcon, Video as VideoIcon } from "lucide-react";
+import { toast } from "sonner";
+import { shareOrCopy } from "../lib/api";
+import { track } from "../analytics";
 
-export function BottomNav({ active, onTab, userPicture, unreadCount = 0 }) {
+export function BottomNav({ active, onTab, userPicture, unreadCount = 0, userHandle }) {
   const hasUnread = unreadCount > 0;
+
+  const handleShare = async () => {
+    const shareUrl = userHandle
+      ? `${window.location.origin}/?ref=${encodeURIComponent(userHandle)}`
+      : window.location.origin;
+    const shareText =
+      "Come meet people in your city on Nice2Meechu — video-first, anonymous until the spark.";
+    track("share_app_button_tapped", { from: "bottom_nav" });
+    const result = await shareOrCopy({
+      title: "Nice2Meechu",
+      text: shareText,
+      url: shareUrl,
+      copyText: `${shareText} ${shareUrl}`,
+    });
+    if (result === "copied") toast.success("Invite link copied!");
+    else if (result === "failed") toast.error("Couldn't share — try the Profile screen");
+  };
+
   const Item = ({ id, icon: Icon, label }) => {
     const isYouTabWithPic = id === "profile" && userPicture;
     const showDotHere = id === "profile" && hasUnread;
@@ -41,10 +62,26 @@ export function BottomNav({ active, onTab, userPicture, unreadCount = 0 }) {
     );
   };
   return (
-    <div className="absolute bottom-0 left-0 right-0 z-40 glass-dark border-t border-white/8 flex pb-10 pt-1 px-4" data-testid="bottom-nav">
-      <Item id="feed" icon={VideoIcon} label="Feed" />
-      <Item id="matches" icon={Heart} label="Matches" />
-      <Item id="profile" icon={UserIcon} label="You" />
+    <div className="absolute bottom-0 left-0 right-0 z-40 glass-dark border-t border-white/8 flex flex-col pb-10 pt-1 px-4" data-testid="bottom-nav">
+      <div className="flex">
+        <Item id="feed" icon={VideoIcon} label="Feed" />
+        <Item id="matches" icon={Heart} label="Matches" />
+        <Item id="profile" icon={UserIcon} label="You" />
+      </div>
+      {/* Persistent share-app affordance — tucked below the tab strip so it's
+          always one tap away no matter what screen the user is on. Subtle
+          styling (dashed top divider, small text) keeps it from competing
+          with the primary nav above. */}
+      <button
+        type="button"
+        onClick={handleShare}
+        className="mt-1 mx-auto flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] uppercase tracking-widest font-bold text-white/65 hover:text-white border border-white/10 hover:border-white/25 active:scale-95 transition"
+        data-testid="bottom-nav-share"
+        aria-label="Share Nice2Meechu with a friend"
+      >
+        <Share2 size={11} className="text-[#FF4D4D]" />
+        <span>Share this app</span>
+      </button>
     </div>
   );
 }

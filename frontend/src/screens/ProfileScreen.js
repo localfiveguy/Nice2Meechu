@@ -219,7 +219,7 @@ export function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, o
         </div>
       </div>
 
-      <BottomNav active="profile" onTab={onTab} userPicture={user?.picture} unreadCount={unreadMatches} />
+      <BottomNav active="profile" onTab={onTab} userPicture={user?.picture} userHandle={user?.handle} unreadCount={unreadMatches} />
     </motion.div>
   );
 }

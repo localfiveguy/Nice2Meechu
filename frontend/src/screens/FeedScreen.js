@@ -398,7 +398,7 @@ export function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
         )}
       </AnimatePresence>
 
-      <BottomNav active="feed" onTab={onTab} userPicture={user?.picture} unreadCount={unreadMatches} />
+      <BottomNav active="feed" onTab={onTab} userPicture={user?.picture} userHandle={user?.handle} unreadCount={unreadMatches} />
     </motion.div>
   );
 }
