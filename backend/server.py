@@ -595,15 +595,30 @@ async def cities_popular(user=Depends(current_user)):
     # has any usable coordinates. We bias toward inclusion: a city missing
     # coords falls back to (0, 0) — visible in the list as a navigable entry
     # even if "Use my current location" would be more accurate.
+    # User-saved `city` is typically "City, State, Country" (US) or "City,
+    # Country" (international). We want the row's second line to show
+    # "State, Country" (or just "Country" outside the US) so neighbors can
+    # see exactly where each city is — without it, "Marlton" alone is
+    # ambiguous (there's one in NJ, MD, IL, etc.).
+    _COUNTRY_SHORT = {
+        "united states": "USA", "united states of america": "USA",
+        "united kingdom": "UK", "united arab emirates": "UAE",
+    }
     for r in rows:
         key = r["_id"]
         if key in matched_keys:
             continue
-        parts = [p.strip() for p in (r.get("raw_city") or "").split(",")]
-        city = parts[0] or "Unknown"
-        country = parts[-1] if len(parts) > 1 else ""
+        parts = [p.strip() for p in (r.get("raw_city") or "").split(",") if p.strip()]
+        city = parts[0] if parts else "Unknown"
+        # `country` line for display: combine middle "state" parts (if any)
+        # with the trailing country. Normalize verbose country names so the
+        # row reads "NJ, USA" instead of "NJ, United States".
+        raw_country = parts[-1] if len(parts) > 1 else ""
+        country_norm = _COUNTRY_SHORT.get(raw_country.lower(), raw_country)
+        middle = parts[1:-1] if len(parts) > 2 else []
+        country_line = ", ".join([*middle, country_norm]) if (middle or country_norm) else ""
         out.append({
-            "city": city, "country": country, "country_code": "", "flag": "🌍",
+            "city": city, "country": country_line, "country_code": "", "flag": "🌍",
             "lat": float(r["lat"]) if r.get("lat") is not None else 0.0,
             "lng": float(r["lng"]) if r.get("lng") is not None else 0.0,
             "people": int(r["count"]),
