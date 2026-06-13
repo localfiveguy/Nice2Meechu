@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { api } from "../lib/api";
+import { Share2 } from "lucide-react";
+import { api, shareOrCopy } from "../lib/api";
 import { GOOGLE_CLIENT_ID } from "../lib/constants";
 import { isIosWebkit } from "../lib/ua";
 import { track } from "../analytics";
@@ -134,6 +135,35 @@ export function SignInScreen() {
           By continuing you agree to be Nice
         </p>
       </div>
+
+      {/* Pre-signup share pill — mirrors the placement of the bottom-nav
+          share button on authenticated screens (bottom-left), and visually
+          balances the DemoPeekWidget pinned to the bottom-right. Pre-signup
+          users have no handle yet, so the link is plain nice2meechu.com (no
+          referral attribution) — once they sign in, the authenticated nav
+          version automatically attributes referrals to their handle. */}
+      <button
+        type="button"
+        onClick={async () => {
+          track("share_app_button_tapped", { from: "signin_screen" });
+          const shareUrl = window.location.origin;
+          const shareText = "Come meet people in your city on Nice2Meechu — video-first, anonymous until the spark.";
+          const result = await shareOrCopy({
+            title: "Nice2Meechu",
+            text: shareText,
+            url: shareUrl,
+            copyText: `${shareText} ${shareUrl}`,
+          });
+          if (result === "copied") toast.success("Invite link copied!");
+          else if (result === "failed") toast.error("Couldn't share — copy manually: " + shareUrl);
+        }}
+        className="fixed bottom-5 left-5 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-widest font-bold text-white/65 hover:text-white border border-white/10 hover:border-white/25 active:scale-95 transition bg-black/45 backdrop-blur-md"
+        data-testid="signin-share-pill"
+        aria-label="Share Nice2Meechu with a friend"
+      >
+        <Share2 size={11} className="text-[#FF4D4D]" />
+        <span>Share this app</span>
+      </button>
     </motion.div>
   );
 }
