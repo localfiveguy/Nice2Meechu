@@ -1,5 +1,17 @@
 # Nice2Meechu — Product Requirements Doc
 
+
+## Updated (2026-06-20) — Android APK build (TWA) ✅
+
+- **Built a signed Android APK** (`com.nice2meechu.app` v1.0.0, ~1.6 MB) and matching `.aab` (~1.8 MB) using **Bubblewrap / Trusted Web Activity** wrapping `https://nice2meechu.com`. TWA lets the system Chrome run the live site full-screen, so Google Sign-in, camera, mic and geolocation work natively without any code changes.
+- **Pod plumbing**: installed OpenJDK 17 + Android SDK 34 + build-tools 34.0.0; pod is aarch64 but Android SDK ships x86_64 binaries — wrapped `aapt2` (both SDK copy and the Gradle-cached `androidx` copy), `aapt`, `zipalign`, `dexdump` in qemu-x86_64-static shims after installing `libc6:amd64`/`libstdc++6:amd64` via dpkg multiarch. Build now reproducible inside the pod.
+- **PWA manifest + Digital Asset Links** added to `/app/frontend/public/manifest.json` and `/app/frontend/public/.well-known/assetlinks.json` (with the APK's SHA-256 fingerprint `02:65:F5:AC:…:71`). Once redeployed, the assetlinks file lets the TWA render full-screen without a URL bar. Until then, the APK falls back to a Custom Tab (still works, slim URL bar).
+- **Icons**: generated 512×512 + maskable 512×512 N2M logos, served from `/icon-512.png` and `/icon-maskable-512.png`. Linked from `<link rel="manifest">` and `apple-touch-icon`.
+- **Distribution**: APK + AAB copied into `frontend/public/` so they're downloadable from `https://nice2meechu.com/nice2meechu.apk` and `…/nice2meechu.aab` after the next prod deploy.
+- **Keystore**: `/app/android-build/twa-project/android.keystore` (password `nice2meechu`, alias `android`). MUST be kept for every future update; losing it forces a new package id.
+- Full rebuild instructions + Play-Store-publishing checklist in `/app/android-build/README.md`.
+
+
 ## Updated (2026-02-07) — Split monolithic App.js into per-screen modules ♻️
 
 - **App.js**: 3090 → 292 lines (~90% reduction). Now a pure orchestrator (routing, auth lifecycle, top-level state).

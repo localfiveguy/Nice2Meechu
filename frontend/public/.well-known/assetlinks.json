@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.nice2meechu.app",
+      "sha256_cert_fingerprints": [
+        "02:65:F5:AC:B1:A9:BE:9C:D6:AE:D8:77:F8:6F:B9:79:DA:40:85:5D:67:3A:DF:F6:61:D7:F9:EC:1B:72:03:71"
+      ]
+    }
+  }
+]
