@@ -10,3 +10,11 @@ export function isIosWebkit() {
   const isIpadOs = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
   return /iPad|iPhone|iPod/.test(ua) || isIpadOs;
 }
+
+// Quick check for Android. Used to decide whether to show the "Install
+// Android app" pill — we don't want to dangle an .apk download in front of
+// iPhone / desktop users who can't use it.
+export function isAndroid() {
+  if (typeof navigator === "undefined") return false;
+  return /Android/i.test(navigator.userAgent || "");
+}
