@@ -252,11 +252,11 @@ export function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
                     onClick={async () => {
                       const cityShort = (user.city || "").split(",")[0];
                       const shareUrl = `${window.location.origin}/?ref=${encodeURIComponent(user.handle || "")}`;
-                      const shareText = `I'm the very first person on Nice2Meechu in ${cityShort}! Come meet people near you 👀 ${shareUrl}`;
+                      const shareText = `Come meet people near you in ${cityShort} on Nice2Meechu — video-first, anonymous until the spark 👀 ${shareUrl}`;
                       track("first_in_city_share_clicked", { city: cityShort });
                       const result = await shareOrCopy({
                         title: "Nice2Meechu",
-                        text: `I'm the first on Nice2Meechu in ${cityShort}! Join me 👀`,
+                        text: `Come meet people near you in ${cityShort} on Nice2Meechu — video-first, anonymous until the spark 👀`,
                         url: shareUrl,
                         copyText: shareText,
                       });
