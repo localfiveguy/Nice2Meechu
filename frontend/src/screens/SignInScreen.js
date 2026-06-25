@@ -158,7 +158,7 @@ export function SignInScreen() {
         onClick={async () => {
           track("share_app_button_tapped", { from: "signin_screen" });
           const shareUrl = window.location.origin;
-          const shareText = "Come meet people in your city on Nice2Meechu — video-first, anonymous until the spark.";
+          const shareText = "Come meet the world on Nice2Meechu — video-first, anonymous until the spark.";
           const result = await shareOrCopy({
             title: "Nice2Meechu",
             text: shareText,

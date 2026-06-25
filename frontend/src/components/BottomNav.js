@@ -12,7 +12,7 @@ export function BottomNav({ active, onTab, userPicture, unreadCount = 0, userHan
       ? `${window.location.origin}/?ref=${encodeURIComponent(userHandle)}`
       : window.location.origin;
     const shareText =
-      "Come meet people in your city on Nice2Meechu — video-first, anonymous until the spark.";
+      "Come meet the world on Nice2Meechu — video-first, anonymous until the spark.";
     track("share_app_button_tapped", { from: "bottom_nav" });
     const result = await shareOrCopy({
       title: "Nice2Meechu",
