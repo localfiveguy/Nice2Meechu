@@ -251,7 +251,7 @@ export function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
                     className="btn-ghost flex items-center gap-2 mt-1"
                     onClick={async () => {
                       const cityShort = (user.city || "").split(",")[0];
-                      const shareText = "Come meet the world! at Nice2meechu.com";
+                      const shareText = "Come meet the world at Nice2meechu.com";
                       track("first_in_city_share_clicked", { city: cityShort });
                       const result = await shareOrCopy({
                         title: "Nice2Meechu",

@@ -9,7 +9,7 @@ export function ShareCard({ user }) {
   const [copied, setCopied] = useState(false);
   const handle = user.handle || user.codename?.toLowerCase().replace(/\s+/g, ".");
   const shareUrl = `${window.location.origin}/?ref=${encodeURIComponent(handle)}`;
-  const shareText = "Come meet the world! at Nice2meechu.com";
+  const shareText = "Come meet the world at Nice2meechu.com";
 
   const onShare = async () => {
     const result = await shareOrCopy({

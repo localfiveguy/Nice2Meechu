@@ -8,7 +8,7 @@ export function BottomNav({ active, onTab, userPicture, unreadCount = 0, userHan
   const hasUnread = unreadCount > 0;
 
   const handleShare = async () => {
-    const shareText = "Come meet the world! at Nice2meechu.com";
+    const shareText = "Come meet the world at Nice2meechu.com";
     track("share_app_button_tapped", { from: "bottom_nav" });
     const result = await shareOrCopy({
       title: "Nice2Meechu",
