@@ -57,16 +57,21 @@ export function SignInScreen() {
         return;
       }
       try {
-        const apiBase = process.env.REACT_APP_BACKEND_URL || "";
         const useRedirect = isIosWebkit();
         // Persist a referral hint for the redirect-mode flow — `handleCredential`
         // pulls it from localStorage so the popup path keeps working, but the
         // redirect path can't pass it through Google so the backend reads it
         // from a query-string `state` we tack onto `login_uri` below.
+        //
+        // Build the redirect URI from `window.location.origin` rather than
+        // REACT_APP_BACKEND_URL — they resolve to the same domain in this
+        // app's deployment (the k8s ingress routes `/api/*` to the backend),
+        // and using the live origin avoids any env-var fallback that could
+        // collapse to a relative URL Google would reject.
         const ref = localStorage.getItem("n2m_ref") || "";
         const loginUri = ref
-          ? `${apiBase}/api/auth/google-redirect?ref=${encodeURIComponent(ref)}`
-          : `${apiBase}/api/auth/google-redirect`;
+          ? `${window.location.origin}/api/auth/google-redirect?ref=${encodeURIComponent(ref)}`
+          : `${window.location.origin}/api/auth/google-redirect`;
         gis.initialize({
           client_id: GOOGLE_CLIENT_ID,
           // Popup mode invokes `callback`; redirect mode ignores it and POSTs
