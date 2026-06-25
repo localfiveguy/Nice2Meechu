@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Download, Share2 } from "lucide-react";
 import { api, shareOrCopy } from "../lib/api";
 import { GOOGLE_CLIENT_ID } from "../lib/constants";
-import { isAndroid, isIosWebkit } from "../lib/ua";
+import { isIosWebkit } from "../lib/ua";
 import { track } from "../analytics";
 
 // ---------- Google Sign-In (Direct Google Identity Services / GIS) ----------
@@ -139,17 +139,15 @@ export function SignInScreen() {
         <p className="text-center text-[11px] text-white/40 font-medium uppercase tracking-widest">
           By continuing you agree to be Nice
         </p>
-        {isAndroid() ? (
-          <a
-            href="/nice2meechu.apk"
-            onClick={() => track("apk_install_click", { surface: "signin" })}
-            className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-widest font-bold text-white/70 hover:text-white border border-white/10 hover:border-white/25 active:scale-95 transition no-underline"
-            data-testid="signin-install-apk"
-          >
-            <Download size={11} className="text-[#5BE6C8]" />
-            <span>Install Android app · 1.6&nbsp;MB</span>
-          </a>
-        ) : null}
+        <a
+          href="/nice2meechu.apk"
+          onClick={() => track("apk_install_click", { surface: "signin" })}
+          className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-widest font-bold text-white/70 hover:text-white border border-white/10 hover:border-white/25 active:scale-95 transition no-underline"
+          data-testid="signin-install-apk"
+        >
+          <Download size={11} className="text-[#5BE6C8]" />
+          <span>Install Android app · 1.6&nbsp;MB</span>
+        </a>
       </div>
 
       {/* Pre-signup share pill — mirrors the placement of the bottom-nav

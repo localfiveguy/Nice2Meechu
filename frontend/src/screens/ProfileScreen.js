@@ -4,7 +4,6 @@ import { toast } from "sonner";
 import { Download, Globe, LogOut, MapPin, Video as VideoIcon } from "lucide-react";
 import { api } from "../lib/api";
 import { LANG_OPTIONS } from "../lib/constants";
-import { isAndroid } from "../lib/ua";
 import { AvatarThumb } from "../components/AvatarThumb";
 import { BottomNav } from "../components/BottomNav";
 import { CityAutocomplete } from "../components/CityAutocomplete";
@@ -101,20 +100,18 @@ export function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, o
 
               <ShareCard user={user} />
 
-              {isAndroid() ? (
-                <a
-                  href="/nice2meechu.apk"
-                  className="mt-3 flex items-center justify-between gap-3 rounded-full px-4 py-3 bg-white/8 hover:bg-white/12 border border-white/10 transition-colors no-underline"
-                  onClick={() => track("apk_install_click", { surface: "profile" })}
-                  data-testid="profile-install-apk"
-                >
-                  <div className="flex items-center gap-2">
-                    <Download size={16} className="text-[#5BE6C8]" />
-                    <div className="text-sm font-semibold text-white">Install Android app</div>
-                  </div>
-                  <div className="text-[10px] uppercase tracking-widest font-bold text-white/45">Free · 1.6&nbsp;MB</div>
-                </a>
-              ) : null}
+              <a
+                href="/nice2meechu.apk"
+                className="mt-3 flex items-center justify-between gap-3 rounded-full px-4 py-3 bg-white/8 hover:bg-white/12 border border-white/10 transition-colors no-underline"
+                onClick={() => track("apk_install_click", { surface: "profile" })}
+                data-testid="profile-install-apk"
+              >
+                <div className="flex items-center gap-2">
+                  <Download size={16} className="text-[#5BE6C8]" />
+                  <div className="text-sm font-semibold text-white">Install Android app</div>
+                </div>
+                <div className="text-[10px] uppercase tracking-widest font-bold text-white/45">Free · 1.6&nbsp;MB</div>
+              </a>
 
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button className="btn-ghost text-sm" onClick={onChangeVideo} data-testid="profile-change-video">
