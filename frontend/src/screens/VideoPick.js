@@ -186,7 +186,7 @@ export function VideoPick({ user, onDone, onSkip }) {
         // already accepted community rules (i.e. not blocking primary onboarding).
         <button
           type="button"
-          onClick={() => { try { streamRef.current?.getTracks?.().forEach((t) => t.stop()); } catch {} ; onSkip(); }}
+          onClick={() => { try { streamRef.current?.getTracks?.().forEach((t) => t.stop()); } catch { /* SAST: intentional — track.stop() may throw on already-ended tracks; nothing to recover */ } ; onSkip(); }}
           aria-label="Close and skip for now"
           className="absolute top-4 right-4 z-10 w-9 h-9 rounded-full glass-dark border border-white/15 text-white/85 hover:text-white hover:bg-white/10 active:scale-95 transition flex items-center justify-center text-lg leading-none"
           data-testid="video-pick-close"

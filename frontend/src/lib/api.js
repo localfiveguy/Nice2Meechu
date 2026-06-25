@@ -36,7 +36,7 @@ export async function copyToClipboard(text) {
   try {
     await navigator.clipboard.writeText(text);
     return true;
-  } catch { /* permissions or insecure context — fall through */ }
+  } catch { /* SAST: intentional fallback — Clipboard API blocked in cross-origin iframes or insecure contexts; fall through to execCommand below */ }
   try {
     const ta = document.createElement("textarea");
     ta.value = text;

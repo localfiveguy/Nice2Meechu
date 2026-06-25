@@ -25,12 +25,12 @@ export function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
   // (true) because browsers won't autoplay audio unless the user first
   // explicitly tapped to unmute — we'd just produce silent video either way.
   const [muted, setMuted] = useState(() => {
-    try { return localStorage.getItem("n2m_feed_muted") !== "0"; } catch { return true; }
+    try { return localStorage.getItem("n2m_feed_muted") !== "0"; } catch { /* SAST: intentional — Safari private mode throws on localStorage access; default to muted */ return true; }
   });
   const setMutedPersist = useCallback((nextOrFn) => {
     setMuted((prev) => {
       const next = typeof nextOrFn === "function" ? nextOrFn(prev) : nextOrFn;
-      try { localStorage.setItem("n2m_feed_muted", next ? "1" : "0"); } catch { /* localStorage full / disabled */ }
+      try { localStorage.setItem("n2m_feed_muted", next ? "1" : "0"); } catch { /* SAST: intentional — localStorage may throw when quota is exceeded or in Safari private mode; mute pref is non-critical */ }
       return next;
     });
   }, []);

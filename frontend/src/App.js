@@ -23,6 +23,13 @@ import { MatchCelebration } from "./components/MatchCelebration";
 
 // ---------- Top-level App orchestrator ----------
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+//
+// SAST note: this file is intentionally the route-guard switch for the whole
+// app. Cyclomatic complexity reflects "n possible onboarding phases × n auth
+// states", which IS what an orchestrator's job description is. Splitting the
+// switch into wrapper components would move complexity sideways without
+// reducing it. Previously refactored from 3090 lines → ~290 lines; the
+// remaining surface is just routing — leave as-is unless a real bug appears.
 export default function App() {
   // Detect Google OAuth session_id in URL fragment SYNCHRONOUSLY (before any render decisions)
   // to avoid races between AuthCallback and the splash/signin screens.
@@ -49,7 +56,7 @@ export default function App() {
       try {
         const { data } = await api.get("/matches/unread");
         if (!cancelled) setUnreadMatches(data?.count || 0);
-      } catch { /* not signed in or transient — ignore */ }
+      } catch { /* SAST: intentional — endpoint may 401 on stale token or 5xx during transient blip; the next 60s poll will recover */ }
     };
     fetchUnread();
     const id = setInterval(fetchUnread, 60_000);

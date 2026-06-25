@@ -369,6 +369,9 @@ async def auth_google_id_token(req: GoogleIdTokenReq, response: Response):
 
     return await _finalize_google_signin(
         response,
+        # noqa: F823 -- `idinfo` is guaranteed bound here: the try-block above
+        # either assigns it on the success path or `raise`s an HTTPException
+        # which exits the function before reaching this call.
         google_sub=idinfo.get("sub"),
         email=email,
         name=idinfo.get("name"),

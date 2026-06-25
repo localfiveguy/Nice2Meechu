@@ -49,7 +49,8 @@ export function Onboarding({ user, onDone }) {
         setCityCoords({ lat, lng });
         track("onboarding_city_auto_filled", { source: "reverse_geocode" });
       } catch {
-        // network / parse failure — silently fall back to manual typing
+        // SAST: intentional — reverse-geocode is a best-effort pre-fill;
+        // network / parse failure silently falls back to manual typing.
       } finally {
         setAutoCityLoading(false);
       }
