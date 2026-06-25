@@ -129,7 +129,7 @@ export function ChatScreen({ me, match, onBack }) {
         )}
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2 no-scrollbar">
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-2 no-scrollbar">
         {loading && <div className="text-center text-xs text-white/40">…</div>}
         {messages.length === 0 && !loading && (
           <div className="text-center text-xs text-white/40 mt-10">Say hi! Translation is automatic.</div>

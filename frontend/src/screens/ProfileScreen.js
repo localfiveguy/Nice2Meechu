@@ -70,7 +70,7 @@ export function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, o
       )}
       <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/20 to-black/90 pointer-events-none" />
 
-      <div className="relative z-10 flex-1 flex flex-col px-6 pt-12 pb-36 overflow-y-auto no-scrollbar">
+      <div className="relative z-10 flex-1 min-h-0 flex flex-col px-6 pt-12 pb-36 overflow-y-auto no-scrollbar">
         <div className="flex items-center justify-between">
           <h2 className="font-display text-3xl font-black">You.</h2>
           <button className="text-white/60 text-sm font-bold uppercase tracking-widest" onClick={() => setEditing((v) => !v)} data-testid="profile-edit-toggle">
