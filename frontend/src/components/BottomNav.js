@@ -8,19 +8,14 @@ export function BottomNav({ active, onTab, userPicture, unreadCount = 0, userHan
   const hasUnread = unreadCount > 0;
 
   const handleShare = async () => {
-    const shareUrl = userHandle
-      ? `${window.location.origin}/?ref=${encodeURIComponent(userHandle)}`
-      : window.location.origin;
-    const shareText =
-      "Come meet the world on Nice2Meechu — video-first, anonymous until the spark.";
+    const shareText = "Come meet the world! at Nice2meechu.com";
     track("share_app_button_tapped", { from: "bottom_nav" });
     const result = await shareOrCopy({
       title: "Nice2Meechu",
       text: shareText,
-      url: shareUrl,
-      copyText: `${shareText} ${shareUrl}`,
+      copyText: shareText,
     });
-    if (result === "copied") toast.success("Invite link copied!");
+    if (result === "copied") toast.success("Invite copied!");
     else if (result === "failed") toast.error("Couldn't share — try the Profile screen");
   };
 

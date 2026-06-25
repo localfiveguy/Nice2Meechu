@@ -157,16 +157,14 @@ export function SignInScreen() {
         type="button"
         onClick={async () => {
           track("share_app_button_tapped", { from: "signin_screen" });
-          const shareUrl = window.location.origin;
-          const shareText = "Come meet the world on Nice2Meechu — video-first, anonymous until the spark.";
+          const shareText = "Come meet the world! at Nice2meechu.com";
           const result = await shareOrCopy({
             title: "Nice2Meechu",
             text: shareText,
-            url: shareUrl,
-            copyText: `${shareText} ${shareUrl}`,
+            copyText: shareText,
           });
-          if (result === "copied") toast.success("Invite link copied!");
-          else if (result === "failed") toast.error("Couldn't share — copy manually: " + shareUrl);
+          if (result === "copied") toast.success("Invite copied!");
+          else if (result === "failed") toast.error("Couldn't share — copy manually: Nice2meechu.com");
         }}
         className="fixed bottom-5 left-5 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-widest font-bold text-white/65 hover:text-white border border-white/10 hover:border-white/25 active:scale-95 transition bg-black/45 backdrop-blur-md"
         data-testid="signin-share-pill"

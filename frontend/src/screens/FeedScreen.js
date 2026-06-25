@@ -251,17 +251,15 @@ export function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
                     className="btn-ghost flex items-center gap-2 mt-1"
                     onClick={async () => {
                       const cityShort = (user.city || "").split(",")[0];
-                      const shareUrl = `${window.location.origin}/?ref=${encodeURIComponent(user.handle || "")}`;
-                      const shareText = `Come meet the world on Nice2Meechu — video-first, anonymous until the spark 👀 ${shareUrl}`;
+                      const shareText = "Come meet the world! at Nice2meechu.com";
                       track("first_in_city_share_clicked", { city: cityShort });
                       const result = await shareOrCopy({
                         title: "Nice2Meechu",
-                        text: `Come meet the world on Nice2Meechu — video-first, anonymous until the spark 👀`,
-                        url: shareUrl,
+                        text: shareText,
                         copyText: shareText,
                       });
-                      if (result === "copied") toast.success("Invite link copied — paste it anywhere!");
-                      else if (result === "failed") toast.error("Couldn't share. Link: " + shareUrl);
+                      if (result === "copied") toast.success("Invite copied — paste it anywhere!");
+                      else if (result === "failed") toast.error("Couldn't share. Try copying manually.");
                     }}
                     data-testid="feed-first-share"
                   >
