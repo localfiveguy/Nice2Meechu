@@ -1,12 +1,13 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { Download, Globe, LogOut, MapPin, Video as VideoIcon } from "lucide-react";
+import { Apple, Download, Globe, LogOut, MapPin, Video as VideoIcon } from "lucide-react";
 import { api } from "../lib/api";
 import { LANG_OPTIONS } from "../lib/constants";
 import { AvatarThumb } from "../components/AvatarThumb";
 import { BottomNav } from "../components/BottomNav";
 import { CityAutocomplete } from "../components/CityAutocomplete";
+import { IOSInstallSheet } from "../components/IOSInstallSheet";
 import { ShareCard } from "../components/ShareCard";
 import { VideoEl } from "../components/VideoEl";
 import { SAFETY_CONTACT_URL } from "../legal/LegalPages";
@@ -14,6 +15,7 @@ import { track } from "../analytics";
 
 export function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, onChangeVideo }) {
   const [editing, setEditing] = useState(false);
+  const [iosSheetOpen, setIosSheetOpen] = useState(false);
   const [firstName, setFirstName] = useState(user.first_name || "");
   const [city, setCity] = useState(user.city || "");
   const [cityCoords, setCityCoords] = useState(null);
@@ -112,6 +114,22 @@ export function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, o
                 </div>
                 <div className="text-[10px] uppercase tracking-widest font-bold text-white/45">Free · 1.6&nbsp;MB</div>
               </a>
+
+              <button
+                type="button"
+                className="mt-2 w-full flex items-center justify-between gap-3 rounded-full px-4 py-3 bg-white/8 hover:bg-white/12 border border-white/10 transition-colors"
+                onClick={() => {
+                  track("ios_install_pill_click", { surface: "profile" });
+                  setIosSheetOpen(true);
+                }}
+                data-testid="profile-install-ios"
+              >
+                <div className="flex items-center gap-2">
+                  <Apple size={16} className="text-white" />
+                  <div className="text-sm font-semibold text-white">Install iPhone app</div>
+                </div>
+                <div className="text-[10px] uppercase tracking-widest font-bold text-white/45">2&nbsp;taps</div>
+              </button>
 
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button className="btn-ghost text-sm" onClick={onChangeVideo} data-testid="profile-change-video">
@@ -233,6 +251,7 @@ export function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, o
       </div>
 
       <BottomNav active="profile" onTab={onTab} userPicture={user?.picture} userHandle={user?.handle} unreadCount={unreadMatches} />
+      <IOSInstallSheet open={iosSheetOpen} onClose={() => setIosSheetOpen(false)} />
     </motion.div>
   );
 }

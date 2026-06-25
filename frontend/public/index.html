@@ -7,6 +7,14 @@
         <meta name="description" content="A product of emergent.sh" />
         <link rel="manifest" href="/manifest.json" />
         <link rel="apple-touch-icon" href="/icon-512.png" />
+        <!-- iOS PWA — Safari "Add to Home Screen" produces a full-screen,
+             standalone app launcher with this title, black status bar, and our
+             N2M icon. Required because iOS Safari ignores most of the web
+             manifest fields. -->
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="Nice2Meechu" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@600&display=swap" rel="stylesheet" />

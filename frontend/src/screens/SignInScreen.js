@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { Download, Share2 } from "lucide-react";
+import { Apple, Download, Share2 } from "lucide-react";
 import { api, shareOrCopy } from "../lib/api";
 import { GOOGLE_CLIENT_ID } from "../lib/constants";
 import { isIosWebkit } from "../lib/ua";
+import { IOSInstallSheet } from "../components/IOSInstallSheet";
 import { track } from "../analytics";
 
 // ---------- Google Sign-In (Direct Google Identity Services / GIS) ----------
@@ -12,6 +13,7 @@ import { track } from "../analytics";
 export function SignInScreen() {
   const btnRef = useRef(null);
   const [gisError, setGisError] = useState(null);
+  const [iosSheetOpen, setIosSheetOpen] = useState(false);
 
   // Called by GIS when the user completes Google sign-in. The `response.credential`
   // is a Google-issued ID-token JWT we hand off to the backend for verification.
@@ -139,15 +141,29 @@ export function SignInScreen() {
         <p className="text-center text-[11px] text-white/40 font-medium uppercase tracking-widest">
           By continuing you agree to be Nice
         </p>
-        <a
-          href="/nice2meechu.apk"
-          onClick={() => track("apk_install_click", { surface: "signin" })}
-          className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-widest font-bold text-white/70 hover:text-white border border-white/10 hover:border-white/25 active:scale-95 transition no-underline"
-          data-testid="signin-install-apk"
-        >
-          <Download size={11} className="text-[#5BE6C8]" />
-          <span>Install Android app · 1.6&nbsp;MB</span>
-        </a>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <a
+            href="/nice2meechu.apk"
+            onClick={() => track("apk_install_click", { surface: "signin" })}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-widest font-bold text-white/70 hover:text-white border border-white/10 hover:border-white/25 active:scale-95 transition no-underline"
+            data-testid="signin-install-apk"
+          >
+            <Download size={11} className="text-[#5BE6C8]" />
+            <span>Install Android · 1.6&nbsp;MB</span>
+          </a>
+          <button
+            type="button"
+            onClick={() => {
+              track("ios_install_pill_click", { surface: "signin" });
+              setIosSheetOpen(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] uppercase tracking-widest font-bold text-white/70 hover:text-white border border-white/10 hover:border-white/25 active:scale-95 transition"
+            data-testid="signin-install-ios"
+          >
+            <Apple size={11} className="text-white" />
+            <span>Install iPhone · 2&nbsp;taps</span>
+          </button>
+        </div>
       </div>
 
       {/* Pre-signup share pill — mirrors the placement of the bottom-nav
@@ -176,6 +192,8 @@ export function SignInScreen() {
         <Share2 size={11} className="text-[#FF4D4D]" />
         <span>Share this app</span>
       </button>
+
+      <IOSInstallSheet open={iosSheetOpen} onClose={() => setIosSheetOpen(false)} />
     </motion.div>
   );
 }
