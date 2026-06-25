@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { Apple, Download, Share2 } from "lucide-react";
+import { Apple, Download, ExternalLink, Share2 } from "lucide-react";
 import { api, shareOrCopy } from "../lib/api";
 import { GOOGLE_CLIENT_ID } from "../lib/constants";
-import { isIosWebkit } from "../lib/ua";
+import { isIosWebkit, isStandalonePwa } from "../lib/ua";
 import { IOSInstallSheet } from "../components/IOSInstallSheet";
 import { track } from "../analytics";
 
@@ -14,6 +14,11 @@ export function SignInScreen() {
   const btnRef = useRef(null);
   const [gisError, setGisError] = useState(null);
   const [iosSheetOpen, setIosSheetOpen] = useState(false);
+  // iOS PWA sandbox cannot complete Google's OAuth redirect (the response
+  // lands in Safari, never the standalone window). Detect that case so we can
+  // hand the user off to Safari instead of letting them spin on a broken
+  // button. The check runs once on mount; PWA mode never changes mid-session.
+  const [iosPwaBlocked] = useState(() => isIosWebkit() && isStandalonePwa());
 
   // Called by GIS when the user completes Google sign-in. The `response.credential`
   // is a Google-issued ID-token JWT we hand off to the backend for verification.
@@ -46,6 +51,14 @@ export function SignInScreen() {
   useEffect(() => {
     if (!GOOGLE_CLIENT_ID) {
       setGisError("Google Sign-In is not configured.");
+      return;
+    }
+    // Skip GIS initialization when running inside an iOS Home Screen PWA —
+    // the official Google button would render but its redirect can never
+    // return to the standalone window. We show the "Open in Safari" hand-off
+    // instead (see the iosPwaBlocked branch in the JSX below).
+    if (iosPwaBlocked) {
+      track("ios_pwa_signin_blocked_shown");
       return;
     }
     let cancelled = false;
@@ -112,7 +125,7 @@ export function SignInScreen() {
     };
     tryInit();
     return () => { cancelled = true; };
-  }, [handleCredential]);
+  }, [handleCredential, iosPwaBlocked]);
 
   return (
     <motion.div
@@ -129,12 +142,47 @@ export function SignInScreen() {
       </p>
 
       <div className="mt-auto flex flex-col items-center gap-3">
-        <div
-          ref={btnRef}
-          className="flex justify-center"
-          data-testid="signin-google-button"
-          style={{ colorScheme: "light" }}
-        />
+        {iosPwaBlocked ? (
+          <div
+            className="w-full max-w-sm rounded-2xl border border-[#FF4D4D]/25 bg-[#FF4D4D]/8 px-4 py-4"
+            data-testid="signin-ios-pwa-notice"
+          >
+            <div className="text-[10px] uppercase tracking-widest font-bold text-[#FF4D4D]">
+              iPhone quirk · one-time setup
+            </div>
+            <p className="mt-1.5 text-sm text-white/85 leading-relaxed">
+              Apple doesn't let Google sign you in from a Home Screen app.{" "}
+              <span className="font-semibold text-white">Sign in once in Safari</span>{" "}
+              — your session will follow you back here.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                track("ios_pwa_open_safari_clicked");
+                // window.open from a standalone PWA on iOS opens the URL in
+                // Safari, which is exactly the cookie jar that survives back
+                // into the PWA on iOS 16.4+.
+                window.open("https://nice2meechu.com/?pwa_signin=1", "_blank", "noreferrer");
+              }}
+              className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-full bg-white text-black font-bold py-3 text-sm active:scale-[0.98] transition"
+              data-testid="signin-open-safari"
+            >
+              <ExternalLink size={15} />
+              Open in Safari to sign in
+            </button>
+            <p className="mt-3 text-[11px] text-white/45 leading-relaxed">
+              After you sign in in Safari, close that tab, and re-open Nice2Meechu
+              from your Home Screen — you'll be in.
+            </p>
+          </div>
+        ) : (
+          <div
+            ref={btnRef}
+            className="flex justify-center"
+            data-testid="signin-google-button"
+            style={{ colorScheme: "light" }}
+          />
+        )}
         {gisError && (
           <p className="text-center text-xs text-red-400" data-testid="signin-error">
             {gisError}
