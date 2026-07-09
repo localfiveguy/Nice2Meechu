@@ -158,10 +158,15 @@ A hyperlocal, video-first social app where users connect by watching short video
 - **P3** Invite-only friends-of-friends discovery.
 - **P3** Split `App.js` into per-screen files once it stops being a single-file brief.
 
+## 2026-06 — iOS Safari cookie-drop sign-in fix
+- Bug: on some iPhones (owner Steavin's), GIS redirect-mode sign-in bounced back to the sign-in screen with no error. Safari silently dropped the `session_token` cookie set during the cross-site 303 redirect (ITP bounce-tracking mitigation). Backend sign-in actually succeeded.
+- Fix: `POST /api/auth/google-redirect` now 303-redirects to `/#st=<token>` (cookie still set as belt-and-braces). `App.js` mount hydration reads `#st=`, stores it as `n2m_token` in localStorage (axios sends it as `Authorization: Bearer`), and scrubs the fragment via `history.replaceState`. Fragments never leave the browser.
+- Verified by testing agent (iteration_6.json): fragment hydration in cookie-less fresh context, auth_error toast, unauthenticated load, Bearer API regression — all PASS.
+- Remaining known iOS limitation: iOS PWA (Home Screen) still relies on the Safari→PWA cookie handoff; permanent fix remains "Sign in with Apple" (P1 backlog).
+
 ## Next Tasks
-- Validate the new GIS sign-in end-to-end with a real Google account in the preview (one human-click smoke test).
+- User to redeploy and retry Google sign-in on his iPhone (Safari) — should now complete even when Safari drops the cookie.
 - Click **Deploy** to push the new auth flow to `nice2meechu.com`.
-://nice2meechu.com`.
 - Verified: GIS button renders on /signin, `/api/auth/google` rejects bogus JWTs (401), seeded session bears authenticated `/api/auth/me`.
 
 ## Prioritized backlog
