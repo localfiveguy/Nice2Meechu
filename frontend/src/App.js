@@ -162,6 +162,15 @@ export default function App() {
   // Standard mount-time hydration when NOT coming back from OAuth callback
   useEffect(() => {
     if (initialHasSessionId) return; // AuthCallback flow handles auth instead
+    // Redirect-mode Google sign-in also hands the session token back in the
+    // URL fragment (#st=...) because some iOS Safari installs drop the cookie
+    // set during the cross-site redirect. Store it as the Bearer fallback,
+    // then scrub it from the URL/history before anything else renders.
+    if (window.location.hash && window.location.hash.startsWith("#st=")) {
+      const st = window.location.hash.slice(4);
+      if (st) localStorage.setItem("n2m_token", st);
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
     // Surface ?auth_error=... from the redirect-mode Google flow so the user
     // sees a toast instead of a silent failure. Strip it from the URL.
     const url = new URL(window.location.href);

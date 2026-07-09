@@ -1,0 +1,48 @@
+{
+  "summary": "Verified the iOS Safari cookie-drop fix: token via URL fragment #st=... hydration works end-to-end. Backend + frontend + integration all pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_results": {
+    "primary_fragment_hydration": {
+      "status": "PASS",
+      "details": "Loaded /#st=sttest_SUQD-bH3lyJJOBLw-llOftxhxupA_9nU in fresh context (cookies + localStorage cleared). Final URL scrubbed to '/'. localStorage['n2m_token'] == 'sttest_SUQD-bH3lyJJOBLw-llOftxhxupA_9nU'. User authenticated (NOT on signin screen). App routed to community-rules screen (demo-00 lacks agreed_to_rules_at field), confirming auth succeeded via Bearer fallback — the exact iOS bug is fixed."
+    },
+    "note_on_expected_feed_landing": "Review request expected demo-00 to land on FEED, but the user's /auth/me payload does NOT include agreed_to_rules_at, so routeToNext (App.js line 92) correctly sends them to community-rules. This is a demo seed-data completeness issue (not a bug in the redirect/fragment fix). To land on feed, seed demo-00 with agreed_to_rules_at timestamp.",
+    "backend_google_redirect_error_path": {
+      "status": "PASS",
+      "details": "POST /api/auth/google-redirect with credential=fake returns HTTP 303 with Location: /?auth_error=invalid_credential."
+    },
+    "auth_error_toast": {
+      "status": "PASS",
+      "details": "Loaded /?auth_error=invalid_credential in fresh context. Toast 'Sign-in failed — please try again.' displayed. URL scrubbed to '/'. signin-screen and signin-google-button both present."
+    },
+    "regression_unauthenticated_load": {
+      "status": "PASS",
+      "details": "Fresh context load shows signin-screen with google-button, no JS crashes (only expected 401 for pre-auth /auth/me poll)."
+    },
+    "regression_bearer_authenticated_api": {
+      "status": "PASS",
+      "details": "GET /api/auth/me with Authorization: Bearer sttest_... → 200 (user demo-00, handle yui.tokyo, onboarded:true). GET /api/matches/unread with same Bearer → 200 {count:0}."
+    },
+    "code_verification": {
+      "status": "PASS",
+      "details": "server.py:350 sets resp.headers['location'] = f'/#st={result[\"token\"]}' AFTER _finalize_google_signin (cookie still set on resp via belt-and-braces). App.js:169-173 reads #st=, stores in localStorage as n2m_token, and history.replaceState scrubs fragment before /auth/me call. api.js axios interceptor sends Authorization: Bearer from n2m_token."
+    }
+  },
+  "test_report_links": ["/app/backend/tests/test_n2m_backend.py"],
+  "action_items": [
+    "Optional (not blocking this fix): seed demo-00 with agreed_to_rules_at so the fragment-login smoke test lands on FEED per the review's stated expectation. Auth fix itself is correct as-is."
+  ],
+  "critical_code_review_comments": [
+    "server.py:350 overwrites resp.headers['location'] (was set to '/' by RedirectResponse(url='/')). The Set-Cookie header for session_token from _finalize_google_signin is preserved on the same response — good belt-and-braces. Verified no double-Location header issue.",
+    "App.js:170 uses window.location.hash.slice(4) to extract token — assumes exactly '#st=' prefix. If fragment ever contains additional params (e.g., '#st=X&foo=bar'), slice(4) would include them. Currently safe because backend only emits '/#st=<token>' with no extra fragment params.",
+    "App.js:172 uses pathname + search (drops any hash). Correct — we WANT the fragment stripped."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "sttest_SUQD-bH3lyJJOBLw-llOftxhxupA_9nU (demo-00 / yui.tokyo, 24h expiry) worked as expected via both URL fragment and Authorization: Bearer.",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "iOS Safari cookie-drop fix is verified. Fragment hydration path: /#st=<token> → localStorage['n2m_token'] → axios Bearer → /auth/me success. URL is cleanly scrubbed via history.replaceState. auth_error toast still works and its query param is also stripped. Demo user demo-00 lacks agreed_to_rules_at so lands on community-rules screen (not feed) — this is seed-data behavior, not an auth bug."
+}

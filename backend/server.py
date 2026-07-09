@@ -333,7 +333,7 @@ async def auth_google_redirect(
     # Re-use the shared sign-in finalizer so the redirect path goes through
     # the same upsert + session-mint code as the popup path.
     resp = RedirectResponse(url="/", status_code=303)
-    await _finalize_google_signin(
+    result = await _finalize_google_signin(
         resp,
         google_sub=idinfo.get("sub"),
         email=email,
@@ -341,6 +341,13 @@ async def auth_google_redirect(
         picture=idinfo.get("picture"),
         ref=ref,
     )
+    # Some iOS Safari installs silently drop the session cookie set during a
+    # cross-site redirect (ITP bounce-tracking mitigation), leaving the user
+    # bounced back to the sign-in screen with no error. Hand the token back in
+    # the URL fragment as well — fragments never leave the browser (not sent to
+    # any server, not logged); the app stores it in localStorage and strips it
+    # from the address bar immediately on load.
+    resp.headers["location"] = f"/#st={result['token']}"
     return resp
 
 
