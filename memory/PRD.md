@@ -170,9 +170,14 @@ A hyperlocal, video-first social app where users connect by watching short video
 - Share button now shares/copies `${origin}/?ref=<handle>` so invites actually attribute (previously the link had no ref param); toast updated.
 - Verified by testing agent (iteration_7.json): all 6 checkpoints pass, no regressions. Deployment health check: PASS.
 
+## 2026-06 — iPhone intro-video recorder fix
+- Production bug (user's screen recording): sign-in via the fragment-token fix WORKED on his iPhone, but the intro-video recorder was dead — record button silently no-op'd.
+- Root cause: `new MediaRecorder(stream, {mimeType:'video/webm'})` throws NotSupportedError on iOS Safari (mp4-only), uncaught.
+- Fix: `pickRecorderMime()` probes `isTypeSupported` (webm → mp4 → browser default), try/catch + error toasts, blob type strips codec suffix, `streamReady` state guarantees preview attach ("Waiting for camera…" until live). Backend upload now normalizes codec-suffixed Content-Types (`video/mp4;codecs=avc1` previously 415) and stores normalized type to GCS.
+- Verified by testing agent (iteration_8.json): backend 6/6, frontend e2e record→stop→playback pass, no console errors. Regression suites added: /app/backend/tests/test_video_upload_codec.py, /app/tests/test_videopick_ui.py.
+
 ## Next Tasks
-- User to **Deploy**, then retry Google sign-in on his iPhone (Safari) — the fragment-token fix should complete sign-in even when Safari drops the cookie.
-- After deploy: confirm the "joined" counter increments when a friend signs up via a shared ?ref link.
+- User to **Deploy**, then on his iPhone: record his intro video (camera preview → red record button → 7s countdown → review → Continue).
 - Verified: GIS button renders on /signin, `/api/auth/google` rejects bogus JWTs (401), seeded session bears authenticated `/api/auth/me`.
 
 ## Prioritized backlog
