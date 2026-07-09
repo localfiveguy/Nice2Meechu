@@ -974,7 +974,10 @@ async def upload_video_file(file: UploadFile = File(...), user=Depends(current_u
     publicRead ACL (bucket itself stays unlisted). Overwrites any previous
     recording for the same user."""
     ALLOWED = {"video/webm": "webm", "video/mp4": "mp4"}
-    ext = ALLOWED.get((file.content_type or "").lower())
+    # iOS Safari's MediaRecorder reports codec-suffixed types like
+    # "video/mp4;codecs=avc1" — normalize to the base type before lookup.
+    ctype = (file.content_type or "").split(";")[0].strip().lower()
+    ext = ALLOWED.get(ctype)
     if not ext:
         raise HTTPException(415, f"Unsupported video type: {file.content_type}")
 
@@ -1011,7 +1014,7 @@ async def upload_video_file(file: UploadFile = File(...), user=Depends(current_u
 
         blob = bucket.blob(f"user_videos/{user['id']}.{ext}")
         blob.cache_control = "public, max-age=31536000"
-        ct = file.content_type
+        ct = ctype
 
         def _upload() -> None:
             blob.upload_from_file(

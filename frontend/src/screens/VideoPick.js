@@ -15,6 +15,9 @@ export function VideoPick({ user, onDone, onSkip }) {
   const streamRef = useRef(null);
   const [recording, setRecording] = useState(false);
   const [recordedBlob, setRecordedBlob] = useState(null);
+  // State (not just the ref) so the preview re-renders once the camera stream
+  // is live — the <video> ref-callback then attaches srcObject reliably.
+  const [streamReady, setStreamReady] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(0);   // live countdown shown over the camera
   const recorderRef = useRef(null);
   const countdownRef = useRef(null);
@@ -115,6 +118,7 @@ export function VideoPick({ user, onDone, onSkip }) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: true });
       streamRef.current = stream;
+      setStreamReady(true);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         // play() returns a Promise that REJECTS with AbortError if a new
@@ -136,14 +140,46 @@ export function VideoPick({ user, onDone, onSkip }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // iOS Safari's MediaRecorder cannot produce webm — it records H.264 mp4 and
+  // throws NotSupportedError if webm is forced (which used to make the record
+  // button silently do nothing on iPhones). Probe for the first container the
+  // current browser actually supports; undefined lets the browser pick.
+  const pickRecorderMime = () => {
+    const candidates = ["video/webm;codecs=vp8,opus", "video/webm", "video/mp4"];
+    for (const m of candidates) {
+      if (window.MediaRecorder?.isTypeSupported?.(m)) return m;
+    }
+    return undefined;
+  };
+
   const toggleRecord = () => {
-    if (!streamRef.current) return;
+    if (!streamRef.current) {
+      toast.error("Camera isn't ready — allow camera access, then try again.");
+      return;
+    }
     if (!recording) {
+      if (typeof window.MediaRecorder === "undefined") {
+        toast.error("Video recording isn't supported in this browser. Please update iOS / Safari.");
+        return;
+      }
       const chunks = [];
-      const r = new MediaRecorder(streamRef.current, { mimeType: "video/webm" });
+      let r;
+      try {
+        const mime = pickRecorderMime();
+        r = mime
+          ? new MediaRecorder(streamRef.current, { mimeType: mime })
+          : new MediaRecorder(streamRef.current);
+      } catch (err) {
+        console.error("MediaRecorder init failed", err);
+        toast.error("Couldn't start recording on this device. Try updating your browser.");
+        return;
+      }
       r.ondataavailable = (e) => chunks.push(e.data);
       r.onstop = () => {
-        const blob = new Blob(chunks, { type: "video/webm" });
+        // Strip codec suffix (e.g. "video/mp4;codecs=avc1") so the upload
+        // Content-Type matches the backend's allowed set.
+        const baseType = (r.mimeType || "video/mp4").split(";")[0];
+        const blob = new Blob(chunks, { type: baseType });
         setRecordedBlob(blob);
         setRejectReason(null);
       };
@@ -243,9 +279,9 @@ export function VideoPick({ user, onDone, onSkip }) {
             autoPlay
           />
         )}
-        {!streamRef.current && !recordedBlob && (
+        {!streamReady && !recordedBlob && (
           <div className="absolute inset-0 flex items-center justify-center text-white/40 text-sm">
-            Press record to start
+            Waiting for camera…
           </div>
         )}
         {/* Action button: record (initial), pause (mid-recording), or
