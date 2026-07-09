@@ -166,7 +166,7 @@ export function MatchesScreen({ user, unreadMatches, onTab, onOpenChat, onLoaded
         </div>
       )}
 
-      <BottomNav active="matches" onTab={onTab} userPicture={user?.picture} userHandle={user?.handle} unreadCount={unreadMatches} />
+      <BottomNav active="matches" onTab={onTab} userPicture={user?.picture} userHandle={user?.handle} unreadCount={unreadMatches} referralCount={user?.referral_count || 0} />
     </motion.div>
   );
 }

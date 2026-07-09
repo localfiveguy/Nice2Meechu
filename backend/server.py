@@ -1289,7 +1289,14 @@ async def feed(user=Depends(current_user)):
         })
         city_stats = {"total": city_total, "remaining": len(out)}
 
-    return {"feed": out[:60], "city_stats": city_stats, "saved_position": saved_position}
+    return {
+        "feed": out[:60],
+        "city_stats": city_stats,
+        "saved_position": saved_position,
+        # How many sign-ups were attributed to this viewer's ?ref=<handle>
+        # link — surfaced as the "X joined" chip next to the share pill.
+        "referral_count": user.get("referral_count", 0),
+    }
 
 
 async def _check_mutual_match(target: dict, viewer_id: str) -> bool:

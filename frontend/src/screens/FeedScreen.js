@@ -20,6 +20,8 @@ export function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
   const [activeIdx, setActiveIdx] = useState(0);
   const [locationOpen, setLocationOpen] = useState(false);
   const [confirmRestart, setConfirmRestart] = useState(false);
+  // Fresh referral count from /feed (falls back to the mount-time user doc).
+  const [referralCount, setReferralCount] = useState(user?.referral_count || 0);
   // Mute preference is feed-wide, not per-card. Persisted to localStorage so
   // the user's choice survives reloads / app re-opens. Defaults to muted
   // (true) because browsers won't autoplay audio unless the user first
@@ -62,6 +64,7 @@ export function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
       const { data } = await api.get("/feed");
       setFeed(data.feed);
       setCityStats(data.city_stats || null);
+      if (typeof data.referral_count === "number") setReferralCount(data.referral_count);
       // Pick the initial index in this priority order:
       //   1. Saved per-city position (where the viewer left off last time)
       //   2. First unswiped video (so you don't auto-rewatch by default)
@@ -396,7 +399,7 @@ export function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
         )}
       </AnimatePresence>
 
-      <BottomNav active="feed" onTab={onTab} userPicture={user?.picture} userHandle={user?.handle} unreadCount={unreadMatches} />
+      <BottomNav active="feed" onTab={onTab} userPicture={user?.picture} userHandle={user?.handle} unreadCount={unreadMatches} referralCount={referralCount} />
     </motion.div>
   );
 }

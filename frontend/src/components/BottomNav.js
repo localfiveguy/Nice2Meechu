@@ -4,18 +4,23 @@ import { toast } from "sonner";
 import { shareOrCopy } from "../lib/api";
 import { track } from "../analytics";
 
-export function BottomNav({ active, onTab, userPicture, unreadCount = 0, userHandle }) {
+export function BottomNav({ active, onTab, userPicture, unreadCount = 0, userHandle, referralCount = 0 }) {
   const hasUnread = unreadCount > 0;
 
   const handleShare = async () => {
-    const shareText = "Come meet the world at Nice2meechu.com";
-    track("share_app_button_tapped", { from: "bottom_nav" });
+    // Attribute the invite to the sharer: ?ref=<handle> is captured on the
+    // landing page, survives the Google OAuth round-trip via localStorage,
+    // and increments the sharer's referral_count on the friend's sign-up.
+    const link = userHandle ? `${window.location.origin}/?ref=${userHandle}` : "https://nice2meechu.com";
+    const shareText = "Come meet the world at Nice2Meechu 👋";
+    track("share_app_button_tapped", { from: "bottom_nav", has_ref: !!userHandle });
     const result = await shareOrCopy({
       title: "Nice2Meechu",
       text: shareText,
-      copyText: shareText,
+      url: link,
+      copyText: `${shareText} ${link}`,
     });
-    if (result === "copied") toast.success("Invite copied!");
+    if (result === "copied") toast.success("Invite link copied — friends who join count as yours!");
     else if (result === "failed") toast.error("Couldn't share — try the Profile screen");
   };
 
@@ -78,6 +83,15 @@ export function BottomNav({ active, onTab, userPicture, unreadCount = 0, userHan
           >
             <Share2 size={11} className="text-[#FF4D4D]" />
             <span>Share this app</span>
+            {referralCount > 0 && (
+              <span
+                data-testid="bottom-nav-referral-count"
+                className="text-[#5BE6C8]"
+                aria-label={`${referralCount} friend${referralCount === 1 ? "" : "s"} joined from your link`}
+              >
+                · {referralCount} joined
+              </span>
+            )}
           </button>
         </div>
         <div className="flex-1" aria-hidden />

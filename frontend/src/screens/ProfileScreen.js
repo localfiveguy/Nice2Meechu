@@ -250,7 +250,7 @@ export function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, o
         </div>
       </div>
 
-      <BottomNav active="profile" onTab={onTab} userPicture={user?.picture} userHandle={user?.handle} unreadCount={unreadMatches} />
+      <BottomNav active="profile" onTab={onTab} userPicture={user?.picture} userHandle={user?.handle} unreadCount={unreadMatches} referralCount={user?.referral_count || 0} />
       <IOSInstallSheet open={iosSheetOpen} onClose={() => setIosSheetOpen(false)} />
     </motion.div>
   );
