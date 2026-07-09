@@ -164,9 +164,15 @@ A hyperlocal, video-first social app where users connect by watching short video
 - Verified by testing agent (iteration_6.json): fragment hydration in cookie-less fresh context, auth_error toast, unauthenticated load, Bearer API regression — all PASS.
 - Remaining known iOS limitation: iOS PWA (Home Screen) still relies on the Safari→PWA cookie handoff; permanent fix remains "Sign in with Apple" (P1 backlog).
 
+## 2026-06 — Referral "joined" counter + share attribution
+- `GET /api/feed` now returns `referral_count` (viewer's attributed sign-ups).
+- BottomNav share pill shows a "· N joined" chip (`bottom-nav-referral-count`) on Feed/Matches/Profile when N > 0; hidden at 0.
+- Share button now shares/copies `${origin}/?ref=<handle>` so invites actually attribute (previously the link had no ref param); toast updated.
+- Verified by testing agent (iteration_7.json): all 6 checkpoints pass, no regressions. Deployment health check: PASS.
+
 ## Next Tasks
-- User to redeploy and retry Google sign-in on his iPhone (Safari) — should now complete even when Safari drops the cookie.
-- Click **Deploy** to push the new auth flow to `nice2meechu.com`.
+- User to **Deploy**, then retry Google sign-in on his iPhone (Safari) — the fragment-token fix should complete sign-in even when Safari drops the cookie.
+- After deploy: confirm the "joined" counter increments when a friend signs up via a shared ?ref link.
 - Verified: GIS button renders on /signin, `/api/auth/google` rejects bogus JWTs (401), seeded session bears authenticated `/api/auth/me`.
 
 ## Prioritized backlog
