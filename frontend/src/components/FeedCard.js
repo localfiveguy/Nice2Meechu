@@ -214,8 +214,10 @@ export function FeedCard({ item, isActive, myLang, onLike, onPass, onUnlike, cur
         </div>
       )}
 
-      {/* action stack right */}
-      <div className="absolute bottom-32 right-4 flex flex-col gap-3 items-center">
+      {/* action stack right — z-50 so the buttons' hitboxes always beat the
+          bottom nav (z-40): on shorter viewports the nav's padding box can
+          extend up under the like button and swallow real taps. */}
+      <div className="absolute bottom-32 right-4 z-50 flex flex-col gap-3 items-center">
         <button
           className="w-9 h-9 rounded-full flex items-center justify-center text-white/65 hover:text-white bg-black/35 hover:bg-black/55 transition"
           onClick={async () => {

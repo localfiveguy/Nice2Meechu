@@ -1325,12 +1325,16 @@ async def feed(user=Depends(current_user)):
 
 
 async def _check_mutual_match(target: dict, viewer_id: str) -> bool:
-    if _is_demo_user(target):
-        return _rng.random() < 0.7
+    # A real reverse-like always wins — this keeps the "Likes you → like back
+    # to match instantly" contract honest, including for seeded demo swipes.
     rev = await db.swipes.find_one(
         {"user_id": target["id"], "target_user_id": viewer_id, "action": "like"}
     )
-    return bool(rev)
+    if rev:
+        return True
+    if _is_demo_user(target):
+        return _rng.random() < 0.7
+    return False
 
 
 @api.post("/swipe")
