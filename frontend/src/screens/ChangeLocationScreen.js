@@ -23,6 +23,7 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
   const mapDivRef = useRef(null);
   const mapRef = useRef(null);
   const markerRef = useRef(null);
+  const heatLayerRef = useRef(null);
   // Leaflet's click handler is registered once — read busy through a ref so
   // the guard never goes stale.
   const busyRef = useRef(null);
@@ -284,6 +285,51 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
     markerRef.current?.setLatLng([center.lat, center.lng]);
     mapRef.current.setView([center.lat, center.lng]);
   }, [center.lat, center.lng]);
+
+  // Heat-dots: every city that already has people with intros gets a glowing
+  // cyan dot (sized by headcount) so the map doubles as a discovery tool.
+  // Tapping a dot jumps straight to that city — same instant-switch UX as
+  // tapping the map, but snapped to the city center.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return undefined;
+    if (heatLayerRef.current) {
+      heatLayerRef.current.remove();
+      heatLayerRef.current = null;
+    }
+    const group = L.layerGroup();
+    popular.forEach((c) => {
+      if (!c.people || c.lat == null || c.lng == null || (c.lat === 0 && c.lng === 0)) return;
+      const label = `${c.city}${c.country ? ", " + c.country : ""}`;
+      const r = Math.min(16, 6 + 2 * Math.sqrt(c.people));
+      const halo = L.circleMarker([c.lat, c.lng], {
+        radius: r * 1.9, stroke: false, fillColor: "#00E5FF", fillOpacity: 0.14, interactive: false,
+      });
+      const core = L.circleMarker([c.lat, c.lng], {
+        radius: r, color: "#00E5FF", weight: 1, opacity: 0.9,
+        fillColor: "#00E5FF", fillOpacity: 0.5,
+        bubblingMouseEvents: false, className: "heat-dot-core",
+      });
+      core.bindTooltip(`${c.city} · ${c.people} ${c.people === 1 ? "person" : "people"}`, {
+        direction: "top", offset: [0, -8],
+      });
+      core.on("click", (e) => {
+        if (e.originalEvent) L.DomEvent.stopPropagation(e.originalEvent);
+        if (busyRef.current) return;
+        setCenter({ lat: c.lat, lng: c.lng, label });
+        track("location_heat_dot_tapped", { city: c.city });
+        persist(c.lat, c.lng, label);
+      });
+      group.addLayer(halo);
+      group.addLayer(core);
+    });
+    group.addTo(map);
+    heatLayerRef.current = group;
+    // Keep the red "you are exploring here" pin painted above the dots.
+    markerRef.current?.bringToFront();
+    return () => { group.remove(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [popular]);
 
   return (
     <motion.div
