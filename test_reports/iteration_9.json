@@ -1,0 +1,38 @@
+{
+  "summary": "Verified Leaflet map fix on Change Location screen for Nice2Meechu (bug: drag/pinch used to instantly switch city). All 9 requested test cases pass. demo-00 city restored to Tokyo at end.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results": {
+    "map_renders": "PASS - 3+ .leaflet-tile-loaded, .leaflet-control-zoom visible, 1 path.leaflet-interactive (red marker), footer shows Tokyo",
+    "drag_does_not_switch_city": "PASS - .leaflet-map-pane transform changed from translate3d(0,0,0) to translate3d(-200px,-100px,0); NO toast, ZERO POST /api/users/location calls after drag, pill still 'Tokyo'",
+    "zoom_works": "PASS - clicking .leaflet-control-zoom-in changed tile from z=11 to z=12; zero API calls, no city change",
+    "tap_picks_instantly": "PASS - single click fired POST /api/users/location; feed pill updated to '東京都' (reverse-geocoded local name)",
+    "search_paris": "PASS - typed 'Paris' -> suggestions-down dropdown appeared (z-index 60, above map), first item 'Paris, Île-de-France, France' clicked -> pill updated to 'Paris', POST /api/users/location fired",
+    "popular_tokyo_restore": "PASS - clicked change-location-popular-1 (Tokyo/Japan/12 people) -> final feed pill 'Tokyo' (demo data restored)",
+    "search_dropdown_stacking": "PASS - suggestions-down had computed z-index 60, visible above Leaflet map",
+    "close_button_regression": "PASS - screen closes after tap/popular selections; change-location-close available",
+    "no_js_uncaught_errors": "PASS - no uncaught JS exceptions; only benign 404s for missing static/video assets (pre-existing, unrelated to map)"
+  },
+  "notes": [
+    "Toast DOM node wasn't matched by [data-sonner-toast]/[role=status] selector so toast text couldn't be captured, but pill updates + API POSTs confirm the flow works end-to-end.",
+    "Reverse geocode returns local script (東京都) for Tokyo tap — expected behavior from photon.komoot.io.",
+    "Multiple 404 console errors observed on feed (unrelated to map fix — likely missing thumbnails/videos in demo data). Not caused by this iteration."
+  ],
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Consider using data-testid on the toast (sonner) so E2E tests can reliably assert toast text.",
+    "The footer city label under the map lacks a data-testid (tried change-location-current-label — not present). Adding one would help future tests."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "test_credentials": "Session token sttest_SUQD-bH3lyJJOBLw-llOftxhxupA_9nU -> demo-00 / yui.tokyo via #st= fragment (as provided).",
+  "seed_data_creation": "None. demo-00 city was left as 'Tokyo' at end of test as instructed.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Leaflet map fix on ChangeLocationScreen verified. Drag/zoom no longer trigger city change; only deliberate taps do. Search + popular cities flows work. If retesting, restore Tokyo at end via change-location-popular-1."
+}

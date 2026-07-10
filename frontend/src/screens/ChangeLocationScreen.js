@@ -1,6 +1,8 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import { ArrowRight, MapPin, Sparkles, X } from "lucide-react";
 import { api } from "../lib/api";
 import { dedupeCitySuggestions, formatCityLabel, stripCityNoise } from "../lib/cityFormat";
@@ -18,7 +20,13 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
   });
   const [busy, setBusy] = useState(null); // "geo" | "save" | "tap" | null
   const debounceRef = useRef(null);
-  const mapTapRef = useRef(null);
+  const mapDivRef = useRef(null);
+  const mapRef = useRef(null);
+  const markerRef = useRef(null);
+  // Leaflet's click handler is registered once — read busy through a ref so
+  // the guard never goes stale.
+  const busyRef = useRef(null);
+  useEffect(() => { busyRef.current = busy; }, [busy]);
   const searchInputRef = useRef(null);
   const dropdownRef = useRef(null);
   const hasSuggestions = suggestions.length > 0;
@@ -215,26 +223,11 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
     persist(c.lat, c.lng, label);
   };
 
-  // OSM embed bbox (~0.2° square around the point)
-  const D = 0.12;
-
-  // Tap anywhere on the map preview → convert pixel to lat/lng using the
-  // currently-rendered bbox, reverse-geocode for a city label, then persist.
-  const handleMapTap = async (e) => {
-    if (busy) return;
-    const el = mapTapRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    if (rect.width <= 0 || rect.height <= 0) return;
-    const lngMin = center.lng - D;
-    const lngMax = center.lng + D;
-    const latMin = center.lat - D / 2;
-    const latMax = center.lat + D / 2;
-    const lng = lngMin + (x / rect.width) * (lngMax - lngMin);
-    const lat = latMax - (y / rect.height) * (latMax - latMin);
-
+  // Real interactive Leaflet map — drag to pan, pinch/scroll to zoom. A
+  // deliberate TAP picks that spot (Leaflet never fires "click" after a drag
+  // or pinch, so browsing the map can't accidentally switch your city).
+  const handleMapPick = async (lat, lng) => {
+    if (busyRef.current) return;
     setBusy("tap");
     let cityLabel = `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
     try {
@@ -254,8 +247,43 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
     await persist(lat, lng, cityLabel);
   };
 
-  const bbox = `${center.lng - D},${center.lat - D / 2},${center.lng + D},${center.lat + D / 2}`;
-  const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${center.lat},${center.lng}`;
+  useEffect(() => {
+    if (!mapDivRef.current || mapRef.current) return undefined;
+    const map = L.map(mapDivRef.current, {
+      zoomControl: true,
+      attributionControl: true,
+    }).setView([center.lat, center.lng], 11);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 18,
+      attribution: "&copy; OpenStreetMap contributors",
+    }).addTo(map);
+    // circleMarker instead of the default image marker — Leaflet's icon PNGs
+    // don't resolve under CRA bundling without extra config.
+    const marker = L.circleMarker([center.lat, center.lng], {
+      radius: 9, color: "#ffffff", weight: 2, fillColor: "#FF4D4D", fillOpacity: 1,
+    }).addTo(map);
+    map.on("click", (e) => handleMapPick(e.latlng.lat, e.latlng.lng));
+    mapRef.current = map;
+    markerRef.current = marker;
+    // The modal spring-animates in; re-measure once it settles so tiles
+    // cover the full container.
+    const t = setTimeout(() => map.invalidateSize(), 400);
+    return () => {
+      clearTimeout(t);
+      map.remove();
+      mapRef.current = null;
+      markerRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Follow the selected point when it changes (search pick, popular city,
+  // geolocate, or map tap) — keep the user's current zoom level.
+  useEffect(() => {
+    if (!mapRef.current) return;
+    markerRef.current?.setLatLng([center.lat, center.lng]);
+    mapRef.current.setView([center.lat, center.lng]);
+  }, [center.lat, center.lng]);
 
   return (
     <motion.div
@@ -337,29 +365,21 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
           </span>
         </button>
 
-        {/* Map preview — tap anywhere to pick that spot */}
+        {/* Interactive map — drag to pan, pinch to zoom, tap to pick a spot */}
         <div className="rounded-2xl overflow-hidden border border-white/10 bg-white/5 flex-shrink-0">
-          <div className="relative" style={{ height: 200 }}>
-            <iframe
-              key={`${center.lat}-${center.lng}`}
-              title="Map preview"
-              src={mapUrl}
-              className="absolute inset-0 w-full h-full"
-              style={{ border: 0 }}
+          {/* z-0 creates a stacking context so Leaflet's internal z-indexes
+              (panes go up to 1000) can't paint over the fixed search dropdown. */}
+          <div className="relative z-0" style={{ height: 230 }}>
+            <div
+              ref={mapDivRef}
+              className="absolute inset-0"
+              style={{ cursor: busy ? "wait" : "crosshair" }}
+              aria-label="Map — drag to pan, tap to pick a spot"
               data-testid="change-location-map"
             />
-            <button
-              ref={mapTapRef}
-              type="button"
-              onClick={handleMapTap}
-              disabled={busy !== null}
-              className="absolute inset-0 cursor-crosshair disabled:cursor-wait"
-              aria-label="Tap to pick this spot"
-              data-testid="change-location-map-tap"
-            />
-            <div className="absolute top-2 left-2 glass-dark px-2 py-1 rounded-full text-[10px] uppercase tracking-widest font-bold text-white/85 pointer-events-none flex items-center gap-1">
+            <div className="absolute top-2 right-2 z-[500] glass-dark px-2 py-1 rounded-full text-[10px] uppercase tracking-widest font-bold text-white/85 pointer-events-none flex items-center gap-1">
               <MapPin size={10} className="text-[#FF4D4D]" />
-              <span>{busy === "tap" ? "Resolving…" : "Tap map to pick"}</span>
+              <span>{busy === "tap" ? "Resolving…" : "Drag to move · tap to pick"}</span>
             </div>
           </div>
           <div className="px-3 py-2 flex items-center gap-1.5 text-xs text-white/70">
