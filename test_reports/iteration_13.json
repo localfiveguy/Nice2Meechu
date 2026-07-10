@@ -1,0 +1,34 @@
+{
+  "summary": "Retest of the unlike/undo-like feature after E1's FeedCard.js fix. All primary frontend flows PASS. The gray-disabled like button ternary is now correctly rendered on the active path, the 'Liked ✕' pill appears/disappears as expected, undo does not auto-advance, and card-to-card isolation holds. No compile errors; app renders cleanly.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_unlike_swipe.py (from iter_12 — backend 3/3, not re-run this iteration)"
+  ],
+  "verified_scenarios": [
+    "Compile: FeedCard.js compiles; no CRA red overlay; app loads to feed for demo-00.",
+    "Card 0 initial: like button = red gradient enabled (bg linear-gradient(#FF6B6B,#FF3D3D), disabled=null).",
+    "Click like on card 0 → toast fires (Liked or match), card state flips: bg becomes rgba(255,255,255,0.15), disabled attribute present, gray heart color. 'Liked ✕' pill (feed-prior-action-badge) appears top-right of card 0.",
+    "Card 1 isolation: while card 0 is liked, card 1's like button remains red gradient + enabled (disabled=null). Per-video state confirmed.",
+    "Undo: click Liked pill → 'Like removed' toast (also emits 'Match saved' toast from prior match), pill disappears, like button restored to red gradient enabled, position counter stays 1/12 (no auto-advance).",
+    "Cleanup: pre-cleanup pass unliked any leftover 'Liked' badges from previous demo-00 runs before the test began."
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "FeedCard.js FeedCard() component (lines 244-272) — ternary on item.prior_action==='like' now correctly wired. Gray disabled variant uses bg rgba(255,255,255,0.15), boxShadow none, disabled attribute, heart tinted rgba(255,255,255,0.45). Matches spec.",
+    "FeedScreen.handleUnlike (lines 163-175) properly optimistic-updates prior_action to null and rolls back on API failure. No auto-advance path invoked. Good.",
+    "Minor: 24+ 404s on network resources in browser console (asset requests). Not blocking. Recommend E1 audit the missing static assets when convenient."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (from iter_12, not re-run)", "frontend": "100% on the unlike/undo-like flow"},
+  "test_credentials": "Bearer sttest_SUQD-bH3lyJJOBLw-llOftxhxupA_9nU → demo-00 / yui.tokyo. Still valid (expiry extended in iter_12).",
+  "seed_data_creation": "None. Test used pre-cleanup pass to unlike any leftover likes on demo-00 before assertions.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Feature complete and verified. FeedCard.js unlike/undo-like flow works end-to-end. Backend /api/swipe unlike branch already verified in iter_12 (test_unlike_swipe.py, 3/3). Session token still valid. If future tests interact with demo-00's like list, run the same pre-cleanup step (iterate all feed-prior-action-badge with 'Liked' text and click to undo).",
+  "rca_of_the_issue": "No new issues. iter_12 blocker fully resolved: FeedCard.js now compiles cleanly and the like button is correctly implemented as a ternary — gray/disabled when item.prior_action==='like', red/enabled otherwise. The Liked pill button correctly triggers onUnlike."
+}

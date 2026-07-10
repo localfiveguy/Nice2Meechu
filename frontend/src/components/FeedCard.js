@@ -245,19 +245,18 @@ export function FeedCard({ item, isActive, myLang, onLike, onPass, onUnlike, cur
             <X size={22} />
           </button>
         )}
-        <button
-          className="btn-icon"
-          style={{ background: "linear-gradient(180deg,#FF6B6B,#FF3D3D)", boxShadow: "0 10px 30px -8px rgba(255,77,77,0.7)" }}
-          onClick={onLike}
-          data-testid="feed-like-button"
-        >
-          <Heart size={24} fill="white" />
-        </button>
-      </div>
-    </div>
-  );
-}
-5,255,0.45)" color="rgba(255,255,255,0.45)" />
+        {item.prior_action === "like" ? (
+          /* Already liked — the button goes gray (inert) for this video only.
+             Undo happens via the "Liked ✕" pill top-right. */
+          <button
+            className="btn-icon"
+            style={{ background: "rgba(255,255,255,0.15)", boxShadow: "none" }}
+            disabled
+            data-testid="feed-like-button"
+            aria-label="Already liked — tap the Liked pill to undo"
+            title="Already liked — tap the Liked pill to undo"
+          >
+            <Heart size={24} fill="rgba(255,255,255,0.45)" color="rgba(255,255,255,0.45)" />
           </button>
         ) : (
           <button
@@ -274,3 +273,4 @@ export function FeedCard({ item, isActive, myLang, onLike, onPass, onUnlike, cur
     </div>
   );
 }
+
