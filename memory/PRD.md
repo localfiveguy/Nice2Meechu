@@ -176,8 +176,13 @@ A hyperlocal, video-first social app where users connect by watching short video
 - Fix: `pickRecorderMime()` probes `isTypeSupported` (webm → mp4 → browser default), try/catch + error toasts, blob type strips codec suffix, `streamReady` state guarantees preview attach ("Waiting for camera…" until live). Backend upload now normalizes codec-suffixed Content-Types (`video/mp4;codecs=avc1` previously 415) and stores normalized type to GCS.
 - Verified by testing agent (iteration_8.json): backend 6/6, frontend e2e record→stop→playback pass, no console errors. Regression suites added: /app/backend/tests/test_video_upload_codec.py, /app/tests/test_videopick_ui.py.
 
+## 2026-06 — Interactive map on Change Location
+- User report: map couldn't be dragged/pinch-zoomed and every touch instantly switched the city (old implementation = static OSM iframe + invisible tap-catcher).
+- Fix (user chose "keep instant tap-to-pick, add real pan/zoom"): replaced with Leaflet 1.9.4 + OSM tiles — drag to pan, pinch/buttons to zoom; deliberate tap still instantly picks (Leaflet suppresses click after drag/pinch). Red circleMarker, "Drag to move · tap to pick" badge, z-0 stacking wrapper keeps search dropdown above map panes.
+- Verified by testing agent (iteration_9.json, 9/9 pass): drag/zoom fire zero location POSTs; tap/search/popular flows all persist correctly; demo-00 restored to Tokyo.
+
 ## Next Tasks
-- User to **Deploy**, then on his iPhone: record his intro video (camera preview → red record button → 7s countdown → review → Continue).
+- User to **Deploy**, then on his iPhone: open Change Location — drag/pinch the map freely, tap to switch city.
 - Verified: GIS button renders on /signin, `/api/auth/google` rejects bogus JWTs (401), seeded session bears authenticated `/api/auth/me`.
 
 ## Prioritized backlog
