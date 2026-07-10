@@ -193,8 +193,11 @@ A hyperlocal, video-first social app where users connect by watching short video
 - Verified: apksigner cert fingerprint matches, new icon PNGs inside APK, all assets serve 200 in preview.
 - NOTE for iOS: users who already added the PWA to their Home Screen keep the old icon until they re-add it (Apple caches apple-touch-icon at install time). Android: installing the new APK over the old one updates the icon.
 
+## 2026-06 — New social share card
+- og-default.png regenerated (1200×630): heart-handshake mark + "Nice2Meechu." wordmark + tagline on black. OG/Twitter image URLs versioned to ?v=2 to bust scraper caches.
+
 ## Next Tasks
-- User to **Deploy** so nice2meechu.com serves the new icon + APK.
+- User to **Deploy** so nice2meechu.com serves the new icon + APK + share card.
 - Verified: GIS button renders on /signin, `/api/auth/google` rejects bogus JWTs (401), seeded session bears authenticated `/api/auth/me`.
 
 ## Prioritized backlog
