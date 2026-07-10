@@ -1249,6 +1249,25 @@ async def feed(user=Depends(current_user)):
         async for u in db.users.find(base_filter, {"_id": 0, "email": 0}).limit(60):
             candidates.append(u)
 
+    # Who among the candidates has already liked the viewer — powers the
+    # "Likes you" hint (anonymity holds: the feed only shows codenames).
+    likers = await db.swipes.find(
+        {
+            "target_user_id": user["id"],
+            "action": "like",
+            "user_id": {"$in": [c["id"] for c in candidates]},
+        },
+        {"_id": 0, "user_id": 1},
+    ).to_list(200)
+    liked_me_ids = {s["user_id"] for s in likers}
+    # Already-matched pairs don't need the hint — "like back to match" would
+    # be misleading when the match already exists.
+    match_docs = await db.matches.find(
+        {"user_ids": user["id"]}, {"_id": 0, "user_ids": 1}
+    ).to_list(500)
+    matched_ids = {uid for m in match_docs for uid in m["user_ids"] if uid != user["id"]}
+    liked_me_ids -= matched_ids
+
     out = []
     for c in candidates:
         if not c.get("video_url"):
@@ -1266,6 +1285,9 @@ async def feed(user=Depends(current_user)):
                 "source_lang": c.get("source_lang", "en"),
                 "distance_km": dist,
                 "is_demo": bool(c.get("is_demo")),
+                # True when this person already liked the viewer — liking back
+                # matches instantly.
+                "likes_you": c["id"] in liked_me_ids,
                 # null when the viewer hasn't swiped on this user yet; otherwise
                 # "like" or "pass". Lets the client skip past previously-seen
                 # videos by default while still allowing Back/Restart navigation.

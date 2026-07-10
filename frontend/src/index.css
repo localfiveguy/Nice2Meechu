@@ -245,3 +245,11 @@ html, body, #root {
 
 /* Heat dots on the Change Location map — signal tappability */
 path.heat-dot-core { cursor: pointer; }
+
+/* "Likes you" — soft cyan pulse on the like button when the person on
+   screen already liked the viewer (liking back matches instantly). */
+@keyframes likesYouPulse {
+    0%, 100% { box-shadow: 0 10px 30px -8px rgba(255, 77, 77, 0.7), 0 0 0 0 rgba(0, 229, 255, 0.55); }
+    50% { box-shadow: 0 10px 30px -8px rgba(255, 77, 77, 0.7), 0 0 0 10px rgba(0, 229, 255, 0); }
+}
+.likes-you-glow { animation: likesYouPulse 1.8s ease-out infinite; }

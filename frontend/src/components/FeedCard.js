@@ -160,6 +160,18 @@ export function FeedCard({ item, isActive, myLang, onLike, onPass, onUnlike, cur
         </div>
       )}
 
+      {/* "Likes you" hint — this person already liked the viewer, so liking
+          back matches instantly. Anonymity holds (codenames only). */}
+      {item.likes_you && (
+        <div
+          className="absolute top-[5rem] left-5 flex items-center gap-1 px-2 py-1 rounded-full bg-[#00E5FF]/15 ring-1 ring-[#00E5FF]/40 text-[#00E5FF] text-[10px] uppercase tracking-widest font-bold pointer-events-none"
+          data-testid="feed-likes-you-badge"
+          title="This person already liked you — like back to match instantly"
+        >
+          <Heart size={10} fill="#00E5FF" /> Likes you
+        </div>
+      )}
+
       {/* "you've seen this" pill — only renders when the viewer is rewatching
           a video they previously swiped on (via Back / Restart). Subtle so
           it doesn't compete with the codename, but obvious enough that the
@@ -260,11 +272,11 @@ export function FeedCard({ item, isActive, myLang, onLike, onPass, onUnlike, cur
           </button>
         ) : (
           <button
-            className="btn-icon"
+            className={`btn-icon${item.likes_you ? " likes-you-glow" : ""}`}
             style={{ background: "linear-gradient(180deg,#FF6B6B,#FF3D3D)", boxShadow: "0 10px 30px -8px rgba(255,77,77,0.7)" }}
             onClick={onLike}
             data-testid="feed-like-button"
-            aria-label="Like this intro"
+            aria-label={item.likes_you ? "They already liked you — like back to match instantly" : "Like this intro"}
           >
             <Heart size={24} fill="white" />
           </button>

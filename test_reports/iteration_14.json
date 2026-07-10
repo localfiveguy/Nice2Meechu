@@ -1,0 +1,35 @@
+{
+  "summary": "Tested new 'Likes you' feed hint feature end-to-end (backend + frontend). Backend API contract fully verified via 4 pytest cases (likes_you set/unset by seed, instant match on like-back for demo user with 70% retry, matched-pair exclusion, cleanup restoration). Frontend renders the cyan pill + likes-you-glow correctly. Match modal appears and match doc is created. Unlike interplay + regression on non-likes-you card also verified via API. HOWEVER a CRITICAL, pre-existing UI bug was uncovered: the bottom-nav element (data-testid='bottom-nav', height 162px, y=682-844 on iPhone-12 viewport) fully covers the FeedCard action-stack (like/pass/report/restart buttons at bottom-32 ≈ y716-776), so real user taps on those buttons are swallowed by the nav (Playwright click with force=True also failed; only JS .click() bypassed).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/swipe", "issue": "For demo targets, _check_mutual_match uses random()<0.7 instead of actual reverse-swipe row (server.py:1327-1333). This makes the 'Likes you' hint semantically misleading against demo users: likes_you=true is set based on the real seeded swipe, but liking back only matches 70% of the time. For real users the behaviour is correct. Consider short-circuiting demo path when a real reverse-like already exists."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "FeedScreen / BottomNav overlap", "issue": "BottomNav (data-testid='bottom-nav') is 162px tall and occupies y=682..844 on a 390x844 mobile viewport. FeedCard action stack ('absolute bottom-32 right-4') places like/pass/report buttons at y≈716-776, which lies fully inside the nav's hit area. document.elementFromPoint at the like-button centre returns the bottom-nav div, not the button. Real touches and Playwright click(force=True) both fail; only synthetic .click() via JS bypasses. Users cannot tap Like/Pass/Report on real devices.", "selector": "[data-testid='feed-like-button'], [data-testid='feed-pass-button'], [data-testid='feed-report-button']", "priority": "CRITICAL"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_likes_you.py", "/app/test_reports/pytest/likes_you.xml"],
+  "action_items": [
+    "URGENT: Fix bottom-nav vs FeedCard action-stack overlap. Options: (a) add pointer-events-none to non-interactive padding areas of the nav, (b) reduce nav pb-10 or move the action stack up (bottom-40+), (c) give the action-stack a higher z-index than the nav (currently nav is z-40).",
+    "Verify with a Playwright test that document.elementFromPoint at each action-stack button centre returns the button (or a descendant), not the nav.",
+    "Consider making _check_mutual_match honour a real reverse-like row for demo users too, so the 'Likes you' UX contract ('like back → instant match') is not a probabilistic lie."
+  ],
+  "critical_code_review_comments": [
+    "server.py:1327-1333 – _check_mutual_match short-circuits demo users to random 70%, but the new 'likes_you' hint promises instant match. Inconsistent contract.",
+    "FeedScreen/BottomNav layering – no explicit z-index on action stack; nav is z-40. This is fragile and the current layout regression is a direct consequence.",
+    "server.py:1244 – .find(...).sort('created_at',1).limit(60) – no index hint on (city, created_at); fine for demo scale but flag for production."
+  ],
+  "updated_files": ["/app/backend/tests/test_likes_you.py"],
+  "success_rate": {"backend": "100% (4/4 pytest passed)", "frontend": "60% – feature renders correctly and match flow works via JS click, but action-stack is un-tappable for real users"},
+  "test_credentials": "Bearer sttest_SUQD-bH3lyJJOBLw-llOftxhxupA_9nU → demo-00 (yui.tokyo). Loaded via URL fragment #st=<token>.",
+  "seed_data_creation": "Restored final state per spec: demo-01→demo-00 seeded 'like' swipe present; no match between demo-00 and demo-01; no demo-00 swipes on demo-01 or demo-02. Final API check: demo-01 likes_you=true, prior_action=null.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The 'Likes you' feature backend and rendering is CORRECT. Only critical follow-up is the bottom-nav overlap blocking action-stack taps. To reproduce: viewport 390x844, load feed, evaluate document.elementFromPoint at the like button's centre – it returns bottom-nav. Confirm fix by observing (a) real Playwright page.click without force=True works, (b) elementFromPoint returns the button element. Backend cleanup helper lives inline in /app/backend/tests/test_likes_you.py (autouse fixture). Match modal has data-testid='match-celebration' with match-chat-button + match-close-button.",
+  "rca of the issue": "Bottom-nav container has classes 'absolute bottom-0 left-0 right-0 z-40 glass-dark ... flex flex-col pb-10 pt-1 px-4'. pb-10 (40px) inflates its height to 162px so it extends from y=682 up. FeedCard action stack ('absolute bottom-32 right-4') places buttons ~128px above the card bottom; on full-height cards the buttons sit at y≈716-776, inside the nav's hit box. Nav has no pointer-events:none on its non-tab regions, so it captures pointer events destined for the like/pass/report/restart buttons. Mitigation: give the action-stack z-index >= 40 (e.g. z-50) or add 'pointer-events-none' to the nav's outer padding wrapper while keeping the tabs themselves interactive; alternatively move action stack up (bottom-40 or bottom-44)."
+}
