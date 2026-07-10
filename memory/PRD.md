@@ -196,8 +196,14 @@ A hyperlocal, video-first social app where users connect by watching short video
 ## 2026-06 — New social share card
 - og-default.png regenerated (1200×630): heart-handshake mark + "Nice2Meechu." wordmark + tagline on black. OG/Twitter image URLs versioned to ?v=2 to bust scraper caches.
 
+## 2026-06 — Undo Like (unlike)
+- POST /api/swipe now accepts action "unlike" → deletes the swipe row (already-created matches are intentionally kept, consistent with existing rewatch policy).
+- FeedCard: while liked, the Like button goes gray + disabled for that video only; the "Liked ✕" pill is now a button — tapping it undoes the like ("Like removed" toast, red button restored, no auto-advance).
+- Verified by testing agent: backend 3/3 (iteration_12, test_unlike_swipe.py) + frontend e2e 100% (iteration_13). Note: iteration_12 caught a corrupted FeedCard.js edit (orphaned JSX) — repaired before retest.
+- Testing note: preview session token expiry extended +7 days by tester; minor backlog item — audit ~24 asset 404s seen in browser console (non-blocking).
+
 ## Next Tasks
-- User to **Deploy** so nice2meechu.com serves the new icon + APK + share card.
+- User to **Deploy**, then try: like a video → button grays + Liked pill; tap the pill → like undone.
 - Verified: GIS button renders on /signin, `/api/auth/google` rejects bogus JWTs (401), seeded session bears authenticated `/api/auth/me`.
 
 ## Prioritized backlog
