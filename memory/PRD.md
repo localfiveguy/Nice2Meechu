@@ -181,8 +181,13 @@ A hyperlocal, video-first social app where users connect by watching short video
 - Fix (user chose "keep instant tap-to-pick, add real pan/zoom"): replaced with Leaflet 1.9.4 + OSM tiles — drag to pan, pinch/buttons to zoom; deliberate tap still instantly picks (Leaflet suppresses click after drag/pinch). Red circleMarker, "Drag to move · tap to pick" badge, z-0 stacking wrapper keeps search dropdown above map panes.
 - Verified by testing agent (iteration_9.json, 9/9 pass): drag/zoom fire zero location POSTs; tap/search/popular flows all persist correctly; demo-00 restored to Tokyo.
 
+## 2026-06 — Heat-dots on the map (discovery)
+- Every city with intro'd people renders a glowing cyan dot (halo + core, radius scaled by headcount) on the Change Location Leaflet map, with tooltip "<City> · N people". Tapping a dot instantly switches to that city (exact popular-list coords + label).
+- Fix during rollout (testing agent RCA iteration_10): the red selected-location pin covered the current city's dot and swallowed its hover/click — pin is now interactive:false, plus a defensive guard in the map click handler for `heat-dot-core` targets.
+- Verified by testing agent (iteration_11): dot click POSTs exact city payload, tooltip works, empty-map tap & drag regressions pass, demo-00 restored to Tokyo.
+
 ## Next Tasks
-- User to **Deploy**, then on his iPhone: open Change Location — drag/pinch the map freely, tap to switch city.
+- User to **Deploy**, then check the map: cyan dots mark cities with people; tap a dot to jump there.
 - Verified: GIS button renders on /signin, `/api/auth/google` rejects bogus JWTs (401), seeded session bears authenticated `/api/auth/me`.
 
 ## Prioritized backlog
