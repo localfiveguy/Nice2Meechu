@@ -202,8 +202,15 @@ A hyperlocal, video-first social app where users connect by watching short video
 - Verified by testing agent: backend 3/3 (iteration_12, test_unlike_swipe.py) + frontend e2e 100% (iteration_13). Note: iteration_12 caught a corrupted FeedCard.js edit (orphaned JSX) — repaired before retest.
 - Testing note: preview session token expiry extended +7 days by tester; minor backlog item — audit ~24 asset 404s seen in browser console (non-blocking).
 
+## 2026-06 — "Likes you" hint
+- GET /api/feed items include `likes_you` (person has an active like on the viewer AND pair not already matched).
+- FeedCard: cyan "Likes you" pill (top-left) + pulsing cyan glow on the red Like button; liking back matches instantly.
+- Contract fix: `_check_mutual_match` now honors a real reverse-like FIRST (demo random 70% only when no real reverse-like) — "like back" always matches.
+- Bonus critical fix (found by testing agent): FeedCard action stack got z-50 — the bottom-nav's padding box (z-40) was swallowing like/pass/report taps on shorter screens. Real un-forced clicks verified.
+- Verified: iteration_14 (found issues) + iteration_15 (100% backend + frontend, deterministic match 3/3, hitbox proof, nav regression clean). Preview seed: demo-01 likes demo-00.
+
 ## Next Tasks
-- User to **Deploy**, then try: like a video → button grays + Liked pill; tap the pill → like undone.
+- User to **Deploy**, then look for the cyan "Likes you" pill + glowing heart in the feed.
 - Verified: GIS button renders on /signin, `/api/auth/google` rejects bogus JWTs (401), seeded session bears authenticated `/api/auth/me`.
 
 ## Prioritized backlog
