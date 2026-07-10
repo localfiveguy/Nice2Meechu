@@ -259,11 +259,19 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
       attribution: "&copy; OpenStreetMap contributors",
     }).addTo(map);
     // circleMarker instead of the default image marker — Leaflet's icon PNGs
-    // don't resolve under CRA bundling without extra config.
+    // don't resolve under CRA bundling without extra config. interactive:false
+    // — it's purely visual; otherwise it swallows clicks/hovers meant for the
+    // heat dot underneath (e.g. the current city's own dot) and bubbles them
+    // to the map handler.
     const marker = L.circleMarker([center.lat, center.lng], {
       radius: 9, color: "#ffffff", weight: 2, fillColor: "#FF4D4D", fillOpacity: 1,
+      interactive: false,
     }).addTo(map);
-    map.on("click", (e) => handleMapPick(e.latlng.lat, e.latlng.lng));
+    map.on("click", (e) => {
+      // Defensive: never let the raw-coords picker steal a heat-dot tap.
+      if (e.originalEvent?.target?.classList?.contains("heat-dot-core")) return;
+      handleMapPick(e.latlng.lat, e.latlng.lng);
+    });
     mapRef.current = map;
     markerRef.current = marker;
     // The modal spring-animates in; re-measure once it settles so tiles

@@ -242,3 +242,6 @@ html, body, #root {
         radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px);
     background-size: 3px 3px;
 }
+
+/* Heat dots on the Change Location map — signal tappability */
+path.heat-dot-core { cursor: pointer; }
