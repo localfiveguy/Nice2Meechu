@@ -112,7 +112,7 @@ export function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, o
                   <Download size={16} className="text-[#5BE6C8]" />
                   <div className="text-sm font-semibold text-white">Install Android app</div>
                 </div>
-                <div className="text-[10px] uppercase tracking-widest font-bold text-white/45">Free · 1.6&nbsp;MB</div>
+                <div className="text-[10px] uppercase tracking-widest font-bold text-white/45">Free · 2.4&nbsp;MB</div>
               </a>
 
               <button

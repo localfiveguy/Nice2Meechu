@@ -20,8 +20,8 @@
     "path": "/app/android-build/twa-project/android.keystore",
     "alias": "android"
   },
-  "appVersionName": "1.0.0",
-  "appVersionCode": 1,
+  "appVersionName": "1.0.1",
+  "appVersionCode": 2,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "webManifestUrl": "http://127.0.0.1:9123/manifest.json",

@@ -186,8 +186,15 @@ A hyperlocal, video-first social app where users connect by watching short video
 - Fix during rollout (testing agent RCA iteration_10): the red selected-location pin covered the current city's dot and swallowed its hover/click — pin is now interactive:false, plus a defensive guard in the map click handler for `heat-dot-core` targets.
 - Verified by testing agent (iteration_11): dot click POSTs exact city payload, tooltip works, empty-map tap & drag regressions pass, demo-00 restored to Tokyo.
 
+## 2026-06 — New app icon (heart-handshake logo)
+- User supplied a heart-handshake logo; recolored to the app palette (red #FF4D4D + cyan #00E5FF on black) via image generation — site colors unchanged per user request.
+- Replaced: /icon-512.png, /icon-maskable-512.png (PWA + apple-touch + favicon), added /n2m-mark.png (transparent mark for future use).
+- Rebuilt the signed Android TWA: versionCode 2, same keystore (fingerprint matches assetlinks.json), new icon baked in. New APK 2.4MB at /nice2meechu.apk (+ .aab). Install-pill copy updated to 2.4 MB. Toolchain reinstalled in this pod (openjdk-17, Android SDK at /opt/android-sdk, qemu wrappers for x86_64 aapt2 — including the Gradle-cache maven aapt2).
+- Verified: apksigner cert fingerprint matches, new icon PNGs inside APK, all assets serve 200 in preview.
+- NOTE for iOS: users who already added the PWA to their Home Screen keep the old icon until they re-add it (Apple caches apple-touch-icon at install time). Android: installing the new APK over the old one updates the icon.
+
 ## Next Tasks
-- User to **Deploy**, then check the map: cyan dots mark cities with people; tap a dot to jump there.
+- User to **Deploy** so nice2meechu.com serves the new icon + APK.
 - Verified: GIS button renders on /signin, `/api/auth/google` rejects bogus JWTs (401), seeded session bears authenticated `/api/auth/me`.
 
 ## Prioritized backlog

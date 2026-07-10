@@ -82,3 +82,4 @@ memory/test_credentials.md
 android-sdk/
 # GCS service account key (never commit)
 backend/gcs-credentials.json
+frontend/node_modules/.cache/default-development/0.pack

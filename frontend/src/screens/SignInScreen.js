@@ -199,7 +199,7 @@ export function SignInScreen() {
             data-testid="signin-install-apk"
           >
             <Download size={11} className="text-[#5BE6C8]" />
-            <span>Install Android · 1.6&nbsp;MB</span>
+            <span>Install Android · 2.4&nbsp;MB</span>
           </a>
           <button
             type="button"

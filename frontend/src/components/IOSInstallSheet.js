@@ -97,7 +97,7 @@ export function IOSInstallSheet({ open, onClose }) {
                 n="3"
                 icon={<CheckCircle2 size={18} className="text-[#5BE6C8]" strokeWidth={2.4} />}
                 title="Tap Add"
-                body="The N2M icon will appear on your Home Screen. Open it from there for the full-screen app experience."
+                body="The Nice2Meechu heart icon will appear on your Home Screen. Open it from there for the full-screen app experience."
               />
             </ol>
 
