@@ -124,7 +124,7 @@ class VideoUploadReq(BaseModel):
 
 class SwipeReq(BaseModel):
     target_user_id: str
-    action: str  # "like" or "pass"
+    action: str  # "like", "pass", "block" or "unlike" (undo a prior like)
 
 
 class TranslateReq(BaseModel):
@@ -1313,6 +1313,12 @@ async def _check_mutual_match(target: dict, viewer_id: str) -> bool:
 
 @api.post("/swipe")
 async def swipe(req: SwipeReq, user=Depends(current_user)):
+    # "unlike" = the viewer changed their mind: delete the swipe row entirely
+    # so the video returns to the unswiped state. Consistent with the policy
+    # below, an already-created match is NOT retroactively destroyed.
+    if req.action == "unlike":
+        await db.swipes.delete_one({"user_id": user["id"], "target_user_id": req.target_user_id})
+        return {"match": False}
     # Upsert so users can re-watch a video (via Back / Restart) and change
     # their mind without duplicate-swipe rows piling up. If they previously
     # liked and now pass, the new action wins for any FUTURE feed/match

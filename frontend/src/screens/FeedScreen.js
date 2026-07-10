@@ -158,6 +158,22 @@ export function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
     }
   };
 
+  // Undo a prior like: the viewer taps the "Liked" pill. Deletes the swipe
+  // server-side so the video returns to the unswiped state. No auto-advance.
+  const handleUnlike = async (idx) => {
+    const item = feed[idx];
+    if (!item || item.prior_action !== "like") return;
+    setFeed((f) => f.map((it, i) => (i === idx ? { ...it, prior_action: null } : it)));
+    try {
+      await api.post("/swipe", { target_user_id: item.id, action: "unlike" });
+      track("swipe_unlike");
+      toast("Like removed", { duration: 1200 });
+    } catch {
+      toast.error("Couldn't undo like");
+      setFeed((f) => f.map((it, i) => (i === idx ? { ...it, prior_action: "like" } : it)));
+    }
+  };
+
   const goBack = () => {
     if (activeIdx > 0) scrollToIdx(activeIdx - 1);
   };
@@ -310,6 +326,7 @@ export function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
               onOpenLocation={() => setLocationOpen(true)}
               onLike={() => handleSwipe(i, "like")}
               onPass={() => handleSwipe(i, "pass")}
+              onUnlike={() => handleUnlike(i)}
               muted={muted}
               setMuted={setMutedPersist}
               positionLabel={`${i + 1}/${feed.length}`}

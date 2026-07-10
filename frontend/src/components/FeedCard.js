@@ -8,7 +8,7 @@ import { api, translate } from "../lib/api";
 import { AvatarThumb } from "./AvatarThumb";
 import { track } from "../analytics";
 
-export function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, onOpenLocation, muted, setMuted, positionLabel, isLastInCity, onRestart, paused }) {
+export function FeedCard({ item, isActive, myLang, onLike, onPass, onUnlike, currentCity, onOpenLocation, muted, setMuted, positionLabel, isLastInCity, onRestart, paused }) {
   const vidRef = useRef(null);
   const [translated, setTranslated] = useState("");
   const [showCaption, setShowCaption] = useState(false);
@@ -165,12 +165,16 @@ export function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, 
           it doesn't compete with the codename, but obvious enough that the
           viewer knows their prior decision is on the record. */}
       {item.prior_action === "like" && (
-        <div
-          className="absolute top-[5rem] right-5 flex items-center gap-1 px-2 py-1 rounded-full bg-[#FF4D4D]/20 ring-1 ring-[#FF4D4D]/40 text-[#FF4D4D] text-[10px] uppercase tracking-widest font-bold"
+        <button
+          type="button"
+          onClick={onUnlike}
+          className="absolute top-[5rem] right-5 flex items-center gap-1 px-2 py-1 rounded-full bg-[#FF4D4D]/20 ring-1 ring-[#FF4D4D]/40 text-[#FF4D4D] text-[10px] uppercase tracking-widest font-bold active:scale-95 transition hover:bg-[#FF4D4D]/30"
           data-testid="feed-prior-action-badge"
+          aria-label="Tap to undo your like"
+          title="Tap to undo your like"
         >
-          <Heart size={10} fill="#FF4D4D" /> Liked
-        </div>
+          <Heart size={10} fill="#FF4D4D" /> Liked <X size={10} className="opacity-70" />
+        </button>
       )}
       {item.prior_action === "pass" && (
         <div
@@ -249,6 +253,23 @@ export function FeedCard({ item, isActive, myLang, onLike, onPass, currentCity, 
         >
           <Heart size={24} fill="white" />
         </button>
+      </div>
+    </div>
+  );
+}
+5,255,0.45)" color="rgba(255,255,255,0.45)" />
+          </button>
+        ) : (
+          <button
+            className="btn-icon"
+            style={{ background: "linear-gradient(180deg,#FF6B6B,#FF3D3D)", boxShadow: "0 10px 30px -8px rgba(255,77,77,0.7)" }}
+            onClick={onLike}
+            data-testid="feed-like-button"
+            aria-label="Like this intro"
+          >
+            <Heart size={24} fill="white" />
+          </button>
+        )}
       </div>
     </div>
   );
