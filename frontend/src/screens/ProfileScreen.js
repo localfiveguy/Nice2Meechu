@@ -8,6 +8,7 @@ import { AvatarThumb } from "../components/AvatarThumb";
 import { BottomNav } from "../components/BottomNav";
 import { CityAutocomplete } from "../components/CityAutocomplete";
 import { IOSInstallSheet } from "../components/IOSInstallSheet";
+import { NotifyMeButton } from "../components/NotifyMeButton";
 import { ShareCard } from "../components/ShareCard";
 import { VideoEl } from "../components/VideoEl";
 import { SAFETY_CONTACT_URL } from "../legal/LegalPages";
@@ -130,6 +131,8 @@ export function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, o
                 </div>
                 <div className="text-[10px] uppercase tracking-widest font-bold text-white/45">2&nbsp;taps</div>
               </button>
+
+              <NotifyMeButton user={user} setUser={setUser} variant="row" />
 
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button className="btn-ghost text-sm" onClick={onChangeVideo} data-testid="profile-change-video">

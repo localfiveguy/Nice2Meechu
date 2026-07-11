@@ -7,6 +7,7 @@ import {
 import { api, shareOrCopy } from "../lib/api";
 import { BottomNav } from "../components/BottomNav";
 import { FeedCard } from "../components/FeedCard";
+import { NotifyMeButton } from "../components/NotifyMeButton";
 import { ChangeLocationScreen } from "./ChangeLocationScreen";
 import { track } from "../analytics";
 
@@ -269,6 +270,7 @@ export function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
                   >
                     <MapPin size={16} /> Explore another city
                   </button>
+                  <NotifyMeButton user={user} setUser={setUser} />
                   <button className="text-xs text-white/45 underline" onClick={load} data-testid="feed-refresh">
                     Check again
                   </button>
@@ -319,6 +321,7 @@ export function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
                   >
                     <Share2 size={16} /> Share this app
                   </button>
+                  <NotifyMeButton user={user} setUser={setUser} />
                   <button className="text-xs text-white/45 underline" onClick={load} data-testid="feed-refresh">
                     Check again
                   </button>

@@ -20,13 +20,14 @@ import demos
 import feed
 import media
 import messaging
+import push
 import users
 from admin import inactive_cleanup_loop
 from core import ROOT_DIR, _strip_city_noise, client, db, logger
 
 app = FastAPI()
 
-for module in (auth, users, feed, messaging, media, demos, admin):
+for module in (auth, users, feed, messaging, media, demos, admin, push):
     app.include_router(module.router, prefix="/api")
 
 # Serve sample intro videos through the backend so the production CDN

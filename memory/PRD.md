@@ -1,6 +1,15 @@
 # Nice2Meechu — Product Requirements Doc
 
 
+## Updated (2026-06-21 part 3) — Opt-in Web Push: "someone new joined nearby" ✅
+
+- **Pure browser-native Web Push (VAPID)** — no Firebase/OneSignal. `pywebpush` added to backend; VAPID keys in `/app/backend/.env` (`VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_SUBJECT`). ⚠️ Keep these keys stable — rotating them breaks all existing subscriptions.
+- **Backend `/app/backend/push.py`**: `GET /api/push/public-key` (public), `GET /api/push/status`, `POST /api/push/subscribe` (upserts into `db.push_subscriptions`, unique endpoint index, sets `users.notify_new_nearby=true`), `POST /api/push/unsubscribe`. `notify_new_nearby(new_user)` pushes "👋 Someone new just joined near {City} — come say hi!" to every opted-in user whose home city matches OR whose `nearby_radius_km` covers the new user's home (Haversine). Stale endpoints (404/410) auto-deleted.
+- **Trigger**: `POST /api/users/video` fires the notify task only on the user's FIRST intro video (re-records don't re-notify).
+- **Frontend**: `public/sw.js` (push + notificationclick + pushsubscriptionchange resubscribe; NO fetch/caching interception), registered in `index.js`. `lib/push.js` helpers (enable/disable, iOS install gate via `isIosWebkit && !isStandalonePwa`). `components/NotifyMeButton.js` — pill variant in BOTH feed empty-state branches (`notify-me-btn`), row variant in Profile (`notify-me-toggle`).
+- Verified via curl: subscribe → status → first-video trigger (1 recipient matched) → re-save no-retrigger → unsubscribe clears flag. UI verified via Playwright on both surfaces; actual pushManager.subscribe can't run in headless (Chrome blocks Push API in incognito) — **needs a real-device check** (Android Chrome + iOS installed PWA).
+
+
 ## Updated (2026-06-21 part 2) — Empty-feed widen-radius retention prompt ✅
 
 - **Backend `/api/feed`**: now returns `radius_suggestion: {current_km, next_km, extra_people}` when the next radius tier (10→25→50) would surface ≥1 more person (bounding-box + Haversine ring count, excludes people already in the feed). `null` at 50 km or when nothing extra exists.

@@ -1,5 +1,6 @@
 """User profile: onboarding, community rules, location/home, GDPR endpoints,
 safety (report/block), and intro-video uploads."""
+import asyncio
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -331,8 +332,14 @@ async def upload_video(req: VideoUploadReq, user=Depends(current_user)):
     video_url = req.video_url or ""
     transcript = req.transcript or "Hey, nice to meet you!"
     source_lang = req.source_lang or "en"
+    had_video = bool(user.get("video_url"))
     await db.users.update_one(
         {"id": user["id"]},
         {"$set": {"video_url": video_url, "transcript": transcript, "source_lang": source_lang}},
     )
+    # First-ever intro saved → tell opted-in neighbors someone new is here.
+    if video_url and not had_video:
+        from push import notify_new_nearby
+        fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+        asyncio.create_task(notify_new_nearby(fresh))
     return {"video_url": video_url, "transcript": transcript, "source_lang": source_lang}
