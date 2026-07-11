@@ -8,6 +8,7 @@
 - **Fix (`feed.py _browse_center`)**: when the browse city has local candidates, the nearby center is anchored to the locals' MEDIAN home coords; the stored `city_lat/city_lng` is only trusted if within 100 km of that. On mismatch the feed **self-heals** the user doc (updates `city_lat/city_lng`) and logs a warning — so the production record fixes itself on the user's first feed load after redeploy. Heal is one-shot (verified: second request trusts the corrected coords).
 - Verified in preview: corrupted viewer now gets Marlton locals + Voorhees 3.2 km + Cherry Hill 10.5 km + Erial ~15 km, ZERO Tokyo. Regression 33/33.
 - ⚠️ REQUIRES REDEPLOY to reach production.
+- **Round 2 (deploy 56 didn't clear it)**: production Marlton locals likely have NO stored coords (geolocation denied + typed city), so the locals-median heal silently skipped. `_browse_center` now falls back to a **server-side Photon geocode** of the city label (`_geocode_city`, cached in `db.city_geo`, User-Agent header required, failures not cached). Verified: viewer with Tokyo coords + coordless locals → geocode resolves Marlton NJ (39.9006,-74.9339) → healed → zero Tokyo. Regression 33/33. Needs redeploy (57).
 - **Follow-up (same session)**: feed city pill now shows the full "region, country" line under the town name (`feed-location-detail` testid) so a location mix-up is instantly visible. Verified via screenshot.
 
 

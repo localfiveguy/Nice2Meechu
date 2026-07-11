@@ -231,29 +231,69 @@ def _feed_item(c: dict, user: dict, liked_me_ids: set, prior_action_by_id: dict)
     }
 
 
-def _browse_center(user: dict, locals_: list) -> tuple:
+async def _geocode_city(city_full: str) -> tuple:
+    """Resolve a city label ("Marlton, New Jersey, United States") to coords
+    via Photon, cached forever in db.city_geo. Returns (lat, lng) or (None,
+    None) on failure — failures are NOT cached so transient outages retry."""
+    key = (city_full or "").strip().lower()
+    if not key:
+        return None, None
+    cached = await db.city_geo.find_one({"key": key}, {"_id": 0})
+    if cached:
+        return cached.get("lat"), cached.get("lng")
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=5) as http:
+            r = await http.get(
+                "https://photon.komoot.io/api",
+                params={"q": city_full, "limit": 1},
+                headers={"User-Agent": "nice2meechu/1.0"},
+            )
+            feats = (r.json() or {}).get("features") or []
+            if feats:
+                lng, lat = feats[0]["geometry"]["coordinates"]
+                await db.city_geo.update_one(
+                    {"key": key},
+                    {"$set": {"key": key, "lat": lat, "lng": lng}},
+                    upsert=True,
+                )
+                return lat, lng
+    except Exception:  # noqa: BLE001
+        logger.warning("geocode failed for %r (non-fatal)", city_full)
+    return None, None
+
+
+async def _browse_center(user: dict, locals_: list) -> tuple:
     """Center point for the nearby scan. Stored city coords can go STALE —
     seen in production: a viewer's `city` said Marlton NJ while
     `city_lat/city_lng` were still Tokyo's from an earlier browse, so every
-    Tokyo demo showed up 'nearby · 0 km'. When the city has locals we anchor
-    to THEIR median home coords (by definition where the city is) and only
-    trust the stored value if it agrees within 100 km.
-    Returns (lat, lng, healed) — healed=True means the stored coords were
-    stale and the caller should persist the corrected center."""
+    Tokyo demo showed up 'nearby · 0 km'.
+    The stored value is validated against an independent anchor:
+      1. the median home coords of the city's locals (when any have coords),
+      2. otherwise a server-side geocode of the city label (cached in Mongo).
+    If the stored value is missing or >100 km from the anchor, the anchor
+    wins. Returns (lat, lng, healed) — healed=True tells the caller to
+    persist the corrected center back onto the user doc."""
     stored_lat = user.get("city_lat") if user.get("city_lat") is not None else user.get("lat")
     stored_lng = user.get("city_lng") if user.get("city_lng") is not None else user.get("lng")
+
     pts = [
         (c["home_lat"], c["home_lng"])
         for c in locals_
         if c.get("home_lat") is not None and c.get("home_lng") is not None
     ]
-    if not pts:
-        return stored_lat, stored_lng, False
-    lats = sorted(p[0] for p in pts)
-    lngs = sorted(p[1] for p in pts)
-    median = (lats[len(lats) // 2], lngs[len(lngs) // 2])
-    if stored_lat is None or haversine_km(stored_lat, stored_lng, median[0], median[1]) > 100:
-        return median[0], median[1], True
+    if pts:
+        lats = sorted(p[0] for p in pts)
+        lngs = sorted(p[1] for p in pts)
+        anchor = (lats[len(lats) // 2], lngs[len(lngs) // 2])
+    else:
+        anchor = await _geocode_city(user.get("city") or "")
+        if anchor[0] is None:
+            # Can't independently verify — best effort with the stored value.
+            return stored_lat, stored_lng, False
+
+    if stored_lat is None or haversine_km(stored_lat, stored_lng, anchor[0], anchor[1]) > 100:
+        return anchor[0], anchor[1], True
     return stored_lat, stored_lng, False
 
 
@@ -276,7 +316,7 @@ async def feed(user=Depends(current_user)):
     radius_suggestion = None
     if viewer_city:
         candidates = await _local_candidates(base_filter, viewer_city)
-        center_lat, center_lng, healed = _browse_center(user, candidates)
+        center_lat, center_lng, healed = await _browse_center(user, candidates)
         if healed:
             # Self-heal the stale stored coords so map/radius/popular-cities
             # all agree with the actual browse city from now on.
