@@ -1,6 +1,15 @@
 # Nice2Meechu — Product Requirements Doc
 
 
+## Updated (2026-06-21 part 5) — Match & message push notifications ✅
+
+- New `notify_user(user_id, body, url, tag)` helper in `push.py` — single-recipient push gated on the same `notify_new_nearby` opt-in; per-thread `tag` (supported in sw.js) collapses same-conversation notifications instead of stacking.
+- **Match**: `feed.py swipe()` fires "💌 It's a match with {codename}! Say hi!" (tag `match-<id>`) to the other side when a match is created. No-op for demos/opted-out.
+- **Message**: `messaging.py send_message()` fires "💬 New message from {codename}" (tag `chat-<match_id>`) to human recipients only (demo auto-replies never push — the human is actively in the chat).
+- Profile toggle + enable toast copy updated: "Notify me: new people, matches & messages".
+- Verified via curl: match creation → `match-` push logged; message → `chat-` push logged; opted-out recipient → correctly skipped. Regression suite 33/33. Real delivery still needs the real-device check noted in part 3.
+
+
 ## Updated (2026-06-21 part 4) — Code review fixes applied ♻️
 
 - **Backend complexity refactors** (all verified by the 33-test regression suite, 33/33 pass):

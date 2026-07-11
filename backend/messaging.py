@@ -11,6 +11,7 @@ from pymongo import UpdateOne
 from auth import current_user
 from core import EMERGENT_LLM_KEY, LANG_NAMES, _rng, db, logger
 from models import MessageReq, TranslateReq
+from push import notify_user
 
 router = APIRouter()
 
@@ -124,6 +125,13 @@ async def send_message(req: MessageReq, user=Depends(current_user)):
     # Quick demo auto-reply so the chat doesn't feel empty in a demo match.
     other_id = [uid for uid in match["user_ids"] if uid != user["id"]][0]
     other = await db.users.find_one({"id": other_id}, {"_id": 0})
+    if other and not other.get("is_demo"):
+        # Human recipient → push (opt-in; collapses per-chat via tag).
+        asyncio.create_task(notify_user(
+            other_id,
+            f"💬 New message from {user.get('codename') or 'your match'}",
+            tag=f"chat-{req.match_id}",
+        ))
     if other and other.get("is_demo"):
         replies = [
             "haha love that 😄",

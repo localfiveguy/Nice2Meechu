@@ -18,6 +18,9 @@ self.addEventListener("push", (event) => {
     badge: "/icon-512.png",
     data: { url: payload.url || "/" },
   };
+  // Per-thread tag (e.g. chat-<match_id>) collapses notifications from the
+  // same conversation instead of stacking one per message.
+  if (payload.tag) options.tag = payload.tag;
   event.waitUntil(self.registration.showNotification(title, options));
 });
 

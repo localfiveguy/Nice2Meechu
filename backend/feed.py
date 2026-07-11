@@ -1,4 +1,5 @@
 """Feed, swiping/matching, popular cities."""
+import asyncio
 import re
 import uuid
 from datetime import datetime, timezone
@@ -10,6 +11,7 @@ from auth import current_user
 from core import ALLOWED_NEARBY_RADII, NEARBY_RADIUS_KM, _rng, db, haversine_km
 from demos import _is_demo_user, seed_demo_users
 from models import SwipeReq
+from push import notify_user
 
 router = APIRouter()
 
@@ -358,6 +360,12 @@ async def swipe(req: SwipeReq, user=Depends(current_user)):
             "at": datetime.now(timezone.utc).isoformat(),
         }
     )
+    # Tell the other side they just got a match (opt-in push; no-op for demos).
+    asyncio.create_task(notify_user(
+        req.target_user_id,
+        f"💌 It's a match with {user.get('codename') or 'someone'}! Say hi!",
+        tag=f"match-{match_id}",
+    ))
     return {
         "match": True,
         "match_id": match_id,

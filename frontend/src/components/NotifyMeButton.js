@@ -23,7 +23,7 @@ export function NotifyMeButton({ user, setUser, variant = "pill" }) {
         await enablePush();
         setUser?.({ ...user, notify_new_nearby: true });
         track("push_enabled");
-        toast.success("You'll be notified when someone new joins nearby");
+        toast.success("You'll get notified about new people, matches & messages");
       }
     } catch (e) {
       if (e?.message === "needs-install") {
@@ -51,7 +51,7 @@ export function NotifyMeButton({ user, setUser, variant = "pill" }) {
       >
         <div className="flex items-center gap-2">
           {enabled ? <Bell size={16} className="text-[#5BE6C8]" /> : <BellOff size={16} className="text-white/60" />}
-          <div className="text-sm font-semibold text-white text-left">Notify when someone joins nearby</div>
+          <div className="text-sm font-semibold text-white text-left">Notify me: new people, matches & messages</div>
         </div>
         <div className={`text-[10px] uppercase tracking-widest font-bold ${enabled ? "text-[#5BE6C8]" : "text-white/45"}`}>
           {busy ? "…" : enabled ? "On" : "Off"}

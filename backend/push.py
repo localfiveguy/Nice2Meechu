@@ -139,6 +139,23 @@ async def _deliver_to_subscriptions(recipient_ids: list, payload_json: str) -> i
     return sent
 
 
+async def notify_user(user_id: str, body: str, url: str = "/", tag: Optional[str] = None) -> int:
+    """Push a single-line notification to one opted-in user. Used for match
+    and new-message events. `tag` lets same-thread notifications collapse
+    instead of stacking. No-op for demos / opted-out / unconfigured VAPID."""
+    if not (VAPID_PRIVATE_KEY and VAPID_PUBLIC_KEY):
+        return 0
+    u = await db.users.find_one({"id": user_id}, {"_id": 0, "notify_new_nearby": 1})
+    if not u or not u.get("notify_new_nearby"):
+        return 0
+    payload = {"title": "Nice2Meechu", "body": body, "url": url}
+    if tag:
+        payload["tag"] = tag
+    sent = await _deliver_to_subscriptions([user_id], json.dumps(payload))
+    logger.info("notify_user: %d push(es) to %s (%s)", sent, user_id, tag or "untagged")
+    return sent
+
+
 async def notify_new_nearby(new_user: dict) -> dict:
     """Push '👋 Someone new just joined near <City>' to every opted-in user
     whose radius covers the new user's home. Fire-and-forget from users.py."""
