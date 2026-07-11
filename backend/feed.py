@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends
 
 from auth import current_user
-from core import ALLOWED_NEARBY_RADII, NEARBY_RADIUS_KM, _rng, db, haversine_km
+from core import ALLOWED_NEARBY_RADII, NEARBY_RADIUS_KM, _rng, db, haversine_km, logger
 from demos import _is_demo_user, seed_demo_users
 from models import SwipeReq
 from push import notify_user
@@ -231,6 +231,32 @@ def _feed_item(c: dict, user: dict, liked_me_ids: set, prior_action_by_id: dict)
     }
 
 
+def _browse_center(user: dict, locals_: list) -> tuple:
+    """Center point for the nearby scan. Stored city coords can go STALE —
+    seen in production: a viewer's `city` said Marlton NJ while
+    `city_lat/city_lng` were still Tokyo's from an earlier browse, so every
+    Tokyo demo showed up 'nearby · 0 km'. When the city has locals we anchor
+    to THEIR median home coords (by definition where the city is) and only
+    trust the stored value if it agrees within 100 km.
+    Returns (lat, lng, healed) — healed=True means the stored coords were
+    stale and the caller should persist the corrected center."""
+    stored_lat = user.get("city_lat") if user.get("city_lat") is not None else user.get("lat")
+    stored_lng = user.get("city_lng") if user.get("city_lng") is not None else user.get("lng")
+    pts = [
+        (c["home_lat"], c["home_lng"])
+        for c in locals_
+        if c.get("home_lat") is not None and c.get("home_lng") is not None
+    ]
+    if not pts:
+        return stored_lat, stored_lng, False
+    lats = sorted(p[0] for p in pts)
+    lngs = sorted(p[1] for p in pts)
+    median = (lats[len(lats) // 2], lngs[len(lngs) // 2])
+    if stored_lat is None or haversine_km(stored_lat, stored_lng, median[0], median[1]) > 100:
+        return median[0], median[1], True
+    return stored_lat, stored_lng, False
+
+
 @router.get("/feed")
 async def feed(user=Depends(current_user)):
     """STRICT hyperlocal feed: locals (chronological) + nearby towns (by
@@ -250,8 +276,18 @@ async def feed(user=Depends(current_user)):
     radius_suggestion = None
     if viewer_city:
         candidates = await _local_candidates(base_filter, viewer_city)
-        center_lat = user.get("city_lat") if user.get("city_lat") is not None else user.get("lat")
-        center_lng = user.get("city_lng") if user.get("city_lng") is not None else user.get("lng")
+        center_lat, center_lng, healed = _browse_center(user, candidates)
+        if healed:
+            # Self-heal the stale stored coords so map/radius/popular-cities
+            # all agree with the actual browse city from now on.
+            await db.users.update_one(
+                {"id": user["id"]},
+                {"$set": {"city_lat": center_lat, "city_lng": center_lng}},
+            )
+            logger.warning(
+                "feed: healed stale city coords for user %s (city=%s → %.4f,%.4f)",
+                user["id"], viewer_city, center_lat, center_lng,
+            )
         if center_lat is not None and center_lng is not None:
             radius_km = user.get("nearby_radius_km") or NEARBY_RADIUS_KM
             nearby = await _nearby_candidates(

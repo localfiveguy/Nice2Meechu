@@ -1,6 +1,15 @@
 # Nice2Meechu — Product Requirements Doc
 
 
+## Updated (2026-06-21 part 7) — PRODUCTION BUG FIX: Tokyo demos in the Marlton feed 🐛✅
+
+- **Report**: user browsing Marlton NJ saw 12 Tokyo AI demos labelled "FROM TOKYO · 0 KM"; Marlton locals appeared but were auto-skipped (already swiped → PASSED/LIKED chips; feed resumes at first unswiped card = Yui/Tokyo).
+- **Root cause**: the viewer's production record had `city="Marlton"` but `city_lat/city_lng` stuck on Tokyo's EXACT center (35.6762, 139.6503) from an earlier Tokyo browse. The nearby-towns Haversine scan ran around Tokyo → all Tokyo demos (whose home coords are exactly that center) matched at 0.0 km. Reproduced 1:1 in preview.
+- **Fix (`feed.py _browse_center`)**: when the browse city has local candidates, the nearby center is anchored to the locals' MEDIAN home coords; the stored `city_lat/city_lng` is only trusted if within 100 km of that. On mismatch the feed **self-heals** the user doc (updates `city_lat/city_lng`) and logs a warning — so the production record fixes itself on the user's first feed load after redeploy. Heal is one-shot (verified: second request trusts the corrected coords).
+- Verified in preview: corrupted viewer now gets Marlton locals + Voorhees 3.2 km + Cherry Hill 10.5 km + Erial ~15 km, ZERO Tokyo. Regression 33/33.
+- ⚠️ REQUIRES REDEPLOY to reach production.
+
+
 ## Updated (2026-06-21 part 6) — Push deep-linking into chats ✅
 
 - Match & message pushes now carry `url: /?chat=<match_id>`. `sw.js` notificationclick navigates the focused tab (or opens a new one) to that URL.
