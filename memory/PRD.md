@@ -1,6 +1,23 @@
 # Nice2Meechu — Product Requirements Doc
 
 
+## Updated (2026-06-21) — Backend modularization COMPLETE ♻️✅
+
+- Split the 2,125-line monolithic `server.py` into modular FastAPI routers under `/app/backend/`:
+  - `core.py` — config, Mongo client, GCS lazy init, shared helpers (haversine, codename gen, city-noise stripping, LANG_NAMES, OG cache)
+  - `models.py` — all Pydantic request models
+  - `auth.py` — Google sign-in (popup + redirect), session exchange, `current_user` dependency, logout
+  - `users.py` — onboarding, community rules, location/home, nearby-radius, GDPR export/delete, report/block, GCS video upload
+  - `feed.py` — feed (Haversine nearby), swipe (like/unlike/pass/block), matches, cities/popular
+  - `messaging.py` — chat messages w/ cached AI translation, /translate
+  - `media.py` — GPT-4o face/age check, OG share-card PNG rendering, handoff.md download
+  - `demos.py` — demo-user seeding, /demos/sample, /samples
+  - `admin.py` — funnel dashboard, inactive-video cleanup + daily background loop
+- New `server.py` is a ~150-line thin entrypoint: includes all routers with `/api` prefix, static mounts (videos, user-videos, share-cards), CORS, and startup migrations (legacy demo retirement, city-noise cleanup, home-city backfill) + cleanup scheduler. Supervisor entrypoint unchanged (`uvicorn server:app`).
+- Route parity verified via openapi.json: 32/32 paths. Full regression: **33/33 backend tests pass** (`/app/backend/tests/test_refactor_regression.py`, report `/app/test_reports/iteration_20.json`). Zero behavior changes.
+- User decision: **NO Sign in with Apple** — permanently off the roadmap.
+
+
 ## Updated (2026-06-20) — Android APK build (TWA) ✅
 
 - **Built a signed Android APK** (`com.nice2meechu.app` v1.0.0, ~1.6 MB) and matching `.aab` (~1.8 MB) using **Bubblewrap / Trusted Web Activity** wrapping `https://nice2meechu.com`. TWA lets the system Chrome run the live site full-screen, so Google Sign-in, camera, mic and geolocation work natively without any code changes.
