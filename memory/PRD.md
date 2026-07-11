@@ -216,11 +216,12 @@ A hyperlocal, video-first social app where users connect by watching short video
 - Verified: iteration_16 — backend 9/9 pytest (incl. the exact John scenario), frontend 100%. Test suite: /app/backend/tests/test_home_city.py.
 - John's one-time fix after deploy: feed → tap city pill → search "Erial" → tick "Set as my home city" → pick it.
 
-## Planned follow-up (P1)
-- "Nearby towns" feed expansion: viewers also see homes within X miles (Erial↔Marlton ~10mi). User chose to plan this next.
+## 2026-06 — "Nearby towns" feed expansion
+- Feed now also shows people whose HOME is within 25 km (`NEARBY_RADIUS_KM`, server.py) of the browsing city's center. Locals first (chronological), nearby appended by distance. Feed items carry `home_city` + `near_km`; FeedCard shows a "from <Town> · N km" chip (feed-nearby-badge) when home differs from the browsing city. city_stats.total includes nearby.
+- Verified: iteration_17 — 100% backend (ordering, 25 km boundary, Tokyo regression) + frontend chips ("FROM ERIAL · 15 KM" etc.). Test suite: /app/backend/tests/test_nearby_feed.py. Preview fixture user kept: test-john-erial (home Erial, NJ).
 
 ## Next Tasks
-- User to **Deploy**, then have John set his home to Erial (steps above).
+- User to **Deploy** — after that John (Erial) and Amber (Marlton/Voorhees) will see each other. John should still set his home to Erial once (city pill → search Erial → tick "Set as my home city").
 - Verified: GIS button renders on /signin, `/api/auth/google` rejects bogus JWTs (401), seeded session bears authenticated `/api/auth/me`.
 
 ## Prioritized backlog
