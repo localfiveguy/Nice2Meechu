@@ -148,7 +148,9 @@ export function FeedCard({ item, isActive, myLang, onLike, onPass, onUnlike, cur
         </motion.div>
       )}
 
-      {/* distance / location pill — tap to change feed location */}
+      {/* distance / location pill — tap to change feed location. Shows the
+          full "region, country" under the town name so any location mix-up
+          is instantly visible instead of silent. */}
       <button
         type="button"
         onClick={onOpenLocation}
@@ -156,9 +158,19 @@ export function FeedCard({ item, isActive, myLang, onLike, onPass, onUnlike, cur
         data-testid="feed-distance-badge"
         aria-label="Change feed location"
       >
-        <MapPin size={12} className="text-[#FF4D4D]" />
-        <span className="uppercase tracking-widest text-[10px] max-w-[140px] truncate">
-          {currentCity ? currentCity.split(",")[0] : "set location"}
+        <MapPin size={12} className="text-[#FF4D4D] shrink-0" />
+        <span className="flex flex-col items-start leading-tight max-w-[150px]">
+          <span className="uppercase tracking-widest text-[10px] truncate w-full text-left">
+            {currentCity ? currentCity.split(",")[0] : "set location"}
+          </span>
+          {currentCity && currentCity.includes(",") && (
+            <span
+              className="text-[8px] font-semibold text-white/55 tracking-wide truncate w-full text-left"
+              data-testid="feed-location-detail"
+            >
+              {currentCity.split(",").slice(1).join(",").trim()}
+            </span>
+          )}
         </span>
       </button>
 

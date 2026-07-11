@@ -8,6 +8,7 @@
 - **Fix (`feed.py _browse_center`)**: when the browse city has local candidates, the nearby center is anchored to the locals' MEDIAN home coords; the stored `city_lat/city_lng` is only trusted if within 100 km of that. On mismatch the feed **self-heals** the user doc (updates `city_lat/city_lng`) and logs a warning — so the production record fixes itself on the user's first feed load after redeploy. Heal is one-shot (verified: second request trusts the corrected coords).
 - Verified in preview: corrupted viewer now gets Marlton locals + Voorhees 3.2 km + Cherry Hill 10.5 km + Erial ~15 km, ZERO Tokyo. Regression 33/33.
 - ⚠️ REQUIRES REDEPLOY to reach production.
+- **Follow-up (same session)**: feed city pill now shows the full "region, country" line under the town name (`feed-location-detail` testid) so a location mix-up is instantly visible. Verified via screenshot.
 
 
 ## Updated (2026-06-21 part 6) — Push deep-linking into chats ✅
