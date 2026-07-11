@@ -220,8 +220,13 @@ A hyperlocal, video-first social app where users connect by watching short video
 - Feed now also shows people whose HOME is within 25 km (`NEARBY_RADIUS_KM`, server.py) of the browsing city's center. Locals first (chronological), nearby appended by distance. Feed items carry `home_city` + `near_km`; FeedCard shows a "from <Town> · N km" chip (feed-nearby-badge) when home differs from the browsing city. city_stats.total includes nearby.
 - Verified: iteration_17 — 100% backend (ordering, 25 km boundary, Tokyo regression) + frontend chips ("FROM ERIAL · 15 KM" etc.). Test suite: /app/backend/tests/test_nearby_feed.py. Preview fixture user kept: test-john-erial (home Erial, NJ).
 
+## 2026-06 — Adjustable nearby radius (10/25/50 km)
+- `POST /api/users/nearby-radius` (400 unless 10/25/50) → `users.nearby_radius_km`; feed nearby block uses it (default 25).
+- Change Location screen: "Nearby radius" row with 10/25/50 pill toggles (cyan active), instant persist + toast; closing after a radius-only change reloads the feed (handleClose → onChanged with radiusDirty).
+- Verified: iteration_18 (backend 8/8; caught the X-button wiring bug) + iteration_19 (fix confirmed, 100%: 10 km → 1 Marlton card, 50 km → 3 incl. Erial, no-change close = no reload). Suite: /app/backend/tests/test_nearby_radius.py.
+
 ## Next Tasks
-- User to **Deploy** — after that John (Erial) and Amber (Marlton/Voorhees) will see each other. John should still set his home to Erial once (city pill → search Erial → tick "Set as my home city").
+- User to **Deploy** — radius pills live on the location screen.
 - Verified: GIS button renders on /signin, `/api/auth/google` rejects bogus JWTs (401), seeded session bears authenticated `/api/auth/me`.
 
 ## Prioritized backlog
