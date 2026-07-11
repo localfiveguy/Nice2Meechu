@@ -1,0 +1,22 @@
+{
+  "summary": "Verified HOME vs BROWSING city split (Nice2Meechu fix). Backend: 9/9 pytest passed (backfill migration, set_home flag semantics a/b/c, feed uses home_city, popular counts by residents, onboarding sets home, feed regression). Frontend: change-location-set-home checkbox row present with home label '🏠 Current home: Tokyo'; unchecked Paris pick showed 'Now exploring Paris, AR, USA ✨' and DB confirmed home_city stayed Tokyo; checked Tokyo pick showed 'Home updated — your video now appears in Tokyo 🏠' and restored home. Cleanup verified: demo-00 & demo-02 both city=Tokyo home_city=Tokyo, no throwaway users.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_home_city.py",
+    "/app/test_reports/pytest/home_city.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py update_location(): if req.set_home is True but req.city is empty/None, it silently no-ops home update — matches spec (verified in test_c). Good.",
+    "server.py is 2071 lines — exceeds 700-line guideline; consider splitting into routers/modules for maintainability.",
+    "Migration _migrate_home_city correctly skips users without a city (3 incomplete stub users legitimately have no home_city — non-issue)."
+  ],
+  "updated_files": ["/app/backend/tests/test_home_city.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Bearer sttest_SUQD-bH3lyJJOBLw-llOftxhxupA_9nU (demo-00, Tokyo resident)",
+  "seed_data_creation": "Test creates one throwaway onboarding user + user_sessions row per run, deleted in finally block.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_home_city.py is idempotent & self-cleaning (snapshots demo-00/demo-02 at module start, restores at end). Uses PyMongo directly against MONGO_URL/DB_NAME to simulate the John scenario (browsing-only vs home city mongo edits). Feed API returns key 'feed' (not 'items'); popular cities uses 'people' field and requires auth."
+}

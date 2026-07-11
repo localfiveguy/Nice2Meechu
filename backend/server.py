@@ -146,6 +146,9 @@ class LocationUpdate(BaseModel):
     lat: float
     lng: float
     city: Optional[str] = None
+    # When true, also update the user's HOME city — where their video appears
+    # to others. Otherwise only the browsing city changes (what they watch).
+    set_home: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -459,6 +462,9 @@ async def onboarding(req: OnboardingReq, user=Depends(current_user)):
         "handle": handle,
         "first_name": first_name,
         "city": req.city.strip()[:120],
+        # Onboarding city is BOTH the browsing city and the home city (where
+        # this user's video appears). Later "explore" changes only browsing.
+        "home_city": req.city.strip()[:120],
         "age": req.age,
         "vibes": (req.vibes or [])[:5],
         "language": req.language or "en",
@@ -473,6 +479,11 @@ async def onboarding(req: OnboardingReq, user=Depends(current_user)):
         # Always keep the city's canonical coordinates separately
         update["city_lat"] = req.city_lat
         update["city_lng"] = req.city_lng
+        update["home_lat"] = req.city_lat
+        update["home_lng"] = req.city_lng
+    else:
+        update["home_lat"] = user.get("lat")
+        update["home_lng"] = user.get("lng")
     await db.users.update_one({"id": user["id"]}, {"$set": update})
     user.update(update)
     for h in {user.get("handle"), update["handle"]}:
@@ -505,6 +516,11 @@ async def update_location(req: LocationUpdate, user=Depends(current_user)):
         update["city"] = req.city.strip()[:120]
         update["city_lat"] = req.lat
         update["city_lng"] = req.lng
+        if req.set_home:
+            # Home city = where this user's video appears in others' feeds.
+            update["home_city"] = update["city"]
+            update["home_lat"] = req.lat
+            update["home_lng"] = req.lng
     await db.users.update_one({"id": user["id"]}, {"$set": update})
     return {"ok": True}
 
@@ -571,20 +587,19 @@ async def cities_popular(user=Depends(current_user)):
     pipeline = [
         {"$match": {
             "id": {"$ne": user["id"]},
-            "city": {"$nin": [None, ""]},
+            # Count people by HOME city — where their video appears — so the
+            # map dots / popular counts reflect residents, not browsers.
+            "home_city": {"$nin": [None, ""]},
             "video_url": {"$ne": None, "$exists": True},
         }},
         {"$group": {
-            "_id": {"$toLower": "$city"},
-            "raw_city": {"$first": "$city"},
+            "_id": {"$toLower": "$home_city"},
+            "raw_city": {"$first": "$home_city"},
             "count": {"$sum": 1},
-            # Coalesce: prefer the explicit city center, fall back to the
-            # user's own geolocation when the city center wasn't recorded
-            # (older signups, manual onboarding, etc.). Without this fallback
-            # real cities like "Voorhees, NJ, USA" — where users only have
-            # `lat`/`lng` but no `city_lat`/`city_lng` — were silently dropped.
-            "lat": {"$first": {"$ifNull": ["$city_lat", "$lat"]}},
-            "lng": {"$first": {"$ifNull": ["$city_lng", "$lng"]}},
+            # Coalesce: prefer the home coords, then the explicit city center,
+            # then the user's own geolocation.
+            "lat": {"$first": {"$ifNull": ["$home_lat", {"$ifNull": ["$city_lat", "$lat"]}]}},
+            "lng": {"$first": {"$ifNull": ["$home_lng", {"$ifNull": ["$city_lng", "$lng"]}]}},
         }},
     ]
     rows = await db.users.aggregate(pipeline).to_list(2000)
@@ -1187,6 +1202,9 @@ async def seed_demo_users():
                 "handle": _demo_handle_for(p),
                 "codename": _demo_codename_for(p),
                 "city": p["city"],
+                "home_city": p["city"],
+                "home_lat": p["lat"],
+                "home_lng": p["lng"],
                 "city_lat": p["lat"],
                 "city_lng": p["lng"],
                 "age": p.get("age", 26),
@@ -1236,7 +1254,9 @@ async def feed(user=Depends(current_user)):
     if viewer_city:
         city_filter = {
             **base_filter,
-            "city": {"$regex": f"^{re.escape(viewer_city)}", "$options": "i"},
+            # Match on the TARGET's HOME city — where they live — not their
+            # browsing city. Exploring another city never relocates your video.
+            "home_city": {"$regex": f"^{re.escape(viewer_city)}", "$options": "i"},
         }
         # Chronological (oldest-first) within the chosen city, so every viewer
         # sees the same "first video made here" regardless of when they joined.
@@ -1309,7 +1329,7 @@ async def feed(user=Depends(current_user)):
     if viewer_city:
         city_total = await db.users.count_documents({
             "id": {"$ne": user["id"]},
-            "city": {"$regex": f"^{re.escape(viewer_city)}", "$options": "i"},
+            "home_city": {"$regex": f"^{re.escape(viewer_city)}", "$options": "i"},
             "video_url": {"$ne": None, "$exists": True},
         })
         city_stats = {"total": city_total, "remaining": len(out)}
@@ -2028,3 +2048,23 @@ async def _stop_inactive_cleanup_scheduler():
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
+
+
+@app.on_event("startup")
+async def _migrate_home_city():
+    """Backfill for the home-vs-browsing city split: any user without a
+    home_city inherits their current city (and its best-known coordinates).
+    Idempotent — only touches docs where home_city doesn't exist yet."""
+    try:
+        res = await db.users.update_many(
+            {"home_city": {"$exists": False}},
+            [{"$set": {
+                "home_city": "$city",
+                "home_lat": {"$ifNull": ["$city_lat", "$lat"]},
+                "home_lng": {"$ifNull": ["$city_lng", "$lng"]},
+            }}],
+        )
+        if res.modified_count:
+            logger.info("Home-city migration: backfilled %d users", res.modified_count)
+    except Exception:  # noqa: BLE001
+        logger.exception("Home-city migration failed (non-fatal)")

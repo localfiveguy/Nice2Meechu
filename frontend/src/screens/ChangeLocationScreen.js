@@ -19,6 +19,9 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
     label: user.city || "Drop a pin",
   });
   const [busy, setBusy] = useState(null); // "geo" | "save" | "tap" | null
+  // When ticked, the next pick ALSO moves the user's HOME city — where their
+  // video appears to others. Unticked (default) = just browse another city.
+  const [setAsHome, setSetAsHome] = useState(false);
   const debounceRef = useRef(null);
   const mapDivRef = useRef(null);
   const mapRef = useRef(null);
@@ -147,10 +150,15 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
   const persist = async (lat, lng, cityLabel) => {
     setBusy("save");
     try {
-      await api.post("/users/location", { lat, lng, city: cityLabel || null });
+      await api.post("/users/location", { lat, lng, city: cityLabel || null, set_home: setAsHome });
       const { data } = await api.get("/auth/me");
-      track("location_changed", { city: cityLabel || "(coords only)" });
-      toast.success(`Now exploring ${cityLabel || "nearby"} ✨`);
+      track("location_changed", { city: cityLabel || "(coords only)", set_home: setAsHome });
+      const place = (cityLabel || "this area").split(",")[0];
+      toast.success(
+        setAsHome && cityLabel
+          ? `Home updated — your video now appears in ${place} 🏠`
+          : `Now exploring ${cityLabel || "nearby"} ✨`
+      );
       onChanged(data.user);
     } catch (e) {
       toast.error("Couldn't update location");
@@ -405,6 +413,27 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
             </div>
           )}
         </div>
+
+        {/* Home vs browsing: picking a place normally only changes what YOU
+            watch. Ticking this also moves where YOUR video appears. */}
+        <label
+          className={`flex items-start gap-2.5 rounded-2xl px-3 py-2.5 border cursor-pointer select-none transition ${setAsHome ? "bg-[#FF4D4D]/10 border-[#FF4D4D]/40" : "bg-white/5 border-white/10"}`}
+          data-testid="change-location-set-home"
+        >
+          <input
+            type="checkbox"
+            checked={setAsHome}
+            onChange={(e) => setSetAsHome(e.target.checked)}
+            className="mt-0.5 accent-[#FF4D4D] w-4 h-4 shrink-0"
+            data-testid="change-location-set-home-checkbox"
+          />
+          <span className="text-xs leading-snug text-white/80">
+            <span className="font-bold text-white">Set as my home city</span> — where your video appears to others. Off = just browse.
+            <span className="block text-white/45 mt-0.5" data-testid="change-location-home-label">
+              🏠 Current home: {(user.home_city || user.city || "not set").split(",")[0]}
+            </span>
+          </span>
+        </label>
 
         {/* Use my current location */}
         <button
