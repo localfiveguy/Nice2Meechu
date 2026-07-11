@@ -16,6 +16,7 @@ export function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
   // pass/like state; on initial mount we auto-scroll to the first unswiped.
   const [feed, setFeed] = useState([]);
   const [cityStats, setCityStats] = useState(null);
+  const [radiusSuggestion, setRadiusSuggestion] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeIdx, setActiveIdx] = useState(0);
   const [locationOpen, setLocationOpen] = useState(false);
@@ -64,6 +65,7 @@ export function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
       const { data } = await api.get("/feed");
       setFeed(data.feed);
       setCityStats(data.city_stats || null);
+      setRadiusSuggestion(data.radius_suggestion || null);
       if (typeof data.referral_count === "number") setReferralCount(data.referral_count);
       // Pick the initial index in this priority order:
       //   1. Saved per-city position (where the viewer left off last time)
@@ -103,6 +105,21 @@ export function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
     setLocationOpen(false);
     if (updatedUser) setUser?.(updatedUser);
     load();
+  };
+
+  // One-tap radius bump (10→25→50 km) from the retention prompt.
+  const widenRadius = async () => {
+    if (!radiusSuggestion) return;
+    const { next_km, current_km } = radiusSuggestion;
+    try {
+      await api.post("/users/nearby-radius", { radius_km: next_km });
+      track("radius_widened", { from_km: current_km, to_km: next_km });
+      setUser?.({ ...user, nearby_radius_km: next_km });
+      toast.success(`Now showing people within ${next_km} km`);
+      load();
+    } catch {
+      toast.error("Couldn't widen radius");
+    }
   };
 
   // intersection observer to detect which video is in view
@@ -236,8 +253,17 @@ export function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
                     You've seen all {cityStats.total} {cityStats.total === 1 ? "person" : "people"} here for now.
                     New intros will appear as people join. Try another city while you wait.
                   </p>
+                  {radiusSuggestion && (
+                    <button
+                      className="btn-primary mt-2 flex items-center gap-2"
+                      onClick={widenRadius}
+                      data-testid="feed-widen-radius-btn"
+                    >
+                      +{radiusSuggestion.extra_people} more within {radiusSuggestion.next_km} km — widen?
+                    </button>
+                  )}
                   <button
-                    className="btn-primary mt-2 flex items-center gap-2"
+                    className={`${radiusSuggestion ? "btn-ghost" : "btn-primary mt-2"} flex items-center gap-2`}
                     onClick={() => setLocationOpen(true)}
                     data-testid="feed-change-location"
                   >
@@ -259,8 +285,17 @@ export function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
                     Congrats — your intro will be the very first face people see when they explore this city.
                     Share Nice2Meechu with friends nearby, or hop to a busier city while you wait.
                   </p>
+                  {radiusSuggestion && (
+                    <button
+                      className="btn-primary mt-2 flex items-center gap-2"
+                      onClick={widenRadius}
+                      data-testid="feed-widen-radius-btn"
+                    >
+                      {radiusSuggestion.extra_people} {radiusSuggestion.extra_people === 1 ? "person" : "people"} within {radiusSuggestion.next_km} km — widen?
+                    </button>
+                  )}
                   <button
-                    className="btn-primary mt-2 flex items-center gap-2"
+                    className={`${radiusSuggestion ? "btn-ghost" : "btn-primary mt-2"} flex items-center gap-2`}
                     onClick={() => setLocationOpen(true)}
                     data-testid="feed-change-location"
                   >
@@ -371,6 +406,27 @@ export function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
             data-testid="feed-pause-button"
           >
             {paused ? <Play size={18} fill="currentColor" /> : <Pause size={18} fill="currentColor" />}
+          </button>
+        </div>
+      )}
+
+      {/* Widen-radius retention prompt — floats above the bottom nav once the
+          viewer reaches the LAST video and the next radius tier has more
+          people. One tap bumps 10→25→50 km and reloads the feed. */}
+      {!loading && feed.length > 0 && activeIdx === feed.length - 1 && radiusSuggestion && (
+        <div
+          className="absolute top-24 left-1/2 -translate-x-1/2 z-30 px-4 w-full flex justify-center"
+          data-testid="feed-widen-radius-banner"
+        >
+          <button
+            onClick={widenRadius}
+            className="glass-dark border border-white/15 px-4 py-2.5 rounded-full text-xs font-bold text-white flex items-center gap-2 shadow-xl transition hover:bg-white/15 active:scale-95"
+            data-testid="feed-widen-radius-banner-btn"
+          >
+            <MapPin size={13} className="text-[#FF4D4D] shrink-0" />
+            <span>
+              Only {feed.length} within {radiusSuggestion.current_km} km — widen to {radiusSuggestion.next_km} km? (+{radiusSuggestion.extra_people})
+            </span>
           </button>
         </div>
       )}

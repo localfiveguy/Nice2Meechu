@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 
 from auth import current_user
-from core import NEARBY_RADIUS_KM, _rng, db, haversine_km
+from core import ALLOWED_NEARBY_RADII, NEARBY_RADIUS_KM, _rng, db, haversine_km
 from demos import _is_demo_user, seed_demo_users
 from models import SwipeReq
 
@@ -139,6 +139,7 @@ async def feed(user=Depends(current_user)):
     }
     candidates: list = []
     nearby: list = []
+    radius_suggestion = None
     if viewer_city:
         city_filter = {
             **base_filter,
@@ -180,6 +181,35 @@ async def feed(user=Depends(current_user)):
                 nearby.append(u)
             nearby.sort(key=lambda x: (x["_near_km"], x.get("created_at") or ""))
             candidates.extend(nearby)
+
+            # Radius-widen suggestion: count how many MORE people the next
+            # radius tier (10→25→50) would surface, so the client can offer a
+            # one-tap "widen to N km?" prompt when the local feed runs thin.
+            next_km = next((r for r in sorted(ALLOWED_NEARBY_RADII) if r > radius_km), None)
+            if next_km:
+                all_ids = {c["id"] for c in candidates}
+                deg_w = next_km / 111.0
+                lng_deg_w = deg_w / max(0.2, cos(_radians(center_lat)))
+                wide_filter = {
+                    **base_filter,
+                    "home_lat": {"$gte": center_lat - deg_w, "$lte": center_lat + deg_w},
+                    "home_lng": {"$gte": center_lng - lng_deg_w, "$lte": center_lng + lng_deg_w},
+                }
+                extra = 0
+                async for u in db.users.find(
+                    wide_filter, {"_id": 0, "id": 1, "home_lat": 1, "home_lng": 1}
+                ).limit(300):
+                    if u["id"] in all_ids:
+                        continue
+                    d = haversine_km(center_lat, center_lng, u.get("home_lat"), u.get("home_lng"))
+                    if radius_km < d <= next_km:
+                        extra += 1
+                if extra:
+                    radius_suggestion = {
+                        "current_km": radius_km,
+                        "next_km": next_km,
+                        "extra_people": extra,
+                    }
     else:
         # No city set yet → fall back to nearest by distance so a brand-new
         # user without a city still sees content.
@@ -259,6 +289,9 @@ async def feed(user=Depends(current_user)):
         "feed": out[:60],
         "city_stats": city_stats,
         "saved_position": saved_position,
+        # Present when widening the nearby radius would add ≥1 more person —
+        # powers the one-tap "widen to N km?" retention prompt.
+        "radius_suggestion": radius_suggestion,
         # How many sign-ups were attributed to this viewer's ?ref=<handle>
         # link — surfaced as the "X joined" chip next to the share pill.
         "referral_count": user.get("referral_count", 0),

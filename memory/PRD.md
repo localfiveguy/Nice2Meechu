@@ -1,6 +1,17 @@
 # Nice2Meechu — Product Requirements Doc
 
 
+## Updated (2026-06-21 part 2) — Empty-feed widen-radius retention prompt ✅
+
+- **Backend `/api/feed`**: now returns `radius_suggestion: {current_km, next_km, extra_people}` when the next radius tier (10→25→50) would surface ≥1 more person (bounding-box + Haversine ring count, excludes people already in the feed). `null` at 50 km or when nothing extra exists.
+- **Frontend FeedScreen**:
+  - Empty state (first-in-city AND exhausted branches): primary button "{N} people within {next} km — widen?" (`feed-widen-radius-btn`); "Explore another city" demotes to ghost style when the widen option shows.
+  - Last-card banner: when the viewer reaches the final video and a suggestion exists, a pill under the header shows "Only {feed.length} within {X} km — widen to {Y} km? (+{extra})" (`feed-widen-radius-banner-btn`). Positioned top-24 — bottom placement collided with BottomNav (z-40) and intercepted clicks.
+  - One tap → POST `/users/nearby-radius` → optimistic `setUser` radius update → toast → feed reload. Tracked as `radius_widened` GA event.
+- Verified end-to-end via Playwright: empty-state button (0→9 people) and last-card banner (1/1→1/10) both work; banner disappears once at max useful radius.
+- ⚠️ Fixed during this work: feed.py had a corrupted duplicate tail (leftover from refactor edit) — removed.
+
+
 ## Updated (2026-06-21) — Backend modularization COMPLETE ♻️✅
 
 - Split the 2,125-line monolithic `server.py` into modular FastAPI routers under `/app/backend/`:
