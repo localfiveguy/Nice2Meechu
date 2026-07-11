@@ -1,0 +1,22 @@
+{
+  "summary": "Verified 'Nearby towns' feed expansion end-to-end. Backend pytest 3/3 passed (Marlton nearby ordering + city_stats total, 25km radius boundary excludes FarTown throwaway, Tokyo regression has 0 nearby items). Frontend: signed in as demo-00, set browsing city Marlton via API → feed showed 3 nearby cards with correctly rendered feed-nearby-badge chips: 'FROM VOORHEES · 3 KM', 'FROM CHERRY HILL · 11 KM', 'FROM ERIAL · 15 KM' in ascending distance order under the codename. Tokyo browse restored: 12 local demo cards, zero feed-nearby-badge chips, LIKES YOU pill still renders on demo-01. Cleanup verified.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_nearby_feed.py",
+    "/app/test_reports/pytest/nearby_feed.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py nearby block uses bbox prefilter + haversine ≤25 correctly; the lng_deg cos guard (max 0.2) prevents polar div-by-zero. Good.",
+    "city_stats.total = exact + len(nearby) matches feed truth; nearby sort by (_near_km, created_at) is deterministic.",
+    "Minor: server.py 2109 lines — same >700-line concern from iteration_16 still applies; consider modularizing."
+  ],
+  "updated_files": ["/app/backend/tests/test_nearby_feed.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Bearer sttest_SUQD-bH3lyJJOBLw-llOftxhxupA_9nU (demo-00)",
+  "seed_data_creation": "Test inserts a single throwaway-fartown-* user at ~35km from Marlton (lat 40.20, lng -74.90) with a video_url to prove the 25km cutoff; deleted in finally. test-john-erial pre-existing seed retained per spec. demo-00 restored to city=Tokyo home_city=Tokyo.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_nearby_feed.py loads REACT_APP_BACKEND_URL from frontend/.env (backend/.env has MONGO_URL/DB_NAME). Module-scope fixture snapshots demo-00 and restores at teardown. Marlton browsing city is set via POST /api/users/location set_home=false so demo-00 keeps Tokyo as home_city — this is the deterministic way to trigger nearby (avoids Photon 'Marlton, AR' picker ambiguity). Feed distances observed: Voorhees ~3.1, Cherry Hill ~10.5, Erial ~15.2 km (rounded to 3/11/15 in UI chip)."
+}

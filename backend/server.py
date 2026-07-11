@@ -127,6 +127,11 @@ class SwipeReq(BaseModel):
     action: str  # "like", "pass", "block" or "unlike" (undo a prior like)
 
 
+# "Nearby towns": people whose HOME is within this radius of the browsing
+# city's center also appear in the feed (after the locals).
+NEARBY_RADIUS_KM = 25
+
+
 class TranslateReq(BaseModel):
     text: str
     target_lang: str
@@ -1251,6 +1256,7 @@ async def feed(user=Depends(current_user)):
         "video_url": {"$ne": None, "$exists": True},
     }
     candidates: list = []
+    nearby: list = []
     if viewer_city:
         city_filter = {
             **base_filter,
@@ -1263,6 +1269,34 @@ async def feed(user=Depends(current_user)):
         # No shuffle — the order is intentional.
         async for u in db.users.find(city_filter, {"_id": 0, "email": 0}).sort("created_at", 1).limit(60):
             candidates.append(u)
+
+        # NEARBY TOWNS: also surface people whose HOME is within ~25 km of the
+        # browsing city's center (e.g. Erial ↔ Marlton, ~15 km apart). Locals
+        # stay first (chronological); nearby folks are appended sorted by
+        # distance. Bounding-box prefilter keeps the scan cheap without a
+        # geo index at this scale.
+        from math import cos, radians as _radians
+        center_lat = user.get("city_lat") if user.get("city_lat") is not None else user.get("lat")
+        center_lng = user.get("city_lng") if user.get("city_lng") is not None else user.get("lng")
+        if center_lat is not None and center_lng is not None:
+            seen_ids = {c["id"] for c in candidates}
+            deg = NEARBY_RADIUS_KM / 111.0
+            lng_deg = deg / max(0.2, cos(_radians(center_lat)))
+            near_filter = {
+                **base_filter,
+                "home_lat": {"$gte": center_lat - deg, "$lte": center_lat + deg},
+                "home_lng": {"$gte": center_lng - lng_deg, "$lte": center_lng + lng_deg},
+            }
+            async for u in db.users.find(near_filter, {"_id": 0, "email": 0}).limit(120):
+                if u["id"] in seen_ids:
+                    continue
+                d = haversine_km(center_lat, center_lng, u.get("home_lat"), u.get("home_lng"))
+                if d > NEARBY_RADIUS_KM:
+                    continue
+                u["_near_km"] = d
+                nearby.append(u)
+            nearby.sort(key=lambda x: (x["_near_km"], x.get("created_at") or ""))
+            candidates.extend(nearby)
     else:
         # No city set yet → fall back to nearest by distance so a brand-new
         # user without a city still sees content.
@@ -1305,6 +1339,10 @@ async def feed(user=Depends(current_user)):
                 "source_lang": c.get("source_lang", "en"),
                 "distance_km": dist,
                 "is_demo": bool(c.get("is_demo")),
+                # Short home-town label — the card shows "from <Town>" when the
+                # person's home differs from the city being browsed (nearby).
+                "home_city": (c.get("home_city") or "").split(",")[0].strip(),
+                "near_km": c.get("_near_km"),
                 # True when this person already liked the viewer — liking back
                 # matches instantly.
                 "likes_you": c["id"] in liked_me_ids,
@@ -1332,7 +1370,7 @@ async def feed(user=Depends(current_user)):
             "home_city": {"$regex": f"^{re.escape(viewer_city)}", "$options": "i"},
             "video_url": {"$ne": None, "$exists": True},
         })
-        city_stats = {"total": city_total, "remaining": len(out)}
+        city_stats = {"total": city_total + len(nearby), "remaining": len(out)}
 
     return {
         "feed": out[:60],
