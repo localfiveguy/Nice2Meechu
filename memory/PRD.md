@@ -209,8 +209,18 @@ A hyperlocal, video-first social app where users connect by watching short video
 - Bonus critical fix (found by testing agent): FeedCard action stack got z-50 — the bottom-nav's padding box (z-40) was swallowing like/pass/report taps on shorter screens. Real un-forced clicks verified.
 - Verified: iteration_14 (found issues) + iteration_15 (100% backend + frontend, deterministic match 3/3, hitbox proof, nav regression clean). Preview seed: demo-01 likes demo-00.
 
+## 2026-06 — Home city vs. Browsing city split (John/Erial bug)
+- Bug report: John lives in Erial but his video appeared in Marlton. Root cause: single `city` field doubled as "where my video shows" and "what I'm browsing" — exploring another city silently relocated your video.
+- Fix (user-approved): `home_city/home_lat/home_lng` added. Feed matches TARGETS on home_city; browsing city only selects what you watch. Onboarding sets both. `POST /users/location` gained `set_home` (default false). `cities/popular` + heat dots + city_stats now count residents (home_city). Startup migration backfills home_city=city (ran: 91 users; idempotent, will run on production deploy too). Demo seeds include home_city.
+- UI: Change Location screen has a "Set as my home city — where your video appears" checkbox + "🏠 Current home: X" label; dual toasts (explore vs home).
+- Verified: iteration_16 — backend 9/9 pytest (incl. the exact John scenario), frontend 100%. Test suite: /app/backend/tests/test_home_city.py.
+- John's one-time fix after deploy: feed → tap city pill → search "Erial" → tick "Set as my home city" → pick it.
+
+## Planned follow-up (P1)
+- "Nearby towns" feed expansion: viewers also see homes within X miles (Erial↔Marlton ~10mi). User chose to plan this next.
+
 ## Next Tasks
-- User to **Deploy**, then look for the cyan "Likes you" pill + glowing heart in the feed.
+- User to **Deploy**, then have John set his home to Erial (steps above).
 - Verified: GIS button renders on /signin, `/api/auth/google` rejects bogus JWTs (401), seeded session bears authenticated `/api/auth/me`.
 
 ## Prioritized backlog
