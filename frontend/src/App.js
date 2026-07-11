@@ -49,8 +49,9 @@ export default function App() {
   // - every 60s in the background while the tab is open.
   // Visiting the Matches screen calls GET /api/matches which resets the
   // backend "last_matches_viewed_at" — so the count naturally returns to 0.
+  const userId = user?.id;
   useEffect(() => {
-    if (!user) return undefined;
+    if (!userId) return undefined;
     let cancelled = false;
     const fetchUnread = async () => {
       try {
@@ -61,7 +62,7 @@ export default function App() {
     fetchUnread();
     const id = setInterval(fetchUnread, 60_000);
     return () => { cancelled = true; clearInterval(id); };
-  }, [user?.id, screen]);
+  }, [userId, screen]);
 
   // Static legal pages — detect path so /privacy and /terms work as links from
   // cookie banner, emails, search engines, etc. Rendered as overlays so the

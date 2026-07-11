@@ -1,6 +1,24 @@
 # Nice2Meechu — Product Requirements Doc
 
 
+## Updated (2026-06-21 part 4) — Code review fixes applied ♻️
+
+- **Backend complexity refactors** (all verified by the 33-test regression suite, 33/33 pass):
+  - `feed.py`: `feed()` split into `_prior_actions`, `_local_candidates`, `_nearby_candidates`, `_radius_suggestion`, `_liked_me_ids`, `_feed_item`, shared `_bbox_filter`.
+  - `auth.py`: `_finalize_google_signin` split into `_upsert_google_user` + `_mint_session`.
+  - `media.py`: `face_check` split into `_llm_review_frame`, `_apply_age_gate`, `_audit_age_check`.
+  - `push.py`: `notify_new_nearby` split into `_radius_covers`, `_matching_recipient_ids`, `_deliver_to_subscriptions`.
+  - `admin.py`: `admin_funnel` split into `_funnel_steps` + `_top_cities`.
+- **Frontend**: extracted `components/EmptyFeedState.js` from FeedScreen (445→345 lines); fixed the one REAL react-hooks warning (App.js unread-poll effect now keys off `userId`); improved the lone undocumented empty-catch comment (LegalPages consent). Webpack compiles with ZERO warnings.
+- **Review findings assessed as false positives / intentionally kept** (documented so future reviews don't re-flag):
+  - "Hardcoded secrets in tests" — all tokens are `uuid4()`-generated per run; nothing real.
+  - "Insecure localStorage token" — INTENTIONAL: the `n2m_token` localStorage fallback is the fix for iOS PWA cookie isolation (ITP drops the httpOnly cookie). The httpOnly cookie IS still primary. Do not remove.
+  - "39 missing hook deps" — CRA's own eslint reports only the one App.js case (fixed); the others were tool hallucinations (`IntersectionObserver`, `L`, `classList` are not reactive values).
+  - "`is` comparisons / undefined Python vars" — grep + pyflakes found zero real instances.
+  - "console statements" — all are `console.error/warn` inside catch blocks (proper error logging, no sensitive data); kept.
+  - Deferred (high regression risk, need dedicated session + full E2E): splitting `App.js` (325 l), `FeedCard.js` (292 l), `CityAutocomplete.js`, `ChangeLocationScreen.js` (557 l) into sub-components/hooks.
+
+
 ## Updated (2026-06-21 part 3) — Opt-in Web Push: "someone new joined nearby" ✅
 
 - **Pure browser-native Web Push (VAPID)** — no Firebase/OneSignal. `pywebpush` added to backend; VAPID keys in `/app/backend/.env` (`VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_SUBJECT`). ⚠️ Keep these keys stable — rotating them breaks all existing subscriptions.

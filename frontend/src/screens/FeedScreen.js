@@ -2,12 +2,12 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "sonner";
 import {
-  ArrowLeft, MapPin, Pause, Play, RotateCcw, Share2,
+  ArrowLeft, MapPin, Pause, Play, RotateCcw,
 } from "lucide-react";
-import { api, shareOrCopy } from "../lib/api";
+import { api } from "../lib/api";
 import { BottomNav } from "../components/BottomNav";
+import { EmptyFeedState } from "../components/EmptyFeedState";
 import { FeedCard } from "../components/FeedCard";
-import { NotifyMeButton } from "../components/NotifyMeButton";
 import { ChangeLocationScreen } from "./ChangeLocationScreen";
 import { track } from "../analytics";
 
@@ -240,110 +240,15 @@ export function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
             </div>
           )}
 
-          <div className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center gap-4">
-            {user.city ? (
-              cityStats && cityStats.total > 0 ? (
-                // Exhausted state — viewer has swiped on everyone in this city.
-                <>
-                  <div className="text-6xl" aria-hidden>🏁</div>
-                  <div className="font-display text-2xl font-black leading-tight">
-                    That's everyone<br />
-                    in {user.city.split(",")[0]}!
-                  </div>
-                  <p className="text-sm text-white/65 max-w-[290px] leading-snug">
-                    You've seen all {cityStats.total} {cityStats.total === 1 ? "person" : "people"} here for now.
-                    New intros will appear as people join. Try another city while you wait.
-                  </p>
-                  {radiusSuggestion && (
-                    <button
-                      className="btn-primary mt-2 flex items-center gap-2"
-                      onClick={widenRadius}
-                      data-testid="feed-widen-radius-btn"
-                    >
-                      +{radiusSuggestion.extra_people} more within {radiusSuggestion.next_km} km — widen?
-                    </button>
-                  )}
-                  <button
-                    className={`${radiusSuggestion ? "btn-ghost" : "btn-primary mt-2"} flex items-center gap-2`}
-                    onClick={() => setLocationOpen(true)}
-                    data-testid="feed-change-location"
-                  >
-                    <MapPin size={16} /> Explore another city
-                  </button>
-                  <NotifyMeButton user={user} setUser={setUser} />
-                  <button className="text-xs text-white/45 underline" onClick={load} data-testid="feed-refresh">
-                    Check again
-                  </button>
-                </>
-              ) : (
-                // Truly first-in-city — no one else here yet.
-                <>
-                  <div className="text-6xl" aria-hidden>🎉</div>
-                  <div className="font-display text-2xl font-black leading-tight">
-                    You're the first<br />
-                    in {user.city.split(",")[0]}!
-                  </div>
-                  <p className="text-sm text-white/65 max-w-[290px] leading-snug">
-                    Congrats — your intro will be the very first face people see when they explore this city.
-                    Share Nice2Meechu with friends nearby, or hop to a busier city while you wait.
-                  </p>
-                  {radiusSuggestion && (
-                    <button
-                      className="btn-primary mt-2 flex items-center gap-2"
-                      onClick={widenRadius}
-                      data-testid="feed-widen-radius-btn"
-                    >
-                      {radiusSuggestion.extra_people} {radiusSuggestion.extra_people === 1 ? "person" : "people"} within {radiusSuggestion.next_km} km — widen?
-                    </button>
-                  )}
-                  <button
-                    className={`${radiusSuggestion ? "btn-ghost" : "btn-primary mt-2"} flex items-center gap-2`}
-                    onClick={() => setLocationOpen(true)}
-                    data-testid="feed-change-location"
-                  >
-                    <MapPin size={16} /> Explore another city
-                  </button>
-                  <button
-                    className="btn-ghost flex items-center gap-2 mt-1"
-                    onClick={async () => {
-                      const cityShort = (user.city || "").split(",")[0];
-                      const shareText = "Come meet the world at Nice2meechu.com";
-                      track("first_in_city_share_clicked", { city: cityShort });
-                      const result = await shareOrCopy({
-                        title: "Nice2Meechu",
-                        text: shareText,
-                        copyText: shareText,
-                      });
-                      if (result === "copied") toast.success("Invite copied — paste it anywhere!");
-                      else if (result === "failed") toast.error("Couldn't share. Try copying manually.");
-                    }}
-                    data-testid="feed-first-share"
-                  >
-                    <Share2 size={16} /> Share this app
-                  </button>
-                  <NotifyMeButton user={user} setUser={setUser} />
-                  <button className="text-xs text-white/45 underline" onClick={load} data-testid="feed-refresh">
-                    Check again
-                  </button>
-                </>
-              )
-            ) : (
-              <>
-                <div className="text-5xl" aria-hidden>📍</div>
-                <div className="font-display text-2xl font-black leading-tight">Pick a city to begin</div>
-                <p className="text-sm text-white/60 max-w-[280px] leading-snug">
-                  Tell us where to look and we'll show you the people nearby.
-                </p>
-                <button
-                  className="btn-primary mt-2 flex items-center gap-2"
-                  onClick={() => setLocationOpen(true)}
-                  data-testid="feed-change-location"
-                >
-                  <MapPin size={16} /> Set my city
-                </button>
-              </>
-            )}
-          </div>
+          <EmptyFeedState
+            user={user}
+            setUser={setUser}
+            cityStats={cityStats}
+            radiusSuggestion={radiusSuggestion}
+            onWiden={widenRadius}
+            onOpenLocation={() => setLocationOpen(true)}
+            onRefresh={load}
+          />
         </>
       )}
 

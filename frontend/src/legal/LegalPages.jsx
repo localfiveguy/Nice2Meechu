@@ -178,7 +178,7 @@ export function CookieConsentBanner({ onChange }) {
   });
   if (decided) return null;
   const decide = (value) => {
-    try { localStorage.setItem(CONSENT_KEY, value); } catch { /* ignore */ }
+    try { localStorage.setItem(CONSENT_KEY, value); } catch { /* SAST: intentional — Safari private mode / quota errors; consent falls back to session-only */ }
     setDecided(true);
     onChange?.(value);
   };

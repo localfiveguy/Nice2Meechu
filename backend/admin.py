@@ -21,14 +21,8 @@ def _require_admin(user):
         raise HTTPException(403, "Forbidden")
 
 
-@router.get("/admin/funnel")
-async def admin_funnel(user=Depends(current_user)):
-    """Founder-only dashboard data — server-side onboarding & engagement funnel.
-    Use this instead of waiting 24h for GA4 to backfill. Gated by ADMIN_EMAILS.
-    """
-    _require_admin(user)
-
-    real_users_q = {"is_demo": {"$ne": True}}
+async def _funnel_steps(real_users_q: dict) -> list:
+    """Ordered onboarding/engagement funnel with per-step conversion %."""
     total = await db.users.count_documents(real_users_q)
     accepted_rules = await db.users.count_documents({**real_users_q, "agreed_to_rules_at": {"$exists": True}})
     set_handle = await db.users.count_documents({**real_users_q, "handle": {"$nin": [None, ""]}})
@@ -40,33 +34,10 @@ async def admin_funnel(user=Depends(current_user)):
 
     # Distinct real-user IDs who liked someone / ended up in a match.
     likers = await db.swipes.distinct("user_id", {"is_like": True})
-    real_user_ids = await db.users.distinct("id", real_users_q)
-    real_user_set = set(real_user_ids)
+    real_user_set = set(await db.users.distinct("id", real_users_q))
     liked_someone = len([u for u in likers if u in real_user_set])
-
     match_user_ids = await db.matches.distinct("user_ids")
     got_a_match = len([u for u in match_user_ids if u in real_user_set])
-
-    matches_total = await db.matches.count_documents({})
-    messages_total = await db.messages.count_documents({})
-    reports_total = await db.reports.count_documents({})
-
-    now = datetime.now(timezone.utc)
-    seven_ago = (now - timedelta(days=7)).isoformat()
-    thirty_ago = (now - timedelta(days=30)).isoformat()
-    signups_7d = await db.users.count_documents({**real_users_q, "created_at": {"$gte": seven_ago}})
-    signups_30d = await db.users.count_documents({**real_users_q, "created_at": {"$gte": thirty_ago}})
-
-    # Top 10 cities by real users
-    pipeline = [
-        {"$match": {**real_users_q, "city": {"$nin": [None, ""]}}},
-        {"$group": {"_id": "$city", "count": {"$sum": 1}}},
-        {"$sort": {"count": -1}},
-        {"$limit": 10},
-    ]
-    top_cities = []
-    async for doc in db.users.aggregate(pipeline):
-        top_cities.append({"city": doc["_id"], "count": doc["count"]})
 
     funnel = [
         {"step": "signed_up", "count": total},
@@ -77,7 +48,6 @@ async def admin_funnel(user=Depends(current_user)):
         {"step": "liked_someone", "count": liked_someone},
         {"step": "got_a_match", "count": got_a_match},
     ]
-    # Conversion % vs. previous step
     prev = None
     for step in funnel:
         if prev and prev["count"]:
@@ -85,18 +55,50 @@ async def admin_funnel(user=Depends(current_user)):
         else:
             step["conv_from_prev_pct"] = 100.0 if prev is None else 0.0
         prev = step
+    return funnel
+
+
+async def _top_cities(real_users_q: dict) -> list:
+    pipeline = [
+        {"$match": {**real_users_q, "city": {"$nin": [None, ""]}}},
+        {"$group": {"_id": "$city", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 10},
+    ]
+    return [
+        {"city": doc["_id"], "count": doc["count"]}
+        async for doc in db.users.aggregate(pipeline)
+    ]
+
+
+@router.get("/admin/funnel")
+async def admin_funnel(user=Depends(current_user)):
+    """Founder-only dashboard data — server-side onboarding & engagement funnel.
+    Use this instead of waiting 24h for GA4 to backfill. Gated by ADMIN_EMAILS.
+    """
+    _require_admin(user)
+
+    real_users_q = {"is_demo": {"$ne": True}}
+    funnel = await _funnel_steps(real_users_q)
+
+    now = datetime.now(timezone.utc)
+    seven_ago = (now - timedelta(days=7)).isoformat()
+    thirty_ago = (now - timedelta(days=30)).isoformat()
 
     return {
         "generated_at": now.isoformat(),
         "totals": {
-            "real_users": total,
-            "matches": matches_total,
-            "messages": messages_total,
-            "reports": reports_total,
+            "real_users": funnel[0]["count"],
+            "matches": await db.matches.count_documents({}),
+            "messages": await db.messages.count_documents({}),
+            "reports": await db.reports.count_documents({}),
         },
         "funnel": funnel,
-        "recent": {"signups_7d": signups_7d, "signups_30d": signups_30d},
-        "top_cities": top_cities,
+        "recent": {
+            "signups_7d": await db.users.count_documents({**real_users_q, "created_at": {"$gte": seven_ago}}),
+            "signups_30d": await db.users.count_documents({**real_users_q, "created_at": {"$gte": thirty_ago}}),
+        },
+        "top_cities": await _top_cities(real_users_q),
     }
 
 

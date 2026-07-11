@@ -85,6 +85,70 @@ async def root():
 
 
 # REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+async def _upsert_google_user(
+    *, google_sub: Optional[str], email: str, name: Optional[str],
+    picture: Optional[str], ref: Optional[str],
+) -> dict:
+    """Create-or-update the user record from Google profile info. New users
+    get a codename + optional referral attribution (self-referrals dropped)."""
+    existing = await db.users.find_one({"email": email}, {"_id": 0})
+    if existing:
+        update_fields = {"name": name, "picture": picture}
+        if google_sub and not existing.get("google_sub"):
+            update_fields["google_sub"] = google_sub
+        await db.users.update_one({"id": existing["id"]}, {"$set": update_fields})
+        return await db.users.find_one({"id": existing["id"]}, {"_id": 0})
+
+    ref_user_id = None
+    ref_handle = (ref or "").strip().lower()
+    if ref_handle:
+        ref_user = await db.users.find_one({"handle": ref_handle}, {"_id": 0, "id": 1})
+        if ref_user:
+            ref_user_id = ref_user["id"]
+
+    new_user = {
+        "id": str(uuid.uuid4()),
+        "email": email,
+        "name": name,
+        "picture": picture,
+        "google_sub": google_sub,
+        "codename": generate_codename(),
+        "handle": None,
+        "first_name": (name or "").strip().split(" ")[0] if name else None,
+        "vibes": [],
+        "language": "en",
+        "avatar_emoji": "🌙",
+        "lat": None,
+        "lng": None,
+        "video_url": None,
+        "transcript": None,
+        "source_lang": None,
+        "referrer_handle": ref_handle or None,
+        "referrer_id": ref_user_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.users.insert_one(new_user.copy())
+    if ref_user_id:
+        await db.users.update_one({"id": ref_user_id}, {"$inc": {"referral_count": 1}})
+    return await db.users.find_one({"id": new_user["id"]}, {"_id": 0})
+
+
+async def _mint_session(user_id: str, session_token: Optional[str] = None) -> str:
+    """Mint (or refresh) our own session_token — we don't trust Google's lifetime."""
+    token = session_token or secrets.token_urlsafe(32)
+    await db.user_sessions.update_one(
+        {"session_token": token},
+        {"$set": {
+            "user_id": user_id,
+            "session_token": token,
+            "expires_at": datetime.now(timezone.utc) + SESSION_TTL,
+            "created_at": datetime.now(timezone.utc),
+        }},
+        upsert=True,
+    )
+    return token
+
+
 async def _finalize_google_signin(
     response: Response,
     *,
@@ -95,69 +159,13 @@ async def _finalize_google_signin(
     ref: Optional[str],
     session_token: Optional[str] = None,
 ) -> dict:
-    """Create-or-update the user from Google profile info, mint a session_token,
-    set the httpOnly cookie, and return the standard auth response payload.
-    Used by both the new direct-GIS endpoint and the legacy Emergent exchange."""
-    # Upsert user by email
-    existing = await db.users.find_one({"email": email}, {"_id": 0})
-    if existing:
-        update_fields = {"name": name, "picture": picture}
-        if google_sub and not existing.get("google_sub"):
-            update_fields["google_sub"] = google_sub
-        await db.users.update_one({"id": existing["id"]}, {"$set": update_fields})
-        user = await db.users.find_one({"id": existing["id"]}, {"_id": 0})
-    else:
-        # Resolve optional referrer (by handle). Self-referrals are dropped.
-        ref_user_id = None
-        ref_handle = (ref or "").strip().lower()
-        if ref_handle:
-            ref_user = await db.users.find_one({"handle": ref_handle}, {"_id": 0, "id": 1})
-            if ref_user:
-                ref_user_id = ref_user["id"]
-
-        new_user = {
-            "id": str(uuid.uuid4()),
-            "email": email,
-            "name": name,
-            "picture": picture,
-            "google_sub": google_sub,
-            "codename": generate_codename(),
-            "handle": None,
-            "first_name": (name or "").strip().split(" ")[0] if name else None,
-            "vibes": [],
-            "language": "en",
-            "avatar_emoji": "🌙",
-            "lat": None,
-            "lng": None,
-            "video_url": None,
-            "transcript": None,
-            "source_lang": None,
-            "referrer_handle": ref_handle or None,
-            "referrer_id": ref_user_id,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        await db.users.insert_one(new_user.copy())
-        user = await db.users.find_one({"id": new_user["id"]}, {"_id": 0})
-
-        if ref_user_id:
-            await db.users.update_one(
-                {"id": ref_user_id},
-                {"$inc": {"referral_count": 1}},
-            )
-
-    # Mint our own session_token (don't trust Google's lifetime)
-    token = session_token or secrets.token_urlsafe(32)
-    expires_at = datetime.now(timezone.utc) + SESSION_TTL
-    await db.user_sessions.update_one(
-        {"session_token": token},
-        {"$set": {
-            "user_id": user["id"],
-            "session_token": token,
-            "expires_at": expires_at,
-            "created_at": datetime.now(timezone.utc),
-        }},
-        upsert=True,
+    """Upsert the user, mint a session_token, set the httpOnly cookie, and
+    return the standard auth payload. Shared by the direct-GIS endpoint,
+    the redirect-mode endpoint, and the legacy Emergent exchange."""
+    user = await _upsert_google_user(
+        google_sub=google_sub, email=email, name=name, picture=picture, ref=ref
     )
+    token = await _mint_session(user["id"], session_token)
 
     response.set_cookie(
         key="session_token",

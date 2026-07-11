@@ -2,6 +2,7 @@
 import re
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends
 
@@ -113,166 +114,164 @@ async def cities_popular(user=Depends(current_user)):
     return {"cities": out[:200]}
 
 
+def _bbox_filter(base_filter: dict, lat: float, lng: float, radius_km: float) -> dict:
+    """Cheap bounding-box prefilter around (lat, lng) — avoids scanning every
+    user without needing a geo index at this scale."""
+    from math import cos, radians
+    deg = radius_km / 111.0
+    lng_deg = deg / max(0.2, cos(radians(lat)))
+    return {
+        **base_filter,
+        "home_lat": {"$gte": lat - deg, "$lte": lat + deg},
+        "home_lng": {"$gte": lng - lng_deg, "$lte": lng + lng_deg},
+    }
+
+
+async def _prior_actions(user_id: str) -> tuple[dict, set]:
+    """Map of target_id → swipe action, plus the set of blocked target ids."""
+    docs = await db.swipes.find(
+        {"user_id": user_id}, {"_id": 0, "target_user_id": 1, "action": 1}
+    ).to_list(5000)
+    prior = {s["target_user_id"]: s["action"] for s in docs}
+    blocked = {tid for tid, action in prior.items() if action == "block"}
+    return prior, blocked
+
+
+async def _local_candidates(base_filter: dict, viewer_city: str) -> list:
+    """Everyone whose HOME city matches the browsing city — chronological
+    (oldest-first) so every viewer sees the same 'first video made here'."""
+    city_filter = {
+        **base_filter,
+        "home_city": {"$regex": f"^{re.escape(viewer_city)}", "$options": "i"},
+    }
+    return [
+        u async for u in
+        db.users.find(city_filter, {"_id": 0, "email": 0}).sort("created_at", 1).limit(60)
+    ]
+
+
+async def _nearby_candidates(base_filter: dict, lat: float, lng: float, radius_km: float, seen_ids: set) -> list:
+    """People whose HOME is within radius_km of the browsing city's center
+    (e.g. Erial ↔ Marlton, ~15 km). Sorted by distance; `_near_km` annotated."""
+    nearby = []
+    async for u in db.users.find(
+        _bbox_filter(base_filter, lat, lng, radius_km), {"_id": 0, "email": 0}
+    ).limit(120):
+        if u["id"] in seen_ids:
+            continue
+        d = haversine_km(lat, lng, u.get("home_lat"), u.get("home_lng"))
+        if d > radius_km:
+            continue
+        u["_near_km"] = d
+        nearby.append(u)
+    nearby.sort(key=lambda x: (x["_near_km"], x.get("created_at") or ""))
+    return nearby
+
+
+async def _radius_suggestion(base_filter: dict, lat: float, lng: float, radius_km: float, exclude_ids: set) -> Optional[dict]:
+    """How many MORE people the next radius tier (10→25→50) would surface —
+    powers the one-tap 'widen to N km?' retention prompt. None when maxed out
+    or when widening adds nobody."""
+    next_km = next((r for r in sorted(ALLOWED_NEARBY_RADII) if r > radius_km), None)
+    if not next_km:
+        return None
+    extra = 0
+    async for u in db.users.find(
+        _bbox_filter(base_filter, lat, lng, next_km),
+        {"_id": 0, "id": 1, "home_lat": 1, "home_lng": 1},
+    ).limit(300):
+        if u["id"] in exclude_ids:
+            continue
+        d = haversine_km(lat, lng, u.get("home_lat"), u.get("home_lng"))
+        if radius_km < d <= next_km:
+            extra += 1
+    if not extra:
+        return None
+    return {"current_km": radius_km, "next_km": next_km, "extra_people": extra}
+
+
+async def _liked_me_ids(user_id: str, candidate_ids: list) -> set:
+    """Candidates who already liked the viewer, minus already-matched pairs
+    (the 'like back to match' hint would be misleading there)."""
+    likers = await db.swipes.find(
+        {"target_user_id": user_id, "action": "like", "user_id": {"$in": candidate_ids}},
+        {"_id": 0, "user_id": 1},
+    ).to_list(200)
+    liked = {s["user_id"] for s in likers}
+    match_docs = await db.matches.find(
+        {"user_ids": user_id}, {"_id": 0, "user_ids": 1}
+    ).to_list(500)
+    matched = {uid for m in match_docs for uid in m["user_ids"] if uid != user_id}
+    return liked - matched
+
+
+def _feed_item(c: dict, user: dict, liked_me_ids: set, prior_action_by_id: dict) -> dict:
+    return {
+        "id": c["id"],
+        "codename": c.get("codename", "Anon"),
+        "avatar_emoji": c.get("avatar_emoji", "🌙"),
+        "vibes": c.get("vibes", []),
+        "language": c.get("language", "en"),
+        "video_url": c["video_url"],
+        "transcript": c.get("transcript", ""),
+        "source_lang": c.get("source_lang", "en"),
+        "distance_km": haversine_km(user.get("lat"), user.get("lng"), c.get("lat"), c.get("lng")),
+        "is_demo": bool(c.get("is_demo")),
+        # Short home-town label — the card shows "from <Town>" when the
+        # person's home differs from the city being browsed (nearby).
+        "home_city": (c.get("home_city") or "").split(",")[0].strip(),
+        "near_km": c.get("_near_km"),
+        # True when this person already liked the viewer — liking back matches instantly.
+        "likes_you": c["id"] in liked_me_ids,
+        # null until the viewer swipes; else "like"/"pass". Lets the client skip
+        # previously-seen videos while still allowing Back/Restart navigation.
+        "prior_action": prior_action_by_id.get(c["id"]),
+    }
+
+
 @router.get("/feed")
 async def feed(user=Depends(current_user)):
+    """STRICT hyperlocal feed: locals (chronological) + nearby towns (by
+    distance) within the viewer's radius. No silent fallback to other cities —
+    'near you' stays honest. Blocked users excluded entirely; liked/passed
+    users included but marked via prior_action."""
     await seed_demo_users()
-    # Build a quick map of prior swipe actions so we can mark each feed item
-    # with its `prior_action` (None | "like" | "pass" | "block"). The client
-    # uses this to skip past already-seen videos on initial render — but the
-    # full list is returned so Back / Restart can still navigate to them.
-    swipe_docs = await db.swipes.find(
-        {"user_id": user["id"]}, {"_id": 0, "target_user_id": 1, "action": 1}
-    ).to_list(5000)
-    prior_action_by_id = {s["target_user_id"]: s["action"] for s in swipe_docs}
-    blocked_ids = {tid for tid, action in prior_action_by_id.items() if action == "block"}
-    viewer_city_full = (user.get("city") or "").strip()
-    viewer_city = viewer_city_full.split(",")[0].strip().lower()
+    prior_action_by_id, blocked_ids = await _prior_actions(user["id"])
+    viewer_city = (user.get("city") or "").strip().split(",")[0].strip().lower()
 
-    # STRICT hyperlocal: if the viewer has set a city, ONLY surface demos in
-    # that exact city. If there are none, return an empty feed and let the
-    # frontend prompt the user to change location. No silent fallback — the
-    # whole point of "near you" is to be honest about it.
-    # Blocked users stay excluded (unlike pass/like which we just mark).
     base_filter = {
         "id": {"$ne": user["id"], "$nin": list(blocked_ids)},
         "video_url": {"$ne": None, "$exists": True},
     }
-    candidates: list = []
+
     nearby: list = []
     radius_suggestion = None
     if viewer_city:
-        city_filter = {
-            **base_filter,
-            # Match on the TARGET's HOME city — where they live — not their
-            # browsing city. Exploring another city never relocates your video.
-            "home_city": {"$regex": f"^{re.escape(viewer_city)}", "$options": "i"},
-        }
-        # Chronological (oldest-first) within the chosen city, so every viewer
-        # sees the same "first video made here" regardless of when they joined.
-        # No shuffle — the order is intentional.
-        async for u in db.users.find(city_filter, {"_id": 0, "email": 0}).sort("created_at", 1).limit(60):
-            candidates.append(u)
-
-        # NEARBY TOWNS: also surface people whose HOME is within the viewer's
-        # radius of the browsing city's center (e.g. Erial ↔ Marlton, ~15 km
-        # apart). Locals stay first (chronological); nearby folks are appended
-        # sorted by distance. Bounding-box prefilter keeps the scan cheap
-        # without a geo index at this scale.
-        from math import cos, radians as _radians
+        candidates = await _local_candidates(base_filter, viewer_city)
         center_lat = user.get("city_lat") if user.get("city_lat") is not None else user.get("lat")
         center_lng = user.get("city_lng") if user.get("city_lng") is not None else user.get("lng")
         if center_lat is not None and center_lng is not None:
-            seen_ids = {c["id"] for c in candidates}
             radius_km = user.get("nearby_radius_km") or NEARBY_RADIUS_KM
-            deg = radius_km / 111.0
-            lng_deg = deg / max(0.2, cos(_radians(center_lat)))
-            near_filter = {
-                **base_filter,
-                "home_lat": {"$gte": center_lat - deg, "$lte": center_lat + deg},
-                "home_lng": {"$gte": center_lng - lng_deg, "$lte": center_lng + lng_deg},
-            }
-            async for u in db.users.find(near_filter, {"_id": 0, "email": 0}).limit(120):
-                if u["id"] in seen_ids:
-                    continue
-                d = haversine_km(center_lat, center_lng, u.get("home_lat"), u.get("home_lng"))
-                if d > radius_km:
-                    continue
-                u["_near_km"] = d
-                nearby.append(u)
-            nearby.sort(key=lambda x: (x["_near_km"], x.get("created_at") or ""))
+            nearby = await _nearby_candidates(
+                base_filter, center_lat, center_lng, radius_km, {c["id"] for c in candidates}
+            )
             candidates.extend(nearby)
-
-            # Radius-widen suggestion: count how many MORE people the next
-            # radius tier (10→25→50) would surface, so the client can offer a
-            # one-tap "widen to N km?" prompt when the local feed runs thin.
-            next_km = next((r for r in sorted(ALLOWED_NEARBY_RADII) if r > radius_km), None)
-            if next_km:
-                all_ids = {c["id"] for c in candidates}
-                deg_w = next_km / 111.0
-                lng_deg_w = deg_w / max(0.2, cos(_radians(center_lat)))
-                wide_filter = {
-                    **base_filter,
-                    "home_lat": {"$gte": center_lat - deg_w, "$lte": center_lat + deg_w},
-                    "home_lng": {"$gte": center_lng - lng_deg_w, "$lte": center_lng + lng_deg_w},
-                }
-                extra = 0
-                async for u in db.users.find(
-                    wide_filter, {"_id": 0, "id": 1, "home_lat": 1, "home_lng": 1}
-                ).limit(300):
-                    if u["id"] in all_ids:
-                        continue
-                    d = haversine_km(center_lat, center_lng, u.get("home_lat"), u.get("home_lng"))
-                    if radius_km < d <= next_km:
-                        extra += 1
-                if extra:
-                    radius_suggestion = {
-                        "current_km": radius_km,
-                        "next_km": next_km,
-                        "extra_people": extra,
-                    }
+            radius_suggestion = await _radius_suggestion(
+                base_filter, center_lat, center_lng, radius_km, {c["id"] for c in candidates}
+            )
     else:
-        # No city set yet → fall back to nearest by distance so a brand-new
-        # user without a city still sees content.
-        async for u in db.users.find(base_filter, {"_id": 0, "email": 0}).limit(60):
-            candidates.append(u)
+        # No city set yet → nearest-by-distance fallback so a brand-new user
+        # without a city still sees content.
+        candidates = [u async for u in db.users.find(base_filter, {"_id": 0, "email": 0}).limit(60)]
 
-    # Who among the candidates has already liked the viewer — powers the
-    # "Likes you" hint (anonymity holds: the feed only shows codenames).
-    likers = await db.swipes.find(
-        {
-            "target_user_id": user["id"],
-            "action": "like",
-            "user_id": {"$in": [c["id"] for c in candidates]},
-        },
-        {"_id": 0, "user_id": 1},
-    ).to_list(200)
-    liked_me_ids = {s["user_id"] for s in likers}
-    # Already-matched pairs don't need the hint — "like back to match" would
-    # be misleading when the match already exists.
-    match_docs = await db.matches.find(
-        {"user_ids": user["id"]}, {"_id": 0, "user_ids": 1}
-    ).to_list(500)
-    matched_ids = {uid for m in match_docs for uid in m["user_ids"] if uid != user["id"]}
-    liked_me_ids -= matched_ids
+    liked_me_ids = await _liked_me_ids(user["id"], [c["id"] for c in candidates])
+    out = [
+        _feed_item(c, user, liked_me_ids, prior_action_by_id)
+        for c in candidates if c.get("video_url")
+    ]
 
-    out = []
-    for c in candidates:
-        if not c.get("video_url"):
-            continue
-        dist = haversine_km(user.get("lat"), user.get("lng"), c.get("lat"), c.get("lng"))
-        out.append(
-            {
-                "id": c["id"],
-                "codename": c.get("codename", "Anon"),
-                "avatar_emoji": c.get("avatar_emoji", "🌙"),
-                "vibes": c.get("vibes", []),
-                "language": c.get("language", "en"),
-                "video_url": c["video_url"],
-                "transcript": c.get("transcript", ""),
-                "source_lang": c.get("source_lang", "en"),
-                "distance_km": dist,
-                "is_demo": bool(c.get("is_demo")),
-                # Short home-town label — the card shows "from <Town>" when the
-                # person's home differs from the city being browsed (nearby).
-                "home_city": (c.get("home_city") or "").split(",")[0].strip(),
-                "near_km": c.get("_near_km"),
-                # True when this person already liked the viewer — liking back
-                # matches instantly.
-                "likes_you": c["id"] in liked_me_ids,
-                # null when the viewer hasn't swiped on this user yet; otherwise
-                # "like" or "pass". Lets the client skip past previously-seen
-                # videos by default while still allowing Back/Restart navigation.
-                "prior_action": prior_action_by_id.get(c["id"]),
-            }
-        )
-
-    # Saved per-city scroll position so the user resumes where they left off
-    # when they switch away from this city and come back. Defaults to None.
+    # Saved per-city scroll position so the user resumes where they left off.
     saved_position = (user.get("city_positions") or {}).get(viewer_city) if viewer_city else None
-
-    # Chronological order preserved (oldest first per the user's request) —
-    # NO shuffle. The "first in city" video should be the same for every
-    # viewer until that user is swiped away.
 
     # city_stats lets the frontend distinguish "genuinely empty" from
     # "exhausted" so the empty-state copy can be honest about which it is.
@@ -289,11 +288,9 @@ async def feed(user=Depends(current_user)):
         "feed": out[:60],
         "city_stats": city_stats,
         "saved_position": saved_position,
-        # Present when widening the nearby radius would add ≥1 more person —
-        # powers the one-tap "widen to N km?" retention prompt.
+        # Present when widening the nearby radius would add ≥1 more person.
         "radius_suggestion": radius_suggestion,
-        # How many sign-ups were attributed to this viewer's ?ref=<handle>
-        # link — surfaced as the "X joined" chip next to the share pill.
+        # Sign-ups attributed to this viewer's ?ref=<handle> link.
         "referral_count": user.get("referral_count", 0),
     }
 

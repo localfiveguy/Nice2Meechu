@@ -100,6 +100,45 @@ def _send_one(sub_doc: dict, payload_json: str):
         return -1
 
 
+def _radius_covers(subscriber: dict, new_lat, new_lng, new_city_key: str) -> bool:
+    """True when the new user's home falls inside this subscriber's world:
+    same home city, or within their nearby_radius_km of their home center."""
+    sub_city = (subscriber.get("home_city") or "").split(",")[0].strip().lower()
+    if new_city_key and sub_city == new_city_key:
+        return True
+    c_lat = subscriber.get("home_lat") or subscriber.get("city_lat") or subscriber.get("lat")
+    c_lng = subscriber.get("home_lng") or subscriber.get("city_lng") or subscriber.get("lng")
+    if c_lat is None or new_lat is None:
+        return False
+    radius = subscriber.get("nearby_radius_km") or NEARBY_RADIUS_KM
+    return haversine_km(c_lat, c_lng, new_lat, new_lng) <= radius
+
+
+async def _matching_recipient_ids(new_user: dict, new_lat, new_lng, new_city_key: str) -> list:
+    recipients = []
+    async for u in db.users.find(
+        {"notify_new_nearby": True, "id": {"$ne": new_user["id"]}},
+        {"_id": 0, "id": 1, "home_city": 1, "home_lat": 1, "home_lng": 1,
+         "city_lat": 1, "city_lng": 1, "lat": 1, "lng": 1, "nearby_radius_km": 1},
+    ).limit(2000):
+        if _radius_covers(u, new_lat, new_lng, new_city_key):
+            recipients.append(u["id"])
+    return recipients
+
+
+async def _deliver_to_subscriptions(recipient_ids: list, payload_json: str) -> int:
+    """Send the payload to every subscription of the given users; prune
+    stale endpoints (404/410). Returns the number of successful pushes."""
+    sent = 0
+    async for sub in db.push_subscriptions.find({"user_id": {"$in": recipient_ids}}, {"_id": 0}):
+        status = await run_in_threadpool(_send_one, sub, payload_json)
+        if status is None:
+            sent += 1
+        elif status in (404, 410):
+            await db.push_subscriptions.delete_one({"endpoint": sub["endpoint"]})
+    return sent
+
+
 async def notify_new_nearby(new_user: dict) -> dict:
     """Push '👋 Someone new just joined near <City>' to every opted-in user
     whose radius covers the new user's home. Fire-and-forget from users.py."""
@@ -112,25 +151,7 @@ async def notify_new_nearby(new_user: dict) -> dict:
     if not city_short and new_lat is None:
         return {"sent": 0, "reason": "no location"}
 
-    new_city_key = city_short.lower()
-    recipients = []
-    async for u in db.users.find(
-        {"notify_new_nearby": True, "id": {"$ne": new_user["id"]}},
-        {"_id": 0, "id": 1, "home_city": 1, "home_lat": 1, "home_lng": 1,
-         "city_lat": 1, "city_lng": 1, "lat": 1, "lng": 1, "nearby_radius_km": 1},
-    ).limit(2000):
-        sub_city = (u.get("home_city") or "").split(",")[0].strip().lower()
-        if new_city_key and sub_city == new_city_key:
-            recipients.append(u["id"])
-            continue
-        c_lat = u.get("home_lat") or u.get("city_lat") or u.get("lat")
-        c_lng = u.get("home_lng") or u.get("city_lng") or u.get("lng")
-        if c_lat is None or new_lat is None:
-            continue
-        radius = u.get("nearby_radius_km") or NEARBY_RADIUS_KM
-        if haversine_km(c_lat, c_lng, new_lat, new_lng) <= radius:
-            recipients.append(u["id"])
-
+    recipients = await _matching_recipient_ids(new_user, new_lat, new_lng, city_short.lower())
     if not recipients:
         return {"sent": 0, "reason": "no recipients in range"}
 
@@ -139,14 +160,7 @@ async def notify_new_nearby(new_user: dict) -> dict:
         "body": f"👋 Someone new just joined near {city_short or 'you'} — come say hi!",
         "url": "/",
     })
-
-    sent = 0
-    async for sub in db.push_subscriptions.find({"user_id": {"$in": recipients}}, {"_id": 0}):
-        status = await run_in_threadpool(_send_one, sub, payload)
-        if status is None:
-            sent += 1
-        elif status in (404, 410):
-            await db.push_subscriptions.delete_one({"endpoint": sub["endpoint"]})
+    sent = await _deliver_to_subscriptions(recipients, payload)
     logger.info("notify_new_nearby: %d recipients, %d pushes sent (new user in %s)",
                 len(recipients), sent, city_short)
     return {"sent": sent, "recipients": len(recipients)}
