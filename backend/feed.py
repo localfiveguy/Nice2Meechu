@@ -364,6 +364,7 @@ async def swipe(req: SwipeReq, user=Depends(current_user)):
     asyncio.create_task(notify_user(
         req.target_user_id,
         f"💌 It's a match with {user.get('codename') or 'someone'}! Say hi!",
+        url=f"/?chat={match_id}",
         tag=f"match-{match_id}",
     ))
     return {

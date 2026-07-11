@@ -130,6 +130,7 @@ async def send_message(req: MessageReq, user=Depends(current_user)):
         asyncio.create_task(notify_user(
             other_id,
             f"💬 New message from {user.get('codename') or 'your match'}",
+            url=f"/?chat={req.match_id}",
             tag=f"chat-{req.match_id}",
         ))
     if other and other.get("is_demo"):

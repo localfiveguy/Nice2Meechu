@@ -95,6 +95,29 @@ export default function App() {
     else setScreen("feed");
   }, []);
 
+  // Push-notification deep link (/?chat=<match_id>) captured at mount —
+  // consumed after auth hydration to land straight in that conversation.
+  const pendingChatRef = useRef(null);
+  const openPendingChat = useCallback(async (u) => {
+    const matchId = pendingChatRef.current;
+    if (!matchId || !u?.video_url) return false; // not fully onboarded → normal routing
+    try {
+      const { data } = await api.get("/matches");
+      const m = (data.matches || []).find((x) => x.match_id === matchId);
+      if (m) {
+        track("push_deep_link_opened", { kind: "chat" });
+        setActiveChat(m);
+        setScreen("chat");
+        // NOTE: ref intentionally NOT cleared here — StrictMode double-runs the
+        // hydration effect, and a cleared ref would let the second run stomp the
+        // chat with the feed. It's cleared on sign-out; URL is already stripped.
+        return true;
+      }
+    } catch { /* SAST: intentional — match gone/unauthorized → fall through to feed */ }
+    pendingChatRef.current = null; // bad/foreign id — don't retry on the double-run
+    return false;
+  }, []);
+
   // Capture ?ref=<handle> from URL on first load (referral attribution) and persist it
   // so it survives the round-trip through Google OAuth.
   useEffect(() => {
@@ -102,6 +125,13 @@ export default function App() {
     if (getCookieConsent() === "accepted") initAnalytics();
     try {
       const search = new URLSearchParams(window.location.search);
+      const chatParam = search.get("chat");
+      if (chatParam) {
+        pendingChatRef.current = chatParam.replace(/[^a-z0-9-]/gi, "").slice(0, 40);
+        const chatUrl = new URL(window.location.href);
+        chatUrl.searchParams.delete("chat");
+        window.history.replaceState(null, "", chatUrl.pathname + chatUrl.search + chatUrl.hash);
+      }
       const ref = search.get("ref");
       if (ref) {
         // Validate: only allow handle-safe chars and cap length to prevent localStorage abuse
@@ -149,7 +179,7 @@ export default function App() {
         localStorage.removeItem("n2m_ref"); // ref consumed
         track("sign_in_completed", { onboarded: !!data.onboarded, referred: !!ref });
         setUser(data.user);
-        routeToNext(data.user);
+        if (!(await openPendingChat(data.user))) routeToNext(data.user);
       } catch (err) {
         console.error("session exchange failed", err);
         track("sign_in_failed");
@@ -189,7 +219,7 @@ export default function App() {
       try {
         const { data } = await api.get("/auth/me");
         setUser(data.user);
-        routeToNext(data.user);
+        if (!(await openPendingChat(data.user))) routeToNext(data.user);
       } catch (err) {
         // not authenticated yet → show splash briefly, then sign-in
         setTimeout(() => setScreen("signin"), 1500);
@@ -221,6 +251,7 @@ export default function App() {
   const logout = async () => {
     try { await api.post("/auth/logout"); } catch (e) { console.error(e); }
     localStorage.removeItem("n2m_token");
+    pendingChatRef.current = null;
     setUser(null);
     setScreen("signin");
   };

@@ -1,6 +1,14 @@
 # Nice2Meechu — Product Requirements Doc
 
 
+## Updated (2026-06-21 part 6) — Push deep-linking into chats ✅
+
+- Match & message pushes now carry `url: /?chat=<match_id>`. `sw.js` notificationclick navigates the focused tab (or opens a new one) to that URL.
+- `App.js`: captures `?chat=` at mount into `pendingChatRef` (URL stripped immediately); after auth hydration, `openPendingChat()` fetches `/api/matches`, finds the match, and lands straight in ChatScreen. Falls back to normal routing for bad/foreign ids or incomplete onboarding. GA event `push_deep_link_opened`.
+- ⚠️ StrictMode gotcha (documented in code): hydration effect double-runs in dev; the pending-chat ref is intentionally NOT cleared on success (second run would stomp chat with feed). Cleared on sign-out.
+- Verified via Playwright: `/?chat=<id>` opens the right chat with message visible + cleaned URL; normal load and bogus-id both land on feed. Regression 33/33.
+
+
 ## Updated (2026-06-21 part 5) — Match & message push notifications ✅
 
 - New `notify_user(user_id, body, url, tag)` helper in `push.py` — single-recipient push gated on the same `notify_new_nearby` opt-in; per-thread `tag` (supported in sw.js) collapses same-conversation notifications instead of stacking.

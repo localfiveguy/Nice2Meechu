@@ -30,7 +30,14 @@ self.addEventListener("notificationclick", (event) => {
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
-        if ("focus" in client) return client.focus();
+        if ("focus" in client) {
+          // Deep-link (e.g. /?chat=<match_id>) — navigate the existing tab so
+          // the app opens straight into the right chat.
+          if (targetUrl !== "/" && "navigate" in client) {
+            return client.focus().then((c) => c.navigate(targetUrl).catch(() => c));
+          }
+          return client.focus();
+        }
       }
       if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
     })
