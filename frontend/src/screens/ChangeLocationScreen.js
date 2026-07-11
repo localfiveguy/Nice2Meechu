@@ -22,6 +22,34 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
   // When ticked, the next pick ALSO moves the user's HOME city — where their
   // video appears to others. Unticked (default) = just browse another city.
   const [setAsHome, setSetAsHome] = useState(false);
+  // Nearby-radius preference (10/25/50 km) — persisted immediately on tap.
+  const [radius, setRadius] = useState(user.nearby_radius_km || 25);
+  const [radiusDirty, setRadiusDirty] = useState(false);
+  const [freshUser, setFreshUser] = useState(null);
+
+  const pickRadius = async (km) => {
+    if (km === radius) return;
+    const prev = radius;
+    setRadius(km);
+    try {
+      await api.post("/users/nearby-radius", { radius_km: km });
+      const { data } = await api.get("/auth/me");
+      setFreshUser(data.user);
+      setRadiusDirty(true);
+      track("nearby_radius_changed", { km });
+      toast.success(`Nearby radius set to ${km} km`);
+    } catch {
+      setRadius(prev);
+      toast.error("Couldn't update radius");
+    }
+  };
+
+  // If only the radius changed, closing should still refresh the feed —
+  // route through onChanged so the parent reloads with the new radius.
+  const handleClose = () => {
+    if (radiusDirty) onChanged(freshUser || user);
+    else onClose();
+  };
   const debounceRef = useRef(null);
   const mapDivRef = useRef(null);
   const mapRef = useRef(null);
@@ -434,6 +462,32 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
             </span>
           </span>
         </label>
+
+        {/* Nearby radius — how far around the browsing city the feed reaches */}
+        <div
+          className="flex items-center justify-between gap-2 rounded-2xl px-3 py-2.5 bg-white/5 border border-white/10"
+          data-testid="change-location-radius"
+        >
+          <div className="min-w-0">
+            <div className="text-xs font-bold text-white">Nearby radius</div>
+            <div className="text-[10px] text-white/45 leading-snug">How far around a city the feed reaches</div>
+          </div>
+          <div className="flex gap-1.5 shrink-0">
+            {[10, 25, 50].map((km) => (
+              <button
+                key={km}
+                type="button"
+                onClick={() => pickRadius(km)}
+                disabled={busy !== null}
+                className={`px-2.5 py-1.5 rounded-full text-[11px] font-bold transition ${radius === km ? "bg-[#00E5FF]/20 text-[#00E5FF] ring-1 ring-[#00E5FF]/50" : "bg-white/8 text-white/60 hover:bg-white/15"}`}
+                data-testid={`change-location-radius-${km}`}
+                aria-pressed={radius === km}
+              >
+                {km} km
+              </button>
+            ))}
+          </div>
+        </div>
 
         {/* Use my current location */}
         <button

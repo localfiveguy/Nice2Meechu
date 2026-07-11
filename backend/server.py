@@ -128,8 +128,14 @@ class SwipeReq(BaseModel):
 
 
 # "Nearby towns": people whose HOME is within this radius of the browsing
-# city's center also appear in the feed (after the locals).
+# city's center also appear in the feed (after the locals). Users can
+# override per-account via /users/nearby-radius (10 / 25 / 50 km).
 NEARBY_RADIUS_KM = 25
+ALLOWED_NEARBY_RADII = {10, 25, 50}
+
+
+class NearbyRadiusReq(BaseModel):
+    radius_km: int
 
 
 class TranslateReq(BaseModel):
@@ -528,6 +534,16 @@ async def update_location(req: LocationUpdate, user=Depends(current_user)):
             update["home_lng"] = req.lng
     await db.users.update_one({"id": user["id"]}, {"$set": update})
     return {"ok": True}
+
+
+@api.post("/users/nearby-radius")
+async def set_nearby_radius(req: NearbyRadiusReq, user=Depends(current_user)):
+    if req.radius_km not in ALLOWED_NEARBY_RADII:
+        raise HTTPException(400, "radius_km must be one of 10, 25, 50")
+    await db.users.update_one(
+        {"id": user["id"]}, {"$set": {"nearby_radius_km": req.radius_km}}
+    )
+    return {"ok": True, "radius_km": req.radius_km}
 
 
 # ---------------------------------------------------------------------------
@@ -1280,7 +1296,8 @@ async def feed(user=Depends(current_user)):
         center_lng = user.get("city_lng") if user.get("city_lng") is not None else user.get("lng")
         if center_lat is not None and center_lng is not None:
             seen_ids = {c["id"] for c in candidates}
-            deg = NEARBY_RADIUS_KM / 111.0
+            radius_km = user.get("nearby_radius_km") or NEARBY_RADIUS_KM
+            deg = radius_km / 111.0
             lng_deg = deg / max(0.2, cos(_radians(center_lat)))
             near_filter = {
                 **base_filter,
@@ -1291,7 +1308,7 @@ async def feed(user=Depends(current_user)):
                 if u["id"] in seen_ids:
                     continue
                 d = haversine_km(center_lat, center_lng, u.get("home_lat"), u.get("home_lng"))
-                if d > NEARBY_RADIUS_KM:
+                if d > radius_km:
                     continue
                 u["_near_km"] = d
                 nearby.append(u)

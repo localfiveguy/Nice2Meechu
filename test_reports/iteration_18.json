@@ -1,0 +1,42 @@
+{
+  "summary": "Tested adjustable nearby-radius feature (10/25/50 km). Backend 100% passing (8/8 pytest incl. validation, cutoffs at 10/25/50, cleanup). Frontend: radius row renders, pills toggle correctly, cyan ring active state works, toasts fire, persistence via /auth/me works. CRITICAL FRONTEND BUG: after radius-only change, closing the screen via X does NOT reload the feed — the X button is wired to `onClose` instead of `handleClose`, so the `radiusDirty → onChanged` branch is never taken. Verified: reload of app does reflect new radius (backend/persistence fine), but the in-app close-to-refresh flow specified in the requirements is broken.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "ChangeLocationScreen",
+        "issue": "Close (X) button uses onClick={onClose} instead of onClick={handleClose}. When only the radius changed (radiusDirty=true), handleClose was designed to route through onChanged(freshUser||user) so the parent reloads the feed with the new radius. Because the X calls onClose directly, no /api/feed request fires on close and the feed remains stale until the user manually reloads. Verified: after tapping 10 km and closing, 0 /api/feed requests observed and feed still shows all 3 Marlton nearby cards (should show only Voorhees 3 KM).",
+        "selector": "[data-testid=\"change-location-close\"]",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Radius-only change → close → feed reload",
+        "issue": "Feed never reloads on close after radius-only change; requirement 'closing the screen after a radius-only change routes through onChanged so the feed reloads' is NOT met.",
+        "affected_selectors": ["[data-testid=\"change-location-close\"]", "[data-testid=\"change-location-radius-10\"]", "[data-testid=\"change-location-radius-50\"]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_nearby_radius.py",
+    "/app/test_reports/pytest/nearby_radius.xml"
+  ],
+  "action_items": [
+    "Change ChangeLocationScreen.js line 390: onClick={onClose} → onClick={handleClose} on the X close button so that radiusDirty branch fires onChanged (feed reloads).",
+    "Optional: cover this with a unit/integration test — mock onChanged/onClose and verify handleClose picks the right one based on radiusDirty."
+  ],
+  "critical_code_review_comments": [
+    "ChangeLocationScreen.js:389-396 — `handleClose` is declared but the X button still calls the raw `onClose` prop. Dead code + broken feature. Small fix, big impact.",
+    "Consider also intercepting the modal-scrim/backdrop close (if any) and Escape-key close to go through handleClose."
+  ],
+  "updated_files": ["/app/backend/tests/test_nearby_radius.py"],
+  "success_rate": {"backend": "100%", "frontend": "80%"},
+  "test_credentials": "Bearer sttest_SUQD-bH3lyJJOBLw-llOftxhxupA_9nU → demo-00",
+  "seed_data_creation": "None (used existing seeded Marlton nearby users: Voorhees 3.1km, Cherry Hill 10.5km, test-john-erial 15.2km).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend endpoint POST /api/users/nearby-radius {10|25|50} works and persists as users.nearby_radius_km; feed cutoff verified against seeded distances. Frontend regression: verify X close (change-location-close) after a radius-only tap triggers a /api/feed request AND updates the feed cards (Marlton + radius 10 should show only 1 card 'Voorhees 3 KM').",
+  "rca of the issue": "In /app/frontend/src/screens/ChangeLocationScreen.js the close button (line 389-396) is `onClick={onClose}` but the file defines `handleClose` (line 49-52) that inspects `radiusDirty` and calls `onChanged(freshUser||user)` when only the radius changed. The X handler was never switched to `handleClose`, so the radius-only close path never triggers the parent's feed reload. Repro: sign in as demo-00, set browsing city to Marlton via API, open change-location, tap 10 km (toast shows, aria-pressed flips), tap X → screen closes but no /api/feed fires and feed still shows all 3 nearby users (should be 1). Fix: `onClick={handleClose}` on the close button."
+}
