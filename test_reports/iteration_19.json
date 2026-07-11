@@ -1,0 +1,16 @@
+{
+  "summary": "Retest of iteration_18 HIGH bug (radius-only change + close via X should reload feed). Fix at ChangeLocationScreen.js line 390 (onClick={handleClose}) verified end-to-end. All three scenarios pass: (1) radius 25→10 + X close → feed reloads to 1/1 (Voorhees 3km only); (2) radius 10→50 + X close → feed reloads to 1/3 including FROM ERIAL card; (3) open + immediate X close (no change) → screen closes, ZERO /api/feed requests, no errors. Cleanup performed: radius restored to 25, demo-00 city=Tokyo home_city=Tokyo, Tokyo feed returns 12 cards.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/test_reports/iteration_18.json", "/app/backend/tests/test_nearby_radius.py"],
+  "action_items": [],
+  "critical_code_review_comments": ["handleClose correctly branches on radiusDirty and routes through onChanged(freshUser||user) so parent reloads feed with fresh nearby_radius_km. No-change close correctly short-circuits to plain onClose (no extra /api/feed noise)."],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (not retested; iteration_18 baseline)", "frontend": "100%"},
+  "test_credentials": "sttest_SUQD-bH3lyJJOBLw-llOftxhxupA_9nU → demo-00",
+  "seed_data_creation": "None; used pre-existing Marlton-area seeded users (Voorhees 3.1km / Cherry Hill 10.5km / test-john-erial 15.2km).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bug from iteration_18 fully resolved. Radius change close-via-X flow now triggers feed reload via handleClose→onChanged path. Cleanup was performed at end (radius=25, Tokyo home). Observed evidence: 3 /api/feed requests fired only when radiusDirty=true; 0 requests when close pressed with no radius change.",
+  "rca of the issue": "N/A — fix already applied by main agent in prior iteration; this iteration confirmed."
+}

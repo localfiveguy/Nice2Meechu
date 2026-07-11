@@ -387,7 +387,7 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
           Change location<span style={{ color: "#FF4D4D" }}>.</span>
         </h2>
         <button
-          onClick={onClose}
+          onClick={handleClose}
           className="text-white/60 hover:text-white p-2 -mr-2"
           aria-label="Close"
           data-testid="change-location-close"
