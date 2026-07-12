@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends
 
 from auth import current_user
-from core import ALLOWED_NEARBY_RADII, NEARBY_RADIUS_KM, _rng, db, haversine_km, logger
+from core import ALLOWED_NEARBY_RADII, NEARBY_RADIUS_KM, _geocode_city, _rng, db, haversine_km, logger
 from demos import _is_demo_user, seed_demo_users
 from models import SwipeReq
 from push import notify_user
@@ -55,10 +55,12 @@ async def cities_popular(user=Depends(current_user)):
             "_id": {"$toLower": "$home_city"},
             "raw_city": {"$first": "$home_city"},
             "count": {"$sum": 1},
-            # Coalesce: prefer the home coords, then the explicit city center,
-            # then the user's own geolocation.
-            "lat": {"$first": {"$ifNull": ["$home_lat", {"$ifNull": ["$city_lat", "$lat"]}]}},
-            "lng": {"$first": {"$ifNull": ["$home_lng", {"$ifNull": ["$city_lng", "$lng"]}]}},
+            # HOME coords only, averaged across residents ($avg skips nulls).
+            # Never fall back to city_lat/lat — those are BROWSING coords, and
+            # one resident exploring Tokyo used to poison their home city's
+            # map dot with Tokyo coordinates (the original Marlton↔Tokyo bug).
+            "lat": {"$avg": "$home_lat"},
+            "lng": {"$avg": "$home_lng"},
         }},
     ]
     rows = await db.users.aggregate(pipeline).to_list(2000)
@@ -94,6 +96,11 @@ async def cities_popular(user=Depends(current_user)):
             continue
         parts = [p.strip() for p in (r.get("raw_city") or "").split(",") if p.strip()]
         city = parts[0] if parts else "Unknown"
+        # No resident has home coords → resolve the city label itself
+        # (cached), so the list/dot never carries wrong-continent coords.
+        if r.get("lat") is None:
+            g_lat, g_lng = await _geocode_city(r.get("raw_city") or city)
+            r["lat"], r["lng"] = g_lat, g_lng
         # `country` line for display: combine middle "state" parts (if any)
         # with the trailing country. Normalize verbose country names so the
         # row reads "NJ, USA" instead of "NJ, United States".
@@ -229,38 +236,6 @@ def _feed_item(c: dict, user: dict, liked_me_ids: set, prior_action_by_id: dict)
         # previously-seen videos while still allowing Back/Restart navigation.
         "prior_action": prior_action_by_id.get(c["id"]),
     }
-
-
-async def _geocode_city(city_full: str) -> tuple:
-    """Resolve a city label ("Marlton, New Jersey, United States") to coords
-    via Photon, cached forever in db.city_geo. Returns (lat, lng) or (None,
-    None) on failure — failures are NOT cached so transient outages retry."""
-    key = (city_full or "").strip().lower()
-    if not key:
-        return None, None
-    cached = await db.city_geo.find_one({"key": key}, {"_id": 0})
-    if cached:
-        return cached.get("lat"), cached.get("lng")
-    try:
-        import httpx
-        async with httpx.AsyncClient(timeout=5) as http:
-            r = await http.get(
-                "https://photon.komoot.io/api",
-                params={"q": city_full, "limit": 1},
-                headers={"User-Agent": "nice2meechu/1.0"},
-            )
-            feats = (r.json() or {}).get("features") or []
-            if feats:
-                lng, lat = feats[0]["geometry"]["coordinates"]
-                await db.city_geo.update_one(
-                    {"key": key},
-                    {"$set": {"key": key, "lat": lat, "lng": lng}},
-                    upsert=True,
-                )
-                return lat, lng
-    except Exception:  # noqa: BLE001
-        logger.warning("geocode failed for %r (non-fatal)", city_full)
-    return None, None
 
 
 async def _browse_center(user: dict, locals_: list) -> tuple:

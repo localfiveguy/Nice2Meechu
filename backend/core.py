@@ -89,6 +89,38 @@ def generate_codename() -> str:
     return f"{_rng.choice(CODENAME_ADJ)} {_rng.choice(CODENAME_NOUN)}"
 
 
+async def _geocode_city(city_full: str) -> tuple:
+    """Resolve a city label ("Marlton, New Jersey, United States") to coords
+    via Photon, cached forever in db.city_geo. Returns (lat, lng) or (None,
+    None) on failure — failures are NOT cached so transient outages retry."""
+    key = (city_full or "").strip().lower()
+    if not key:
+        return None, None
+    cached = await db.city_geo.find_one({"key": key}, {"_id": 0})
+    if cached:
+        return cached.get("lat"), cached.get("lng")
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=5) as http:
+            r = await http.get(
+                "https://photon.komoot.io/api",
+                params={"q": city_full, "limit": 1},
+                headers={"User-Agent": "nice2meechu/1.0"},
+            )
+            feats = (r.json() or {}).get("features") or []
+            if feats:
+                lng, lat = feats[0]["geometry"]["coordinates"]
+                await db.city_geo.update_one(
+                    {"key": key},
+                    {"$set": {"key": key, "lat": lat, "lng": lng}},
+                    upsert=True,
+                )
+                return lat, lng
+    except Exception:  # noqa: BLE001
+        logger.warning("geocode failed for %r (non-fatal)", city_full)
+    return None, None
+
+
 def haversine_km(lat1, lng1, lat2, lng2) -> float:
     from math import asin, cos, radians, sin, sqrt
 

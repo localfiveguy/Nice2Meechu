@@ -9,7 +9,7 @@ from fastapi import APIRouter, Cookie, Depends, File, Header, HTTPException, Res
 from fastapi.concurrency import run_in_threadpool
 
 from auth import current_user
-from core import ALLOWED_NEARBY_RADII, _OG_CACHE, _get_gcs_bucket, _rng, db
+from core import ALLOWED_NEARBY_RADII, _OG_CACHE, _geocode_city, _get_gcs_bucket, _rng, db, haversine_km, logger
 from models import (
     BlockReq,
     CityPositionReq,
@@ -92,16 +92,31 @@ async def accept_rules(req: RulesAcceptReq, user=Depends(current_user)):
 
 @router.post("/users/location")
 async def update_location(req: LocationUpdate, user=Depends(current_user)):
-    update = {"lat": req.lat, "lng": req.lng}
+    lat, lng = req.lat, req.lng
+    update = {}
     if req.city and req.city.strip():
-        update["city"] = req.city.strip()[:120]
-        update["city_lat"] = req.lat
-        update["city_lng"] = req.lng
+        city_clean = req.city.strip()[:120]
+        # Never store coords that contradict the city label — a stale client
+        # (or a poisoned popular-cities entry) once wrote city="Marlton" with
+        # Tokyo coordinates. If the supplied coords are >100 km from where the
+        # label geocodes to, the label wins.
+        g_lat, g_lng = await _geocode_city(city_clean)
+        if g_lat is not None and haversine_km(lat, lng, g_lat, g_lng) > 100:
+            logger.warning(
+                "update_location: coords (%.3f,%.3f) contradict city %r — using geocoded (%.3f,%.3f)",
+                lat, lng, city_clean, g_lat, g_lng,
+            )
+            lat, lng = g_lat, g_lng
+        update["city"] = city_clean
+        update["city_lat"] = lat
+        update["city_lng"] = lng
         if req.set_home:
             # Home city = where this user's video appears in others' feeds.
-            update["home_city"] = update["city"]
-            update["home_lat"] = req.lat
-            update["home_lng"] = req.lng
+            update["home_city"] = city_clean
+            update["home_lat"] = lat
+            update["home_lng"] = lng
+    update["lat"] = lat
+    update["lng"] = lng
     await db.users.update_one({"id": user["id"]}, {"$set": update})
     return {"ok": True}
 

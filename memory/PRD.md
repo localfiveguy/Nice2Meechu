@@ -9,6 +9,11 @@
 - Verified in preview: corrupted viewer now gets Marlton locals + Voorhees 3.2 km + Cherry Hill 10.5 km + Erial ~15 km, ZERO Tokyo. Regression 33/33.
 - ⚠️ REQUIRES REDEPLOY to reach production.
 - **Round 2 (deploy 56 didn't clear it)**: production Marlton locals likely have NO stored coords (geolocation denied + typed city), so the locals-median heal silently skipped. `_browse_center` now falls back to a **server-side Photon geocode** of the city label (`_geocode_city`, cached in `db.city_geo`, User-Agent header required, failures not cached). Verified: viewer with Tokyo coords + coordless locals → geocode resolves Marlton NJ (39.9006,-74.9339) → healed → zero Tokyo. Regression 33/33. Needs redeploy (57).
+- **Round 3 — ORIGINAL CORRUPTION VECTOR found & killed**: `/api/cities/popular` used `$first` resident's coords with a fallback to their BROWSING coords (`city_lat`) — a Marlton resident exploring Tokyo poisoned the "Marlton · 3 people" list entry with Tokyo coordinates, and tapping it wrote city="Marlton"+Tokyo coords onto the viewer. Fixes (all verified):
+  1. Popular-cities coords = `$avg` of residents' HOME coords only (never browsing coords); cities where no resident has coords get geocoded server-side.
+  2. `POST /users/location` now geocode-validates: if supplied coords are >100 km from where the city label geocodes, the label wins (logged warning). Kills the corruption at the source for any client, stale frontends included.
+  3. Feed `_browse_center` heal (rounds 1-2) remains as the last line of defense.
+  `_geocode_city` moved to core.py (shared by feed + users). Regression 33/33. ⚠️ Needs redeploy.
 - **Follow-up (same session)**: feed city pill now shows the full "region, country" line under the town name (`feed-location-detail` testid) so a location mix-up is instantly visible. Verified via screenshot.
 
 
