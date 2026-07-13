@@ -246,10 +246,11 @@ export function VideoPick({ user, onDone, onSkip }) {
       </div>
 
       <div
-        className="mt-4 relative aspect-[3/4] rounded-3xl overflow-hidden bg-black"
-        /* Older iOS Safari (<15) doesn't support aspect-ratio — the box
-           collapses to 0 height and the record button vanishes. Explicit
-           min-height keeps the camera + record button usable there. */
+        className="mt-4 relative aspect-[3/4] rounded-3xl overflow-hidden bg-black shrink-0"
+        /* shrink-0: this page is a flex column — without it, small screens
+           (iPhone SE et al) squeeze the camera box to a sliver to fit
+           everything above the fold, crushing the record button. min-height
+           is a belt-and-suspenders fallback. */
         style={{ minHeight: 360 }}
       >
         {/* Recording view: live camera feed until a clip is captured.
