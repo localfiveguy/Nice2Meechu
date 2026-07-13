@@ -84,15 +84,23 @@ export function AppleSignInButton() {
   if (!APPLE_SERVICE_ID || !ready) return null;
 
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      className="inline-flex items-center justify-center gap-2 rounded-full bg-black text-white font-semibold text-sm border border-white/25 hover:border-white/50 active:scale-[0.98] transition"
-      style={{ width: 280, height: 40 }}
-      data-testid="signin-apple-button"
-    >
-      <Apple size={16} className="-mt-0.5" />
-      Continue with Apple
-    </button>
+    <div className="flex flex-col items-center gap-1.5">
+      <button
+        type="button"
+        onClick={handleClick}
+        className="inline-flex items-center justify-center gap-2 rounded-full bg-black text-white font-semibold text-sm border border-white/25 hover:border-white/50 active:scale-[0.98] transition"
+        style={{ width: 280, height: 40 }}
+        data-testid="signin-apple-button"
+      >
+        <Apple size={16} className="-mt-0.5" />
+        Continue with Apple
+      </button>
+      <p
+        className="text-[10px] text-white/40 text-center max-w-[280px] leading-snug"
+        data-testid="signin-apple-email-hint"
+      >
+        Used Google before? Choose "Share My Email" so we recognize you.
+      </p>
+    </div>
   );
 }

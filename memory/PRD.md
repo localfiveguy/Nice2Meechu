@@ -338,7 +338,10 @@ A hyperlocal, video-first social app where users connect by watching short video
 - Bundle ID = Apple's equivalent of Android package name → `com.nice2meechu.app` (matches Play Store).
 - iOS build path chosen for Mac-less user: PWABuilder (generate Xcode project) → GitHub → Codemagic (cloud Mac build/sign/upload to App Store Connect).
 
+## 2026-06 — SIWA live in preview + account fixes
+- User created App ID `com.nice2meechu.app` + Services ID `nice2meechu.app.web` (domains/return URLs cover prod + preview; verified against Apple's authorize endpoint). Env vars filled; "Continue with Apple" button live and user signed in successfully on iPhone.
+- Fixed VideoPick camera box crushed to a sliver on small iPhones (flex column shrink) — added `shrink-0` + minHeight 360; Continue button now toasts "Record your intro first" instead of being dead-disabled.
+- Apple "Hide My Email" created a duplicate account (private relay email ≠ Gmail). Cleanup (user-approved): linked apple_sub to Steavin (steavinrice@gmail.com), deleted Aurora Lynx duplicate + old Loretta test account from preview. Added hint under Apple button: "Used Google before? Choose 'Share My Email' so we recognize you." (testid signin-apple-email-hint).
+
 ## Next Tasks
-- User completes Apple Developer portal setup (App ID → Services ID → domains/return URLs) and pastes the Services ID here.
-- Fill APPLE_SERVICE_ID env vars, restart, live-test Apple sign-in in preview.
-- Then: PWABuilder iOS package + Codemagic pipeline walkthrough (step-by-step, user has Windows 11).
+- User to **Deploy** (SIWA + camera fix to nice2meechu.com), then PWABuilder iOS package + Codemagic pipeline walkthrough (user has Windows 11, no Mac).
