@@ -245,7 +245,13 @@ export function VideoPick({ user, onDone, onSkip }) {
         </div>
       </div>
 
-      <div className="mt-4 relative aspect-[3/4] rounded-3xl overflow-hidden bg-black">
+      <div
+        className="mt-4 relative aspect-[3/4] rounded-3xl overflow-hidden bg-black"
+        /* Older iOS Safari (<15) doesn't support aspect-ratio — the box
+           collapses to 0 height and the record button vanishes. Explicit
+           min-height keeps the camera + record button usable there. */
+        style={{ minHeight: 360 }}
+      >
         {/* Recording view: live camera feed until a clip is captured.
             Playback view: the captured blob with native HTML5 controls so
             the user can review (play/scrub/replay) before posting. */}
@@ -381,7 +387,10 @@ export function VideoPick({ user, onDone, onSkip }) {
       <button
         className="btn-primary mt-4 flex items-center justify-center gap-2"
         onClick={save}
-        disabled={loading || !recordedBlob}
+        /* Not disabled when there's no recording — save() shows a "Record
+           your intro first" toast instead, so users understand what's missing
+           rather than facing a dead button. */
+        disabled={loading}
         data-testid="video-save-button"
       >
         {phase === "verifying" ? "Verifying your video…"
