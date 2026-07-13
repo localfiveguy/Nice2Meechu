@@ -1,4 +1,5 @@
 export const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
+export const APPLE_SERVICE_ID = process.env.REACT_APP_APPLE_SERVICE_ID;
 
 export const LANG_OPTIONS = [
   { code: "en", name: "English" },

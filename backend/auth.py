@@ -6,12 +6,14 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
+import jwt as pyjwt
 from fastapi import APIRouter, Cookie, Depends, Form, Header, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 
 from core import (
+    APPLE_SERVICE_ID,
     EMERGENT_AUTH_SESSION_URL,
     GOOGLE_CLIENT_ID,
     SESSION_TTL,
@@ -19,7 +21,7 @@ from core import (
     generate_codename,
     logger,
 )
-from models import GoogleIdTokenReq, SessionExchangeReq
+from models import AppleIdTokenReq, GoogleIdTokenReq, SessionExchangeReq
 
 router = APIRouter()
 
@@ -298,6 +300,117 @@ async def auth_session_exchange(req: SessionExchangeReq, response: Response):
         ref=req.ref,
         session_token=session_token,
     )
+
+
+# ---------------------------------------------------------------------------
+# Sign in with Apple (web JS popup flow)
+# ---------------------------------------------------------------------------
+APPLE_ISSUER = "https://appleid.apple.com"
+_apple_jwk_client = pyjwt.PyJWKClient(
+    "https://appleid.apple.com/auth/keys", cache_keys=True, lifespan=86400
+)
+
+
+async def _upsert_apple_user(
+    *, apple_sub: str, email: Optional[str], name: Optional[str], ref: Optional[str]
+) -> dict:
+    """Find-or-create the user from an Apple identity token. Lookup order:
+    apple_sub (stable Apple identifier) → email (links Apple to an existing
+    Google account) → create new. Apple only sends the name on the very first
+    authorization, so it's only trusted at account-creation time."""
+    existing = await db.users.find_one({"apple_sub": apple_sub}, {"_id": 0})
+    if existing:
+        return existing
+
+    if email:
+        by_email = await db.users.find_one({"email": email}, {"_id": 0})
+        if by_email:
+            await db.users.update_one({"id": by_email["id"]}, {"$set": {"apple_sub": apple_sub}})
+            return await db.users.find_one({"id": by_email["id"]}, {"_id": 0})
+
+    if not email:
+        raise HTTPException(401, "Apple did not share an email for this account")
+
+    ref_user_id = None
+    ref_handle = (ref or "").strip().lower()
+    if ref_handle:
+        ref_user = await db.users.find_one({"handle": ref_handle}, {"_id": 0, "id": 1})
+        if ref_user:
+            ref_user_id = ref_user["id"]
+
+    new_user = {
+        "id": str(uuid.uuid4()),
+        "email": email,
+        "name": name,
+        "picture": None,
+        "apple_sub": apple_sub,
+        "codename": generate_codename(),
+        "handle": None,
+        "first_name": (name or "").strip().split(" ")[0] if name else None,
+        "vibes": [],
+        "language": "en",
+        "avatar_emoji": "🌙",
+        "lat": None,
+        "lng": None,
+        "video_url": None,
+        "transcript": None,
+        "source_lang": None,
+        "referrer_handle": ref_handle or None,
+        "referrer_id": ref_user_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.users.insert_one(new_user.copy())
+    if ref_user_id:
+        await db.users.update_one({"id": ref_user_id}, {"$inc": {"referral_count": 1}})
+    return await db.users.find_one({"id": new_user["id"]}, {"_id": 0})
+
+
+@router.post("/auth/apple")
+async def auth_apple_id_token(req: AppleIdTokenReq, response: Response):
+    """Sign in with Apple — verify the Apple-issued identity token (JWT) against
+    Apple's JWKS public keys, then sign the user in. Frontend uses Apple's JS
+    SDK in popup mode which returns `authorization.id_token`; that JWT is
+    forwarded here for cryptographic verification (signature, audience=our
+    Services ID, issuer=appleid.apple.com, expiry)."""
+    if not APPLE_SERVICE_ID:
+        raise HTTPException(500, "APPLE_SERVICE_ID not configured")
+
+    try:
+        signing_key = await asyncio.to_thread(
+            _apple_jwk_client.get_signing_key_from_jwt, req.id_token
+        )
+        claims = pyjwt.decode(
+            req.id_token,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=APPLE_SERVICE_ID,
+            issuer=APPLE_ISSUER,
+        )
+    except pyjwt.PyJWTError as exc:
+        logger.warning("Apple identity token verification failed: %s", exc)
+        raise HTTPException(401, f"Invalid Apple credential: {exc}")
+
+    apple_sub = claims.get("sub")
+    if not apple_sub:
+        raise HTTPException(401, "Apple token missing subject")
+
+    user = await _upsert_apple_user(
+        apple_sub=apple_sub,
+        email=claims.get("email"),
+        name=(req.name or "").strip() or None,
+        ref=req.ref,
+    )
+    token = await _mint_session(user["id"])
+    response.set_cookie(
+        key="session_token",
+        value=token,
+        max_age=int(SESSION_TTL.total_seconds()),
+        path="/",
+        httponly=True,
+        secure=True,
+        samesite="none",
+    )
+    return {"token": token, "user": user, "onboarded": bool(user.get("handle"))}
 
 
 @router.get("/auth/me")

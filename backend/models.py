@@ -15,6 +15,13 @@ class GoogleIdTokenReq(BaseModel):
     ref: Optional[str] = None
 
 
+class AppleIdTokenReq(BaseModel):
+    """Sign in with Apple (web JS popup) — frontend posts the identity token here."""
+    id_token: str  # Apple-issued identity token (JWT)
+    name: Optional[str] = None  # only provided by Apple on first-ever sign-in
+    ref: Optional[str] = None
+
+
 class OnboardingReq(BaseModel):
     # New simplified profile: first name + city + age. Vibes/language stay optional.
     first_name: str

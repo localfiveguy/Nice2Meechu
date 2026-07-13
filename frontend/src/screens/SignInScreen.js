@@ -6,6 +6,7 @@ import { api, shareOrCopy } from "../lib/api";
 import { GOOGLE_CLIENT_ID } from "../lib/constants";
 import { isIosWebkit, isStandalonePwa } from "../lib/ua";
 import { IOSInstallSheet } from "../components/IOSInstallSheet";
+import { AppleSignInButton } from "../components/AppleSignInButton";
 import { track } from "../analytics";
 
 // ---------- Google Sign-In (Direct Google Identity Services / GIS) ----------
@@ -183,6 +184,7 @@ export function SignInScreen() {
             style={{ colorScheme: "light" }}
           />
         )}
+        <AppleSignInButton />
         {gisError && (
           <p className="text-center text-xs text-red-400" data-testid="signin-error">
             {gisError}

@@ -35,6 +35,7 @@ db = client[os.environ["DB_NAME"]]
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 EMERGENT_AUTH_SESSION_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+APPLE_SERVICE_ID = os.environ.get("APPLE_SERVICE_ID", "")
 ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
 GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "")
 GCS_BUCKET = os.environ.get("GCS_BUCKET", "")

@@ -86,7 +86,7 @@
   - `admin.py` — funnel dashboard, inactive-video cleanup + daily background loop
 - New `server.py` is a ~150-line thin entrypoint: includes all routers with `/api` prefix, static mounts (videos, user-videos, share-cards), CORS, and startup migrations (legacy demo retirement, city-noise cleanup, home-city backfill) + cleanup scheduler. Supervisor entrypoint unchanged (`uvicorn server:app`).
 - Route parity verified via openapi.json: 32/32 paths. Full regression: **33/33 backend tests pass** (`/app/backend/tests/test_refactor_regression.py`, report `/app/test_reports/iteration_20.json`). Zero behavior changes.
-- User decision: **NO Sign in with Apple** — permanently off the roadmap.
+- User decision (2026-06, superseded): originally NO Sign in with Apple — reversed once App Store submission required it (see 2026-06 SIWA section below).
 
 
 ## Updated (2026-06-20) — Android APK build (TWA) ✅
@@ -328,6 +328,17 @@ A hyperlocal, video-first social app where users connect by watching short video
 - **P3** Invite-only friends-of-friends discovery.
 - **P3** Split `App.js` into per-screen files once it stops being a single-file brief.
 
+## 2026-06 — Sign in with Apple (SIWA) — code complete, awaiting Apple credentials
+- Why: App Store requires SIWA for any app offering Google login. User is an Apple Developer with only an iPad + Windows 11 PC (no Mac).
+- Backend: `POST /api/auth/apple` in `auth.py` — verifies Apple identity token via PyJWT `PyJWKClient` against `https://appleid.apple.com/auth/keys` (RS256, aud=`APPLE_SERVICE_ID`, iss=appleid.apple.com). `_upsert_apple_user`: lookup apple_sub → link by email → create new (codename/referral parity with Google path). Mints the same session_token + httpOnly cookie.
+- Frontend: `components/AppleSignInButton.js` — lazily loads Apple JS SDK, popup mode (`usePopup:true`, redirectURI=origin), posts id_token+first-signin-name+ref to backend, stores token, reloads. Renders NOTHING until `REACT_APP_APPLE_SERVICE_ID` is set. Wired into `SignInScreen.js` under the Google button. testid: `signin-apple-button`.
+- Env placeholders added (empty): backend `APPLE_SERVICE_ID`, frontend `REACT_APP_APPLE_SERVICE_ID`. Fill with the Services ID (e.g. `com.nice2meechu.app.web`) once user creates it, then restart both services.
+- Apple portal setup user must do (guided): App ID `com.nice2meechu.app` (explicit, SIWA capability) → Services ID with domain `nice2meechu.com` + preview domain, Return URLs `https://nice2meechu.com/` and preview URL → (optional for future) SIWA .p8 key.
+- Tested: endpoint returns 500 pre-config, JWKS fetch + bad-token rejection verified in python, sign-in screen renders unchanged. FULL E2E BLOCKED until real Apple Services ID exists.
+- Bundle ID = Apple's equivalent of Android package name → `com.nice2meechu.app` (matches Play Store).
+- iOS build path chosen for Mac-less user: PWABuilder (generate Xcode project) → GitHub → Codemagic (cloud Mac build/sign/upload to App Store Connect).
+
 ## Next Tasks
-- Validate the new GIS sign-in end-to-end with a real Google account in the preview (one human-click smoke test).
-- Click **Deploy** to push the new auth flow to `nice2meechu.com`.
+- User completes Apple Developer portal setup (App ID → Services ID → domains/return URLs) and pastes the Services ID here.
+- Fill APPLE_SERVICE_ID env vars, restart, live-test Apple sign-in in preview.
+- Then: PWABuilder iOS package + Codemagic pipeline walkthrough (step-by-step, user has Windows 11).
