@@ -156,7 +156,7 @@ async def send_message(req: MessageReq, user=Depends(current_user)):
 
 
 @router.post("/translate")
-async def translate(req: TranslateReq):
+async def translate(req: TranslateReq, user=Depends(current_user)):
     if not EMERGENT_LLM_KEY:
         raise HTTPException(500, "EMERGENT_LLM_KEY not configured")
     out = await _translate_text(req.text, req.target_lang, req.source_lang)

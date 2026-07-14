@@ -350,5 +350,14 @@ A hyperlocal, video-first social app where users connect by watching short video
 - `/app/ios-build/README.md`: full browser-only user checklist (ASC app record, ASC API key, Save to GitHub, Codemagic setup, review notes).
 - Play Store AAB ready: `/app/frontend/public/store-assets/nice2meechu-play.aab` (downloadable from prod at /store-assets/nice2meechu-play.aab after redeploy).
 
+## 2026-06 — Security audit + fixes (all verified in preview)
+- Audit verdict was FAIL (1 HIGH, 2 MEDIUM). All fixed same-day:
+- SEC-001 HIGH CORS: `CORS_ORIGINS` env changed from `*` to explicit allowlist (nice2meechu.com, www, preview); server.py strips/filters entries. Verified: evil Origin gets no ACAO header; allowed origin reflected. (Preview ingress still injects ACAO:* but browsers reject wildcard+credentials per spec, so credentialed attack fails regardless.)
+- SEC-002 MED: `/api/translate` now requires auth (401 verified) + TranslateReq.text max_length 2000. Frontend translate() helper fails gracefully (returns original text) and is only used signed-in.
+- SEC-003 MED: OG card cache — bogus handles no longer cached; real-handle cache bounded at 500 (FIFO evict).
+- Hardening: MessageReq.text + VideoUploadReq.transcript capped at 2000 chars; Google/Apple auth errors now generic (details still logged server-side).
+- Remaining backlog (P3): per-user rate limiting on swipes/messages/reports; CSRF tokens (mitigated by CORS fix + JSON-only bodies).
+- PRODUCTION NOTE: fixes require redeploy to take effect on nice2meechu.com.
+
 ## Next Tasks
-- User: redeploy (health fix + SIWA), then follow ios-build/README.md steps (ASC + Codemagic), and upload AAB to Google Play Console.
+- User: redeploy (health fix + SIWA + security fixes), then follow ios-build/README.md steps (ASC + Codemagic), and upload AAB to Google Play Console.

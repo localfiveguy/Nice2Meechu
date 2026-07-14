@@ -1,7 +1,7 @@
 """Pydantic request models for all API routes."""
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SessionExchangeReq(BaseModel):
@@ -43,7 +43,7 @@ class RulesAcceptReq(BaseModel):
 
 class VideoUploadReq(BaseModel):
     video_url: Optional[str] = None
-    transcript: Optional[str] = None
+    transcript: Optional[str] = Field(None, max_length=2000)
     source_lang: str = "en"
 
 
@@ -57,7 +57,7 @@ class NearbyRadiusReq(BaseModel):
 
 
 class TranslateReq(BaseModel):
-    text: str
+    text: str = Field(..., max_length=2000)
     target_lang: str
     source_lang: Optional[str] = None
 
@@ -68,7 +68,7 @@ class FaceCheckReq(BaseModel):
 
 class MessageReq(BaseModel):
     match_id: str
-    text: str
+    text: str = Field(..., max_length=2000)
 
 
 class LocationUpdate(BaseModel):

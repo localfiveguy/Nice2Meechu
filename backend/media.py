@@ -212,14 +212,19 @@ async def og_card(handle: str):
 
     user = await db.users.find_one({"handle": handle}, {"_id": 0})
     if not user:
-        # generic card so the link still unfurls nicely
+        # Generic card so the link still unfurls nicely. NOT cached — caching
+        # attacker-invented handles would let anyone grow the cache unbounded.
         png = _render_share_card("Nice2Meechu", "✨", None)
-    else:
-        png = _render_share_card(
-            codename=user.get("codename") or "Anon",
-            emoji=user.get("avatar_emoji") or "✨",
-            handle=user.get("handle"),
-        )
+        return StreamingResponse(io.BytesIO(png), media_type="image/png")
+
+    png = _render_share_card(
+        codename=user.get("codename") or "Anon",
+        emoji=user.get("avatar_emoji") or "✨",
+        handle=user.get("handle"),
+    )
+    # Bounded cache: evict oldest entries past 500 real handles (SEC-003).
+    while len(_OG_CACHE) >= 500:
+        _OG_CACHE.pop(next(iter(_OG_CACHE)))
     _OG_CACHE[handle] = png
     return StreamingResponse(io.BytesIO(png), media_type="image/png")
 

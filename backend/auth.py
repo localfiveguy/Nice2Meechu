@@ -251,10 +251,7 @@ async def auth_google_id_token(req: GoogleIdTokenReq, response: Response):
         )
     except ValueError as exc:
         logger.warning("Google ID token verification failed: %s", exc)
-        # Surface the specific failure reason so the frontend toast can show
-        # it. Helps diagnose iOS Safari edge cases (clock drift, audience
-        # mismatch, ITP-corrupted token, etc.) without needing log access.
-        raise HTTPException(401, f"Invalid Google credential: {exc}")
+        raise HTTPException(401, "Invalid Google credential")
 
     email = idinfo.get("email")
     if not email or not idinfo.get("email_verified", False):
@@ -388,7 +385,7 @@ async def auth_apple_id_token(req: AppleIdTokenReq, response: Response):
         )
     except pyjwt.PyJWTError as exc:
         logger.warning("Apple identity token verification failed: %s", exc)
-        raise HTTPException(401, f"Invalid Apple credential: {exc}")
+        raise HTTPException(401, "Invalid Apple credential")
 
     apple_sub = claims.get("sub")
     if not apple_sub:

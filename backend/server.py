@@ -62,7 +62,9 @@ if _SHARE_CARDS_DIR.is_dir():
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
+    # SEC-001: explicit origin allowlist — never "*" with credentialed cookies,
+    # otherwise any website the user visits can read/act on their session.
+    allow_origins=[o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()],
     allow_methods=["*"],
     allow_headers=["*"],
 )
