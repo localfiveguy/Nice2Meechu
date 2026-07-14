@@ -343,5 +343,12 @@ A hyperlocal, video-first social app where users connect by watching short video
 - Fixed VideoPick camera box crushed to a sliver on small iPhones (flex column shrink) — added `shrink-0` + minHeight 360; Continue button now toasts "Record your intro first" instead of being dead-disabled.
 - Apple "Hide My Email" created a duplicate account (private relay email ≠ Gmail). Cleanup (user-approved): linked apple_sub to Steavin (steavinrice@gmail.com), deleted Aurora Lynx duplicate + old Loretta test account from preview. Added hint under Apple button: "Used Google before? Choose 'Share My Email' so we recognize you." (testid signin-apple-email-hint).
 
+## 2026-06 — Production deploy fix + iOS App Store package
+- Prod deploy failed: k8s probes hit GET /health (no /api prefix) → 404. Added root-level `/health` in server.py (returns {"status":"ok"}, curl-verified). Deployment agent re-check: PASS. demo_XX.webm 404s in logs are harmless (video source fallback probing).
+- Built complete iOS Xcode project at `/app/ios-build/ios-app/` from khmyznikov/ios-pwa-wrap template (same as PWABuilder): bundle `com.nice2meechu.app`, Team `J99N4XLB3D`, v1.0.0, rootUrl nice2meechu.com, authOrigins appleid.apple.com+accounts.google.com, WKAppBoundDomains set, all AppIcon/Launch icons regenerated from icon-512 (alpha flattened), HealthKit fully removed (pbxproj+Swift), Firebase push stubbed via placeholder GoogleService-Info.plist. Entitlements slimmed to empty (App ID only has SIWA capability). NOT COMPILE-TESTED (no Xcode on Linux) — first Codemagic build is the real test.
+- `/app/codemagic.yaml` (repo root): ios-appstore workflow — pod install, auto signing (App Store Connect integration named `nice2meechu-asc`), build-ipa, auto-publish to TestFlight.
+- `/app/ios-build/README.md`: full browser-only user checklist (ASC app record, ASC API key, Save to GitHub, Codemagic setup, review notes).
+- Play Store AAB ready: `/app/frontend/public/store-assets/nice2meechu-play.aab` (downloadable from prod at /store-assets/nice2meechu-play.aab after redeploy).
+
 ## Next Tasks
-- User to **Deploy** (SIWA + camera fix to nice2meechu.com), then PWABuilder iOS package + Codemagic pipeline walkthrough (user has Windows 11, no Mac).
+- User: redeploy (health fix + SIWA), then follow ios-build/README.md steps (ASC + Codemagic), and upload AAB to Google Play Console.

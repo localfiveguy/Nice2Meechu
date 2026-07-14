@@ -1,0 +1,42 @@
+# Codemagic CI/CD — builds the Nice2Meechu iOS app on a cloud Mac.
+# Requires (one-time setup in Codemagic UI):
+#   1. Team settings -> Integrations -> Developer Portal: add an
+#      App Store Connect API key, name it "nice2meechu-asc" below.
+#   2. That's it — signing certs & profiles are created automatically.
+workflows:
+  ios-appstore:
+    name: Nice2Meechu iOS (App Store)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    integrations:
+      app_store_connect: nice2meechu-asc
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.nice2meechu.app
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Install CocoaPods dependencies
+        script: |
+          cd ios-build/ios-app
+          pod install
+      - name: Apply provisioning profiles
+        script: |
+          xcode-project use-profiles
+      - name: Set build number
+        script: |
+          cd ios-build/ios-app
+          agvtool new-version -all $BUILD_NUMBER
+      - name: Build signed .ipa
+        script: |
+          xcode-project build-ipa \
+            --workspace "ios-build/ios-app/pwa-shell.xcworkspace" \
+            --scheme "pwa-shell"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
