@@ -27,6 +27,15 @@ from core import ROOT_DIR, _strip_city_noise, client, db, logger
 
 app = FastAPI()
 
+
+# Kubernetes liveness/readiness probes hit /health directly on the backend
+# port (no /api prefix) — without this route the probes 404 and the
+# production deployment is marked unhealthy.
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
 for module in (auth, users, feed, messaging, media, demos, admin, push):
     app.include_router(module.router, prefix="/api")
 
