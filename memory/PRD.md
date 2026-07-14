@@ -359,5 +359,12 @@ A hyperlocal, video-first social app where users connect by watching short video
 - Remaining backlog (P3): per-user rate limiting on swipes/messages/reports; CSRF tokens (mitigated by CORS fix + JSON-only bodies).
 - PRODUCTION NOTE: fixes require redeploy to take effect on nice2meechu.com.
 
+## 2026-06 — Production demo-location corruption fix (Tokyo-in-Marlton, round 3)
+- After user's successful prod deploy, Marlton still showed Tokyo AI demos (Sota/Yui/Aoi). Screen-recording analysis + code trace found root cause: PROD DB demo docs were seeded by an OLD build that homed demos in the viewer's browsing city; the new alignment pass in `seed_demo_users()` only $set name/handle/transcript — never location. Preview was re-seeded fresh so it never reproduced.
+- Fix: alignment pass now heals location (city/home_city/home+city lat/lng, jittered lat/lng) whenever stored home_city != persona's canonical metro (demo_meta.json). Runs on every feed request → prod self-heals on first feed load after redeploy. Tested in preview by poisoning demo-00 to Marlton → healed to Tokyo.
+- Demo metro distribution (78 personas): Tokyo 12, São Paulo 11, Mumbai 10, NY 9, Lagos 8, LA 7, Paris 6, London 5, Toronto 4, Madrid 3, Sydney 2, Berlin 1. Marlton gets ZERO demos after healing — feeds outside metros show only real people (honest hyperlocal by design).
+- Also this session: applied code-review triage — moved hardcoded test session token to TEST_SESSION_TOKEN env in 6 test files (value in memory/test_credentials.md), removed unused import; verified .env/gcs-credentials NOT git-tracked (safe for GitHub push); declined localStorage migration (intentional iOS Safari fallback), hook-dep & complexity refactors (false positives / pre-launch risk).
+
 ## Next Tasks
-- User: redeploy (health fix + SIWA + security fixes), then follow ios-build/README.md steps (ASC + Codemagic), and upload AAB to Google Play Console.
+- User: REDEPLOY to ship the demo-location healing (+ verify Marlton on iPhone: Tokyo demos gone).
+- Then: Play Console AAB upload; Save to GitHub → App Store Connect → Codemagic build.

@@ -64,10 +64,13 @@ async def seed_demo_users():
     if not personas:
         return
     desired_ids = {f"demo-{p['idx']:02d}" for p in personas}
-    existing = {
-        u["id"]
-        async for u in db.users.find({"is_demo": True}, {"_id": 0, "id": 1})
+    existing_docs = {
+        u["id"]: u
+        async for u in db.users.find(
+            {"is_demo": True}, {"_id": 0, "id": 1, "home_city": 1}
+        )
     }
+    existing = set(existing_docs)
     # Remove demos that no longer have a corresponding video on disk
     stale = existing - desired_ids
     if stale:
@@ -82,15 +85,27 @@ async def seed_demo_users():
         uid = f"demo-{p['idx']:02d}"
         if uid not in existing:
             continue
-        await db.users.update_one(
-            {"id": uid},
-            {"$set": {
-                "codename": _demo_codename_for(p),
-                "handle": _demo_handle_for(p),
-                "first_name": p.get("name") or None,
-                "transcript": p.get("transcript", ""),
-            }},
-        )
+        fields = {
+            "codename": _demo_codename_for(p),
+            "handle": _demo_handle_for(p),
+            "first_name": p.get("name") or None,
+            "transcript": p.get("transcript", ""),
+        }
+        # Location healing: very old seeds placed demos into whatever city the
+        # viewer was browsing (e.g. Tokyo personas homed in Marlton). Enforce
+        # the persona's canonical metro whenever the stored home differs.
+        if (existing_docs[uid].get("home_city") or "") != p["city"]:
+            fields.update({
+                "city": p["city"],
+                "home_city": p["city"],
+                "home_lat": p["lat"],
+                "home_lng": p["lng"],
+                "city_lat": p["lat"],
+                "city_lng": p["lng"],
+                "lat": p["lat"] + (_rng.random() - 0.5) * 0.05,
+                "lng": p["lng"] + (_rng.random() - 0.5) * 0.05,
+            })
+        await db.users.update_one({"id": uid}, {"$set": fields})
 
     missing = desired_ids - existing
     if not missing:
