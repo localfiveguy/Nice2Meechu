@@ -4,7 +4,6 @@ Seeds a test user + session directly in Mongo, then hits every documented
 endpoint through the public REACT_APP_BACKEND_URL. Cleans up TEST_ users
 after the suite finishes.
 """
-import os
 import time
 import uuid
 from datetime import datetime, timedelta, timezone

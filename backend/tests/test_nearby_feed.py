@@ -12,7 +12,7 @@ load_dotenv("/app/backend/.env")
 load_dotenv("/app/frontend/.env")
 
 BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/")
-TOKEN = "sttest_SUQD-bH3lyJJOBLw-llOftxhxupA_9nU"
+TOKEN = os.environ.get("TEST_SESSION_TOKEN", "")
 HEADERS = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
 
 MONGO_URL = os.environ["MONGO_URL"]

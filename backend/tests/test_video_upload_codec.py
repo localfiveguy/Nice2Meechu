@@ -9,7 +9,7 @@ import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL") or "https://hyperlocal-video.preview.emergentagent.com"
 BASE_URL = BASE_URL.rstrip("/")
-TOKEN = "sttest_SUQD-bH3lyJJOBLw-llOftxhxupA_9nU"
+TOKEN = os.environ.get("TEST_SESSION_TOKEN", "")
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
 # Dummy payload >1KB (backend rejects <1024 bytes as corrupt)
