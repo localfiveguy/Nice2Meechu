@@ -1,203 +1,379 @@
-# Nice2Meechu — Handoff Document
-_Last updated: 2026-02-09 (E1 fork)_
+# Nice2Meechu — Complete Engineering Handoff
+_Last updated: 2026-06 (E1 fork — SIWA + store distribution session)_
 _Download anytime: `GET /api/handoff.md` (served fresh from `/app/handoff.md`)_
 
 ---
 
 ## 1. Product Snapshot
 
-**Nice2Meechu** — a hyperlocal video-first social app. Users connect through 7-second video introductions instead of profile photos. Tagline: **"Meet the world. Video-first. Anonymous until the spark."**
+**Nice2Meechu** — a hyperlocal, video-first social app. Users connect through
+7-second video introductions instead of profile photos.
+Tagline: **"Meet the world. Video-first. Anonymous until the spark."**
 
-- **Production**: https://nice2meechu.com (also `www.nice2meechu.com`)
-- **Preview (E1 dev env)**: https://hyperlocal-video.preview.emergentagent.com
-- **Stack**: React 19 (CRA) + FastAPI + Motor (async MongoDB) + Google Cloud Storage
-- **Status**: LIVE, in friends-and-family rollout
+- **Production**: https://nice2meechu.com (+ `www.nice2meechu.com`) — deployed via Emergent
+- **Preview (dev)**: https://hyperlocal-video.preview.emergentagent.com
+- **Stack**: React 19 (CRA + craco) · FastAPI · Motor (async MongoDB) · Google Cloud Storage
+- **Status**: LIVE in friends-and-family rollout; Play Store + App Store submissions in progress
 
----
+### Core product rules
+1. **Anonymity until match** — users are shown by codename (e.g. "Cosmic Phoenix")
+   until a mutual "nice2meechu" (like) creates a match.
+2. **Strict hyperlocal feed** — your feed starts in YOUR town. Locals first,
+   then real people within your nearby-radius (default 10 km, expandable to 25 km).
+3. **Video-first** — one 7-second intro video is the whole profile.
+4. **Honest AI** — demo profiles exist only to make the app feel alive in big
+   metros; they are always badged "✨ AI DEMO" and never mixed into small towns.
 
-## 2. What Changed in This Fork (2026-02-07 → 2026-02-09)
-
-### 2.1 P0 Bug Fixes
-- **iOS Safari Google Sign-In** — switched GIS to `ux_mode: "redirect"` for iOS only (popup blocked by ITP). Desktop + Android keep popup. New `isIosWebkit()` helper in `lib/ua.js`. Operator confirmed 4 redirect URIs registered in Google Cloud Console.
-- **Marlton/Voorhees autocomplete clipping** — the city dropdown was rendered inside an `overflow-y-auto` scroll container; when it flipped upward it got clipped to invisible. Switched to `position: fixed` with viewport-relative coords computed from input's `getBoundingClientRect()`. Dropdown now escapes any overflow boundary.
-
-### 2.2 Major Refactor — App.js Split
-- **App.js: 3090 → 292 lines** (~90% reduction). Now a pure orchestrator.
-- New structure:
-  - `src/lib/` — `api.js`, `constants.js`, `cityFormat.js`, `ua.js`, `useDropdownDirection.js`
-  - `src/components/` — `VideoEl`, `CityAutocomplete`, `SignaturePad`, `BottomNav`, `ShareCard`, `MatchCelebration`, `FeedCard`, `AvatarThumb`, `DemoPeekWidget`
-  - `src/screens/` — `Splash`, `SignInScreen`, `AuthCallback`, `Onboarding`, `CommunityRulesScreen`, `VideoPick`, `FeedScreen`, `ChangeLocationScreen`, `MatchesScreen`, `ChatScreen`, `ProfileScreen`
-
-### 2.3 UX Polishing
-- **Enter-key submit** wired across all flows (onboarding, profile edit, change-location, chat) with `enterKeyHint="next/done/send/go"` for mobile keyboards
-- **Dropdown placement hook** (`useDropdownPlacement`) auto-flips dropdowns up when keyboard covers them, also caps `maxHeight` so they fit in visible viewport
-- **Suggestion reverse on upward flip** — best match sits at bottom (closest to input cursor) when flipped up; auto-scrolls to bottom on open
-- **Onboarding/Profile edit/Change-Location** all use the same dropdown logic
-- **Vibe pills removed** from FeedCard (random sample from a 10-item pool wasn't meaningful)
-- **"or remix it"** copy removed from VideoPick subtitle
-- **Tagline changed** site-wide: "Hyperlocal. Video-first…" → **"Meet the world. Video-first…"**
-- **Avatars** replaced from emoji picker → first frame of user's intro video via new `<AvatarThumb>` component. Emoji picker removed from Profile edit.
-
-### 2.4 Onboarding & Recording
-- **VideoPick review step** — after recording, swap live camera for playback `<video>` with native controls (play/scrub/replay). Re-record button discards and reopens camera. **Bug fix**: ref-callback re-attaches `srcObject` so live camera reappears properly after re-record (previously stayed black).
-- **Live countdown timer** during recording — red pill in top-right showing seconds remaining (7→0)
-- **Community Rules screen** — added Terms / Privacy links below the Accept button (left-aligned to avoid Emergent badge)
-- **Legal pages** — both Privacy Policy and Terms of Service got a bottom red "← Back" button so users who scroll to end don't need to scroll back up
-
-### 2.5 Demo Users
-- **Demo codenames now match spoken audio** — instead of random "Velvet Fox", each demo's codename is the name spoken in the video ("Yui", "Sarah"). Handle is `{name}.{city}` (e.g. `yui.tokyo`). Migration runs on every `seed_demo_users()` call.
-- **"Hear me say my name" hint** — cyan pill flashes under codename badge for 2.4s when viewer lands on an AI demo
-
-### 2.6 Social/Growth Features
-- **Share cards** (3 PNGs) generated by `/app/scripts/make_share_cards.py`:
-  - Instagram Story 1080×1920 minimal
-  - Instagram Feed 1080×1080 square
-  - Story 1080×1920 with QR code
-- Served at `/api/share-cards/<name>.png` (static mount)
-- **"Share this app" pill** added to:
-  - Bottom nav (under FEED tab, left-aligned, on Feed/Matches/Profile)
-  - Sign-in page (bottom-left corner, mirrors demo-peek widget on right)
-- **DemoPeekWidget** — floating bottom-right corner widget on pre-recording screens (signin → onboarding → community-rules). Hidden on VideoPick and authenticated screens. Features:
-  - 9:16 phone-sized preview, auto-plays AI demos
-  - Public `GET /api/demos/sample?limit=N` endpoint (no auth)
-  - "🔊 Tap to hear" pulsing label, swipe up/down for next/prev, auto-advance on `onEnded`
-  - "Examples of what your intro should be:" headline above
-
-### 2.7 City Logic
-- **"Township" / "Twp." / "Borough" stripped** from saved city names via new `stripCityNoise()` + `dedupeCitySuggestions()` helpers in `lib/cityFormat.js`. Applied to:
-  - Photon autocomplete results (both screens)
-  - Reverse-geocode (auto-detect, "Use my location", map-tap)
-- **One-shot backend migration** (`_migrate_strip_city_noise`) on every startup — retroactively cleans existing user records ("Voorhees Township, NJ, USA" → "Voorhees, NJ, USA")
-- **Popular Cities endpoint** rewritten:
-  - Shows ALL cities with at least one OTHER user with a video (not just curated top-20)
-  - Cap bumped 20 → 200
-  - Coords fallback: `city_lat` || `lat` (was previously dropping users with no `city_lat`)
-  - Second-line label combines state + country, normalizes "United States" → "USA"
-
-### 2.8 Operational
-- **Automated daily inactive-user cleanup** — `_inactive_cleanup_loop` background task: sleeps 15min then runs every 24h. Tunable via env: `INACTIVE_CLEANUP_ENABLED`, `INACTIVE_CLEANUP_DAYS` (default 90), `INACTIVE_CLEANUP_INTERVAL_SECONDS`, `INACTIVE_CLEANUP_INITIAL_DELAY_SECONDS`
-- **Handoff endpoint** — `GET /api/handoff.md` returns this file as a Markdown download
-
-### 2.9 Privacy Policy Edit
-- Analytics bullet: "key actions" → "important milestones like clicking a sign-up button" (per legal review)
+### The operator (user)
+- Steven (Steavin) Rice, non-technical, needs click-by-click guidance.
+- Devices: **iPhone + iPad 10.2 + Windows 11 desktop. NO MAC** — all Apple
+  workflows must be browser-based (App Store Connect web + Codemagic cloud builds).
+- Apple Developer Team ID: `J99N4XLB3D`. Google Play developer account: in progress.
 
 ---
 
-## 3. Critical Files
+## 2. Environments & Deploy Workflow
 
-### Backend (`/app/backend/server.py`, ~1980 lines)
-| Section | Purpose |
-|---|---|
-| Lines 79-99 | `generate_codename()`, demo helper functions |
-| Lines 348-380 | `_finalize_google_signin()` (popup path) |
-| Lines 380-420 | `/auth/google-redirect` (iOS path, returns 303) |
-| Lines 521-555 | `/demos/sample` (PUBLIC, no auth) |
-| Lines 555-625 | `/cities/popular` (auth required, includes state+country line) |
-| Lines 1066-1180 | `seed_demo_users()` — runs every `/feed` call, idempotent |
-| Lines 1750-1820 | inactive-cleanup scheduler |
-| Lines 1820-1880 | city-noise migration |
-
-### Frontend (`/app/frontend/src/`)
-| File | Purpose |
-|---|---|
-| `App.js` | Orchestrator (292 lines) |
-| `screens/SignInScreen.js` | GIS init, ios redirect detection, share pill, demo-peek render |
-| `screens/VideoPick.js` | Record + review + re-record flow, countdown |
-| `screens/FeedScreen.js` | Chronological feed (largest screen, ~400 lines) |
-| `screens/ChangeLocationScreen.js` | City picker w/ fixed-position dropdown |
-| `components/CityAutocomplete.js` | Onboarding/profile city input (also fixed-position dropdown) |
-| `components/BottomNav.js` | 3-tab nav + Share pill in column 1 |
-| `components/AvatarThumb.js` | Video-first-frame avatar w/ initial fallback |
-| `components/DemoPeekWidget.js` | Floating demo player (signin → rules) |
-| `components/FeedCard.js` | Single video card |
-| `lib/api.js` | axios client, `translate`, `shareOrCopy`, `copyToClipboard` |
-| `lib/cityFormat.js` | `formatCityLabel`, `stripCityNoise`, `dedupeCitySuggestions` |
-| `lib/useDropdownDirection.js` | `useDropdownPlacement(ref, isOpen)` → `{direction, maxHeight}` |
-| `lib/ua.js` | `isIosWebkit()` |
-| `legal/LegalPages.jsx` | Privacy/Terms/CookieBanner |
-| `analytics.js` | GA4 wrapper (`track`, `pageview`, `initAnalytics`) |
-
-### Scripts
-- `/app/scripts/make_share_cards.py` — offline Pillow + qrcode generator (NOT a runtime dep)
-- `/app/backend/scripts/generate_demo_videos.py` — Sora 2 demo generator
-
----
-
-## 4. ⚠️ Operator Action Items
-
-### 4.1 Production env vars
-- ✅ `GOOGLE_CLIENT_ID` updated to `780373908792-…` (was previously stale)
-- ✅ All 4 redirect URIs registered in Google Cloud Console
-
-### 4.2 GCS
-- Bucket: `nicemeechu`
-- Credentials: `/app/backend/gcs-credentials.json` (do not commit, never expose)
-- Service account project: `gen-lang-client-0271718241`
-
-### 4.3 What still needs operator action
-- Nothing blocking. All P0 bugs fixed. Redeploy whenever ready.
-
----
-
-## 5. ⚠️ Critical Don'ts (lessons from prior agents)
-
-- **DO NOT** action SAST/lint reports blindly. The "innerHTML XSS at SignInScreen.js" is a false positive (matches a code comment). The "Hook deps" warnings are false positives — every one has an intentional `// eslint-disable-next-line` annotation. Adding the "missing" deps causes infinite re-render loops.
-- **DO NOT** add `qrcode` / `Pillow` to `backend/requirements.txt` — they're offline-script-only.
-- **DO NOT** rewrite App.js as a monolith.
-- **DO NOT** remove `localStorage` token fallback in `lib/api.js` — it's an intentional fallback alongside the httpOnly cookie, required for the testing playbook.
-- **DO NOT** alter `seed_demo_users()` to skip the migration `$set` loop — older deploys need it.
-- **DO NOT** add `auth_error` toast handling that doesn't strip the query param after toasting (would re-toast forever).
-- **DO NOT** change the GIS button render from `.replaceChildren()` back to `.innerHTML = ""` (kept for SAST compliance).
-
----
-
-## 6. Backlog (Prioritized)
-
-### P1
-- Push notifications — currently nothing. Capacitor or Expo shell recommended.
-- `last_seen_at` heartbeat — currently only set at sign-in; doesn't reflect active usage for the inactive-cleanup target.
-
-### P2
-- Multi-language UI strings (only English now; transcript translation handles content, not chrome).
-- Server.py split into routes/services/models (mirror frontend layout).
-- Country-flag emoji lookup for real-only cities (currently 🌍 placeholder).
-
-### P3
-- Test fixture refresh — `backend/tests/test_n2m_backend.py` has 10 pre-existing fixture errors (OnboardingReq schema drift, unrelated to any change in this fork).
-- Strip unused `VIBES_POOL` constant from frontend/backend (kept only for legacy DB records).
-- Drop the `avatar_emoji` DB field (no longer rendered).
-
----
-
-## 7. Quick Onboarding for the Next Agent
-
-1. Read `/app/memory/PRD.md` and this file
-2. Check `/app/test_reports/iteration_5.json` (most recent test pass)
-3. Verify services: `tail -n 30 /var/log/supervisor/backend.err.log`
-4. Smoke screenshot the preview URL
-5. **Before any auth or LLM change**: call `integration_playbook_expert_v2` (mandatory)
-6. **Before any SAST/lint cleanup**: re-read Section 5 of this doc
-
----
-
-## 8. Test Credentials
-
-See `/app/memory/test_credentials.md` if present. Auth is Google OAuth only — no password seed accounts.
-
----
-
-## 9. Integration Map
-
-| Integration | Where used | Auth/Key |
+| | Preview | Production |
 |---|---|---|
-| Google Identity Services | `SignInScreen.js`, `/auth/google*` | `GOOGLE_CLIENT_ID` env |
-| Google Cloud Storage | Video upload/serve | `gcs-credentials.json` |
-| OpenAI GPT-4o vision | Face/age check | Emergent LLM key |
-| OpenAI translation | Live chat + feed captions | Emergent LLM key |
-| Sora 2 | Offline demo generation only | Emergent LLM key |
-| OpenStreetMap (Photon) | City autocomplete + reverse geocode | Public, no key |
-| Google Analytics 4 | Opt-in post-cookie-banner | `REACT_APP_GA_MEASUREMENT_ID` |
+| URL | hyperlocal-video.preview.emergentagent.com | nice2meechu.com |
+| DB | local MongoDB (MONGO_URL in backend/.env) | Emergent-managed Atlas |
+| Agent access | full | **NONE** — code-only fixes, user must redeploy |
+
+- **ALWAYS ask which environment a bug is on.** Preview and production have
+  completely separate databases — data-shape bugs can exist in prod only
+  (see §15, demo-location corruption).
+- Deploys: user clicks **Deploy** in Emergent UI. Deployment health probes hit
+  `GET /health` (no `/api` prefix) on backend port 8001 — that route exists in
+  `server.py` and MUST NOT be removed (its absence caused a failed prod deploy).
+- Services run under supervisor: backend on `0.0.0.0:8001`, frontend on `3000`.
+  Restart only after .env changes or dependency installs:
+  `sudo supervisorctl restart backend frontend`.
 
 ---
 
-_End of handoff. Be Nice._
+## 3. Architecture
+
+### Backend — `/app/backend` (modular FastAPI)
+| File | Responsibility |
+|---|---|
+| `server.py` | Entrypoint. FastAPI app, `/health`, CORS (explicit allowlist from `CORS_ORIGINS`), mounts all routers under `/api`, static mounts, startup migrations |
+| `core.py` | Shared: db client, env constants, `SESSION_TTL` (7 days), `generate_codename()`, logger |
+| `models.py` | All Pydantic request models (length caps on text fields) |
+| `auth.py` | Google GIS token verify, **Sign in with Apple** (JWKS verify), legacy Emergent session exchange, session mint/logout/me |
+| `users.py` | Onboarding, location change, nearby-radius, GDPR delete + export, report/block, GCS video upload |
+| `feed.py` | `/cities/popular`, `/feed` (locals + nearby), `/swipe` (like/pass/unlike + match creation), `/matches` |
+| `messaging.py` | Chat messages, unread counts, `/translate` (LLM, auth-required) |
+| `media.py` | Face-check (LLM), OG share cards (bounded cache), `/handoff.md` download |
+| `demos.py` | 78 AI demo personas: seeding, alignment + **location healing**, `/demos/sample` |
+| `admin.py` | Funnel stats + inactive cleanup (gated by `ADMIN_EMAILS`) |
+| `push.py` | VAPID web push: subscribe/unsubscribe/status/public-key |
+
+### Frontend — `/app/frontend/src`
+- `App.js` — orchestrator: routing, session bootstrap, push deep links (`?chat=<match_id>`)
+- `lib/` — `api.js` (axios + Bearer/localStorage token), `push.js`, `constants.js`,
+  `cityFormat.js`, `ua.js` (iOS detection), dropdown-placement hooks
+- `screens/` — Splash, SignInScreen, AuthCallback, Onboarding, CommunityRulesScreen,
+  VideoPick, FeedScreen, ChangeLocationScreen (Leaflet map), MatchesScreen,
+  ChatScreen, ProfileScreen
+- `components/` — FeedCard, AppleSignInButton, CityAutocomplete, DemoPeekWidget,
+  BottomNav, MatchCelebration, ShareCard, AvatarThumb, VideoEl, EmptyFeedState,
+  NotifyMeButton, IOSInstallSheet, SignaturePad, plus `ui/` (shadcn)
+- `public/sw.js` — service worker: push display + notification click deep-linking
+- `legal/LegalPages.jsx` — privacy (`/privacy`), terms, community rules
+
+### Key dependencies
+- Backend: fastapi, motor, pywebpush/py-vapid, PyJWT (Apple), google-auth (Google),
+  httpx (geocoder), google-cloud-storage, emergentintegrations (LLM), Pillow (share cards)
+- Frontend: react-router-dom, framer-motion, leaflet, axios, sonner, lucide-react, shadcn/radix
+
+---
+
+## 4. Authentication (three ways in, one session system)
+
+1. **Google (primary)** — Google Identity Services.
+   - Desktop/Android: popup → `POST /api/auth/google` `{credential}`
+   - iOS Safari: redirect mode → `POST /api/auth/google-redirect` (form) →
+     `GET /auth-callback#token=...` (URL fragment; ITP drops cookies)
+   - Verified server-side via `google.oauth2.id_token` against `GOOGLE_CLIENT_ID`.
+2. **Apple (required by App Store)** — `AppleSignInButton.js` lazily loads Apple JS
+   SDK, popup mode, `redirectURI = window.location.origin + "/"`.
+   → `POST /api/auth/apple` `{id_token, name?, ref?}` — PyJWT `PyJWKClient` verifies
+   RS256 signature against `https://appleid.apple.com/auth/keys`, audience =
+   `APPLE_SERVICE_ID` (currently `nice2meechu.app.web`), issuer = appleid.apple.com.
+   - Account link order: `apple_sub` → email match (links Apple to existing Google
+     account) → create new.
+   - **"Hide My Email" trap**: private-relay emails create duplicate accounts if the
+     user previously joined via Google. UI hint under the button warns about this.
+     No server-side merge flow exists yet (manual DB fix was done once for Steven).
+   - Button renders ONLY when `REACT_APP_APPLE_SERVICE_ID` is set.
+3. **Legacy** — `POST /api/auth/session` (Emergent-managed session exchange). Kept
+   for old sessions; new sign-ins don't use it.
+
+**Sessions**: `secrets.token_urlsafe` token in `user_sessions` collection, TTL 7 days.
+Sent as httpOnly cookie (`session_token`, SameSite=None, Secure) AND returned in the
+JSON body; frontend stores in `localStorage("n2m_token")` and sends
+`Authorization: Bearer` — this dual path is a **deliberate iOS Safari workaround**
+(do NOT "fix" localStorage away; iPhone login breaks without it).
+
+**Apple Developer config (user's account)**
+- App ID: `com.nice2meechu.app` (explicit, SIWA capability ✔)
+- Services ID: `nice2meechu.app.web` — domains `nice2meechu.com` +
+  `hyperlocal-video.preview.emergentagent.com`; return URLs = both origins + `/`
+- No .p8 SIWA key needed (popup flow verifies the identity token directly).
+
+---
+
+## 5. Data Model (MongoDB collections)
+
+- `users` — `{id (uuid), email, name, first_name, picture, google_sub?, apple_sub?,
+  codename, handle, avatar_emoji, vibes[], language, home_city, home_lat, home_lng,
+  city, city_lat, city_lng, lat, lng, nearby_radius_km (10 default),
+  video_url, transcript, source_lang, is_demo?, demo_age?,
+  referrer_handle, referrer_id, referral_count, push_subs[], rules_accepted_at,
+  created_at, last_active_at}`
+- `user_sessions` — `{user_id, session_token, expires_at}`
+- `swipes` — `{user_id, target_user_id, action: like|pass, created_at}` (unlike = delete)
+- `matches` — `{id, user_ids: [a, b], created_at}`
+- `messages` — `{id, match_id, from_user_id, to_user_id, text, created_at, read_at?}`
+- `reports` / `blocks` — moderation records
+- ObjectId is never returned raw; all reads use `{"_id": 0}` projections + uuid `id`s.
+
+---
+
+## 6. API Reference (all under `/api` except `/health`)
+
+**Auth**: `GET /` (info) · `POST /auth/google` · `POST /auth/google-redirect` ·
+`POST /auth/apple` · `POST /auth/session` · `GET /auth/me` · `POST /auth/logout`
+
+**Users**: `POST /users/onboarding` · `POST /users/community-rules` ·
+`POST /users/location` · `POST /users/nearby-radius` · `GET /users/me` ·
+`POST /users/me/city-position` · `DELETE /users/me` (GDPR delete) ·
+`GET /users/me/export` (GDPR export) · `POST /users/report` · `POST /users/block` ·
+`POST /users/video/upload` (multipart → GCS) · `POST /users/video` (metadata)
+
+**Feed/Match**: `GET /cities/popular` · `GET /feed` · `POST /swipe`
+(`action: like|pass|unlike`; mutual like → match + push) · `GET /matches` ·
+`GET /matches/unread`
+
+**Messaging**: `GET /messages/{match_id}` · `POST /messages` (sends push) ·
+`POST /translate` (auth required, 2000-char cap, Emergent LLM)
+
+**Media**: `POST /video/face-check` (LLM screens intro has a real face) ·
+`GET /og/{handle}` (share card PNG, cache bounded 500) · `GET /handoff.md` (this doc)
+
+**Demos**: `GET /demos/sample` (sign-in screen peek) · `GET /samples`
+
+**Admin** (email in `ADMIN_EMAILS`): `GET /admin/funnel` · `POST /admin/inactive-cleanup`
+
+**Push**: `GET /push/public-key` · `GET /push/status` · `POST /push/subscribe` ·
+`POST /push/unsubscribe`
+
+**Static mounts**: `/api/videos` (demo mp4s, 79 files in `/app/backend/videos`) ·
+`/api/user-videos` (legacy local uploads) · `/api/share-cards`
+(Note: browsers probe `demo_XX.webm` fallbacks → harmless 404s in logs.)
+
+---
+
+## 7. Feed & Location System (hardest-won logic in the app)
+
+1. **Browsing city** — every user has `city` (browsing) + `home_city` (residence).
+   Feed = **locals** (home_city prefix-match on browsing city) + **nearby reals**
+   (haversine within `nearby_radius_km` of browse center, labeled
+   "FROM <TOWN> · N KM" on cards).
+2. **Geocoder guardrail** — `POST /users/location` validates every city change
+   against the **Photon geocoder** (`photon.komoot.io` via httpx). City names must
+   resolve, and returned coords are used — user-supplied coords are cross-checked.
+   This ended the "Tokyo users in Marlton" cache-poisoning saga (see §15).
+3. **Popular cities** — `GET /cities/popular` aggregates real-user counts by
+   city with demo counts shown separately; feeds the ChangeLocation screen list.
+4. **Empty-feed retention** — if a town has ≤1 person, UI offers "widen to 25 km"
+   (`EmptyFeedState` + `POST /users/nearby-radius`) and "Notify me" (push subscription
+   for "someone joined nearby").
+5. **Self-exclusion** — you never see your own card. If the operator reports
+   "I see my own video", they are signed into a *different account* (check
+   `apple_sub`/email duplicates — happened once with Apple Hide-My-Email).
+
+---
+
+## 8. Demo Persona System
+
+- 78 personas defined in `/app/backend/videos/demo_meta.json` — each has a fixed
+  `name, city, lat, lng, transcript, avatar_emoji, file` (mp4 in `/app/backend/videos`).
+- Distribution is **metro-only**: Tokyo 12, São Paulo 11, Mumbai 10, New York 9,
+  Lagos 8, LA 7, Paris 6, London 5, Toronto 4, Madrid 3, Sydney 2, Berlin 1.
+  Small towns (Marlton, Voorhees…) get ZERO demos — real people only.
+- `seed_demo_users()` runs on **every feed request** (cheap, idempotent):
+  - creates missing `demo-NN` users
+  - aligns codename/handle/first_name/transcript to meta
+  - **heals location** whenever stored `home_city` != persona's canonical metro —
+    this auto-repairs old prod data where demos were seeded into the viewer's city
+- Demo cards always show the "✨ AI DEMO" badge + "HEAR ME SAY MY NAME" chip.
+- Swiping demos never creates matches.
+
+---
+
+## 9. Media / Video Pipeline
+
+- **Recording**: `VideoPick.js` — MediaRecorder, 7s countdown, camera preview box
+  has `shrink-0 + minHeight 360` (was crushed to 0 on small iPhones — don't remove).
+- **Upload**: `POST /users/video/upload` multipart → **Google Cloud Storage**
+  (`GCS_BUCKET`, credentials JSON at `GOOGLE_APPLICATION_CREDENTIALS` path,
+  git-ignored). Public URL stored on user. Content-type/size validated.
+- **Face check**: `POST /video/face-check` uses Emergent LLM vision to confirm the
+  intro contains a real face (anti-spam).
+- **Share cards**: `GET /og/{handle}` renders branded PNG with PIL
+  (LiberationSans fonts) for link unfurls.
+
+---
+
+## 10. Push Notifications (VAPID Web Push)
+
+- Keys in backend/.env (`VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_SUBJECT`).
+- `push.py` sends via `pywebpush`; subscriptions stored on `users.push_subs`.
+- Events: **someone joined nearby** (on onboarding completion of a nearby user),
+  **new match**, **new message**.
+- `sw.js` displays notifications and deep-links clicks (`/?chat=<match_id>` opens
+  that chat; App.js parses the param on boot).
+- iOS: web push works only for Home-Screen-installed PWAs (iOS 16.4+). The iOS
+  **native wrapper has push stubbed off** (placeholder Firebase plist, see §11).
+
+---
+
+## 11. Store Distribution
+
+### Android — Google Play (READY, upload in progress)
+- **TWA** generated with Bubblewrap in `/app/android-build/twa-project`.
+- Package: `com.nice2meechu.app` · versionName 1.0.1 · versionCode 2.
+- **Signing keystore: `/app/android-build/twa-project/android.keystore`
+  (alias `android`) — BACK THIS UP; losing it before Play App Signing enrollment
+  means losing update capability.**
+- Artifacts + listing assets served from `/store-assets/` (frontend/public):
+  `nice2meechu-play.aab`, `play-icon-512.png`, `feature-graphic-1024x500.png`,
+  `play-listing.md` (full copy-paste store listing + data-safety cheat sheet).
+- `/.well-known/assetlinks.json` currently holds the LOCAL keystore SHA-256.
+  **PENDING STEP**: after Play upload, Google re-signs the app → user must paste
+  the *App signing key certificate* SHA-256 from Play Console → append it to
+  assetlinks.json → redeploy, or the TWA shows a URL bar.
+
+### iOS — App Store (project READY, first cloud build pending)
+- Native wrapper at `/app/ios-build/ios-app/` (khmyznikov/ios-pwa-wrap template,
+  same as PWABuilder). Configured: bundle `com.nice2meechu.app`, Team `J99N4XLB3D`,
+  v1.0.0, loads nice2meechu.com, auth popups allowed for appleid.apple.com +
+  accounts.google.com, `WKAppBoundDomains` set, all icons generated (alpha-flattened).
+- **Removed HealthKit** entirely (rejection risk). **Firebase push stubbed** with a
+  placeholder `GoogleService-Info.plist` — compiles fine, no push in the wrapper;
+  drop in a real plist later to enable FCM.
+- **NOT COMPILE-TESTED** (no Xcode on Linux) — the first Codemagic build is the
+  real test; expect possible minor fixes.
+- Build pipeline: `/app/codemagic.yaml` (repo root) — workflow `ios-appstore`:
+  pod install → automatic signing via App Store Connect API key integration named
+  **exactly `nice2meechu-asc`** → build ipa → auto-publish to TestFlight.
+- User's remaining steps (documented in `/app/ios-build/README.md`):
+  1. "Save to GitHub" from Emergent chat
+  2. App Store Connect: create app record (`com.nice2meechu.app`)
+  3. ASC → Users and Access → Integrations → create API key (App Manager),
+     download .p8 once, note Issuer ID + Key ID
+  4. codemagic.io (GitHub login) → add repo → add Developer Portal integration
+     `nice2meechu-asc` → run build → TestFlight
+- App Review notes: SIWA present ✔ · account deletion in-app ✔ · UGC report/block ✔ ·
+  camera/mic usage strings in Info.plist ✔.
+
+---
+
+## 12. Credentials & Env Inventory
+
+**backend/.env** (never in git): `MONGO_URL`, `DB_NAME`, `CORS_ORIGINS`
+(explicit allowlist — never `*`), `EMERGENT_LLM_KEY`, `GOOGLE_CLIENT_ID`,
+`ADMIN_EMAILS`, `GCP_PROJECT_ID`, `GCS_BUCKET`, `GOOGLE_APPLICATION_CREDENTIALS`
+(path to git-ignored `gcs-credentials.json`), `VAPID_PRIVATE_KEY`,
+`VAPID_PUBLIC_KEY`, `VAPID_SUBJECT`, `APPLE_SERVICE_ID`.
+
+**frontend/.env**: `REACT_APP_BACKEND_URL`, `REACT_APP_GOOGLE_CLIENT_ID`,
+`REACT_APP_APPLE_SERVICE_ID`.
+
+**Not in the repo / user-held**: Apple Developer account, ASC API .p8 key,
+Google Play account, Android keystore passwords (in twa-manifest.json locally),
+Google OAuth client secret (not needed — ID-token flow only).
+
+Test credentials: `/app/memory/test_credentials.md` (git-ignored) — includes
+`TEST_SESSION_TOKEN` used by `/app/backend/tests/*`.
+
+---
+
+## 13. Security Posture (audit 2026-06, all fixes verified)
+
+- **CORS**: explicit allowlist (prod + www + preview), credentials on. Preview
+  ingress injects `ACAO:*` but browsers reject wildcard+credentials, so harmless.
+- `/translate` auth-required + 2000-char cap (was anonymous LLM burn).
+- OG card cache: bogus handles not cached; bounded at 500 (FIFO).
+- Message/transcript length caps (2000).
+- Auth errors are generic to clients; specifics only in server logs.
+- **Accepted risks** (deliberate, do not "fix" blindly):
+  - localStorage token fallback (iOS Safari requirement, §4)
+  - No per-user rate limiting yet on swipes/messages (P3 backlog)
+- `.env` + `gcs-credentials.json` + `memory/test_credentials.md` are NOT git-tracked —
+  safe for the GitHub push required by Codemagic.
+
+---
+
+## 14. Testing
+
+- Backend tests: `/app/backend/tests/` (8 files, ~102 tests) — hit the preview URL,
+  need `export TEST_SESSION_TOKEN=...` (value in memory/test_credentials.md; mint a
+  fresh session if expired).
+- Testing-agent reports: `/app/test_reports/iteration_1..20.json` + `/app/test_result.md`.
+- Regression suite: `test_refactor_regression.py` covers the modular-backend split.
+- iOS Swift code has **no CI until Codemagic is connected**.
+
+---
+
+## 15. Incident History & Hard-Won Lessons
+
+1. **"Tokyo users in Marlton" (3 rounds)**:
+   - R1: coordinate mixing in feed query → haversine guardrails.
+   - R2: popular-cities list cache poisoning → Photon geocoder validation on all
+     location writes.
+   - R3 (prod-only): old prod demo docs were seeded into the viewer's browsing city
+     by a pre-fix build; alignment pass now heals demo locations on every feed call.
+   - Lesson: preview & prod DBs diverge; data bugs must be reasoned about per-env.
+2. **Failed prod deploy**: k8s probes need root-level `GET /health` — never remove.
+3. **Apple Hide-My-Email duplicate**: relay email ≠ Gmail → duplicate account.
+   Manual fix applied for the operator (apple_sub moved to the Steavin account).
+   A proper account-linking flow is future work.
+4. **iOS camera box crush**: flex-column pages squeeze `aspect-ratio` boxes to 0 on
+   small screens — the `shrink-0` + minHeight on VideoPick's camera box is load-bearing.
+5. **iOS Safari cookie drops**: the whole Bearer-token/localStorage fallback exists
+   because ITP eats SameSite=None cookies during OAuth redirects.
+
+---
+
+## 16. Runbooks
+
+**Restart**: `sudo supervisorctl restart backend frontend`
+**Backend logs**: `tail -n 100 /var/log/supervisor/backend.*.log`
+**Smoke test**: `curl $API/api/` → `{"app":"Nice2Meechu",...}`; `curl localhost:8001/health`
+**Force demo re-seed/heal**: any authenticated `GET /api/feed` call triggers it.
+**Mint a test session**: insert into `user_sessions` for a seeded user, or sign in
+via UI and copy `n2m_token` from localStorage.
+**Wipe a user completely**: delete from users + user_sessions + swipes (both sides)
++ matches (user_ids) + messages (from/to). `DELETE /api/users/me` does this for self.
+
+---
+
+## 17. Current Status & Next Steps (as of this handoff)
+
+**In flight**
+1. Play Console: user is uploading `nice2meechu-play.aab` → then MUST paste the
+   Play App Signing SHA-256 back so assetlinks.json can be updated + redeployed.
+2. App Store: waiting on user to Save-to-GitHub → ASC app record + API key →
+   Codemagic first build (expect to babysit the first run).
+3. Production redeploy pending to ship the demo-location healing fix.
+
+**Backlog (P2/P3)**
+- Per-user rate limiting (swipes, messages, reports)
+- Apple↔Google account-linking flow (Hide-My-Email dedupe)
+- Native FCM push in the iOS wrapper (real Firebase plist + backend FCM sender)
+- Component refactors: ChangeLocationScreen (557 lines), VideoPick, FeedScreen, App.js
+- Referral/invite mechanics to seed small-town density at launch
+- Store listing screenshots polish; localized listings
