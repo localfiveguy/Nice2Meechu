@@ -69,7 +69,7 @@ async def seed_demo_users():
     # and location healing. A demo video URL is the one reliable fingerprint —
     # real uploads live in GCS / user-videos, never /videos/demo_NN.
     ghosts = await db.users.delete_many({
-        "video_url": {"$regex": r"/videos/demo_"},
+        "video_url": {"$regex": r"/videos/demo_\d+\.(mp4|webm)(\?|$)"},
         "id": {"$nin": list(desired_ids)},
     })
     if ghosts.deleted_count:

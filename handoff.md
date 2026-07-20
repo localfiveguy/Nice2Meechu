@@ -319,11 +319,13 @@ Test credentials: `/app/memory/test_credentials.md` (git-ignored) — includes
 
 ## 14. Testing
 
-- Backend tests: `/app/backend/tests/` (8 files, ~102 tests) — hit the preview URL,
-  need `export TEST_SESSION_TOKEN=...` (value in memory/test_credentials.md; mint a
-  fresh session if expired).
+- Backend tests: `/app/backend/tests/` (8 files, 102 tests, ALL PASSING) — hit the
+  preview URL, need `export TEST_SESSION_TOKEN=...` (value in
+  memory/test_credentials.md; QA user qa-tester@nice2meechu.local, 365-day session).
+  Persistent fixtures: `test-john-erial`, `test-kathy-cherryhill` (GCS-style video
+  URLs so the ghost-demo purge ignores them). Tests must NEVER use demo-NN users as
+  mutable subjects — seeding pins demo homes on every feed call.
 - Testing-agent reports: `/app/test_reports/iteration_1..20.json` + `/app/test_result.md`.
-- Regression suite: `test_refactor_regression.py` covers the modular-backend split.
 - iOS Swift code has **no CI until Codemagic is connected**.
 
 ---

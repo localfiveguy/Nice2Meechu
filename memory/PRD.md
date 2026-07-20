@@ -365,6 +365,14 @@ A hyperlocal, video-first social app where users connect by watching short video
 - Demo metro distribution (78 personas): Tokyo 12, São Paulo 11, Mumbai 10, NY 9, Lagos 8, LA 7, Paris 6, London 5, Toronto 4, Madrid 3, Sydney 2, Berlin 1. Marlton gets ZERO demos after healing — feeds outside metros show only real people (honest hyperlocal by design).
 - Also this session: applied code-review triage — moved hardcoded test session token to TEST_SESSION_TOKEN env in 6 test files (value in memory/test_credentials.md), removed unused import; verified .env/gcs-credentials NOT git-tracked (safe for GitHub push); declined localStorage migration (intentional iOS Safari fallback), hook-dep & complexity refactors (false positives / pre-launch risk).
 
+## 2026-06 — Code review round 2: all findings fixed, suite green (102/102)
+- HIGH: iOS GoogleService-Info.plist was git-ignored by template .gitignore → first Codemagic build would fail on clean checkout. Removed the ignore; plist now trackable.
+- MED: unique partial indexes (email/google_sub/apple_sub) + `_insert_user_or_get_existing` race guard in auth.py — concurrent-signup race test passes (1 doc).
+- MED: Apple email linking now requires `email_verified` claim.
+- MED/LOW iOS: removed remote-notification background mode (push stubbed anyway), ATS ArbitraryLoads→false, armv7→arm64, descriptive camera/mic/location purpose strings.
+- LOW: ghost-purge regex anchored (`/videos/demo_\d+\.(mp4|webm)(\?|$)`); `/users/video` validates URL prefix (GCS or /api/user-videos only).
+- Test suite repaired: fresh 365-day TEST_SESSION_TOKEN (QA user), demo-00 dependencies replaced with QA_ID (demo users are heal-pinned now), stale onboarding/sample-video/samples tests updated to current schema, re-seeded test-john-erial + test-kathy-cherryhill fixtures with GCS-style URLs. 102/102 passing.
+
 ## Next Tasks
-- User: REDEPLOY to ship the demo-location healing (+ verify Marlton on iPhone: Tokyo demos gone).
-- Then: Play Console AAB upload; Save to GitHub → App Store Connect → Codemagic build.
+- User: REDEPLOY (v1.6.1 ghost purge + review fixes) → verify build stamp at nice2meechu.com/api/ → check Marlton.
+- Then: Play Console AAB upload (paste back Play App Signing SHA-256); Save to GitHub → ASC → Codemagic.

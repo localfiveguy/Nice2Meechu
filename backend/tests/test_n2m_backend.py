@@ -61,8 +61,9 @@ def auth(session, mongo):
     # Onboard
     r = session.post(
         f"{API}/users/onboarding",
-        json={"handle": f"test_{int(time.time())%10000}", "vibes": ["Coffee", "Vinyl"],
-              "language": "en", "avatar_emoji": "🌙"},
+        json={"first_name": "Test", "city": "New York, NY, USA", "age": 30,
+              "city_lat": 40.7128, "city_lng": -74.006,
+              "vibes": ["Coffee", "Vinyl"], "language": "en", "avatar_emoji": "🌙"},
         headers=headers,
     )
     assert r.status_code == 200, r.text
@@ -160,7 +161,8 @@ class TestProfile:
     def test_onboarding_persisted(self, session, auth):
         r = session.post(
             f"{API}/users/onboarding",
-            json={"handle": auth["user"]["handle"], "vibes": ["Foodie"], "language": "es", "avatar_emoji": "🔥"},
+            json={"first_name": "Test", "city": "New York, NY, USA", "age": 30,
+                  "vibes": ["Foodie"], "language": "es", "avatar_emoji": "🔥"},
             headers=auth["headers"],
         )
         assert r.status_code == 200
@@ -179,14 +181,20 @@ class TestProfile:
         assert abs(u["lng"] - 56.78) < 0.01
 
     def test_video_sample_persists(self, session, auth):
-        r = session.post(f"{API}/users/video", json={"sample_index": 2}, headers=auth["headers"])
+        # Sample-video selection was removed; /users/video now persists a GCS
+        # URL (and rejects anything else).
+        url = "https://storage.googleapis.com/test-fixtures/intro.mp4"
+        r = session.post(f"{API}/users/video", json={"video_url": url, "transcript": "hi there"}, headers=auth["headers"])
         assert r.status_code == 200
         d = r.json()
-        assert d["video_url"].startswith("/videos/") or d["video_url"].startswith("https://")
+        assert d["video_url"] == url
         assert d["transcript"]
         r = session.get(f"{API}/users/me", headers=auth["headers"])
         u = r.json()["user"]
         assert u["video_url"] == d["video_url"]
+        # crafted non-pipeline URLs are rejected
+        r = session.post(f"{API}/users/video", json={"video_url": "/api/videos/demo_01.mp4"}, headers=auth["headers"])
+        assert r.status_code == 400
 
 
 # ---------- samples ----------
@@ -195,11 +203,11 @@ class TestSamples:
         r = session.get(f"{API}/samples")
         assert r.status_code == 200
         d = r.json()
-        assert len(d["samples"]) >= 6
         assert len(d["vibes"]) >= 6
-        for s in d["samples"]:
-            for k in ("index", "url", "transcript", "lang"):
-                assert k in s
+        assert len(d["languages"]) >= 5
+        for lang in d["languages"]:
+            for k in ("code", "name"):
+                assert k in lang
 
 
 # ---------- feed / swipe / match / messages ----------
@@ -267,15 +275,15 @@ class TestFeedSwipeMatch:
 
 # ---------- translation ----------
 class TestTranslate:
-    def test_translate_en_es(self, session):
-        r = session.post(f"{API}/translate", json={"text": "Hello", "target_lang": "es", "source_lang": "en"})
+    def test_translate_en_es(self, session, auth):
+        r = session.post(f"{API}/translate", json={"text": "Hello", "target_lang": "es", "source_lang": "en"}, headers=auth["headers"])
         assert r.status_code == 200
         out = r.json()["translation"].strip().lower()
         assert out
         assert any(s in out for s in ["hola", "buen"]) or out != "hello"
 
-    def test_translate_same_lang_unchanged(self, session):
-        r = session.post(f"{API}/translate", json={"text": "Hello there", "target_lang": "en", "source_lang": "en"})
+    def test_translate_same_lang_unchanged(self, session, auth):
+        r = session.post(f"{API}/translate", json={"text": "Hello there", "target_lang": "en", "source_lang": "en"}, headers=auth["headers"])
         assert r.status_code == 200
         assert r.json()["translation"] == "Hello there"
 

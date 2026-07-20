@@ -11,6 +11,7 @@ from fastapi import APIRouter, Cookie, Depends, Form, Header, HTTPException, Req
 from fastapi.responses import RedirectResponse
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
+from pymongo.errors import DuplicateKeyError
 
 from core import (
     APPLE_SERVICE_ID,
@@ -133,10 +134,20 @@ async def _upsert_google_user(
         "referrer_id": ref_user_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    await db.users.insert_one(new_user.copy())
-    if ref_user_id:
+    user, created = await _insert_user_or_get_existing(new_user, {"email": email})
+    if created and ref_user_id:
         await db.users.update_one({"id": ref_user_id}, {"$inc": {"referral_count": 1}})
-    return await db.users.find_one({"id": new_user["id"]}, {"_id": 0})
+    return user
+
+
+async def _insert_user_or_get_existing(new_user: dict, lookup: dict) -> tuple:
+    """Insert a new user; if a concurrent sign-in raced us into the unique
+    index, return the winner's row instead. Returns (user, created)."""
+    try:
+        await db.users.insert_one(new_user.copy())
+        return await db.users.find_one({"id": new_user["id"]}, {"_id": 0}), True
+    except DuplicateKeyError:
+        return await db.users.find_one(lookup, {"_id": 0}), False
 
 
 async def _mint_session(user_id: str, session_token: Optional[str] = None) -> str:
@@ -360,10 +371,10 @@ async def _upsert_apple_user(
         "referrer_id": ref_user_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    await db.users.insert_one(new_user.copy())
-    if ref_user_id:
+    user, created = await _insert_user_or_get_existing(new_user, {"apple_sub": apple_sub})
+    if created and ref_user_id:
         await db.users.update_one({"id": ref_user_id}, {"$inc": {"referral_count": 1}})
-    return await db.users.find_one({"id": new_user["id"]}, {"_id": 0})
+    return user
 
 
 @router.post("/auth/apple")
@@ -395,9 +406,12 @@ async def auth_apple_id_token(req: AppleIdTokenReq, response: Response):
     if not apple_sub:
         raise HTTPException(401, "Apple token missing subject")
 
+    # Only trust the email claim when Apple marks it verified (claim may be
+    # bool or string). Unverified emails must never link to existing accounts.
+    email_verified = claims.get("email_verified") in (True, "true")
     user = await _upsert_apple_user(
         apple_sub=apple_sub,
-        email=claims.get("email"),
+        email=claims.get("email") if email_verified else None,
         name=(req.name or "").strip() or None,
         ref=req.ref,
     )

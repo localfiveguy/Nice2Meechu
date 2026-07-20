@@ -11,6 +11,7 @@ load_dotenv("/app/frontend/.env")
 BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/")
 TOKEN = os.environ.get("TEST_SESSION_TOKEN", "")
 HEADERS = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
+QA_ID = requests.get(f"{BASE_URL}/api/users/me", headers=HEADERS, timeout=15).json()["user"]["id"]
 
 _client = MongoClient(os.environ["MONGO_URL"])
 db = _client[os.environ["DB_NAME"]]
@@ -40,7 +41,7 @@ def _feed():
 
 @pytest.fixture(scope="module", autouse=True)
 def _snapshot_restore():
-    snap = db.users.find_one({"id": "demo-00"})
+    snap = db.users.find_one({"id": QA_ID})
     assert snap
     yield
     fields = {k: snap.get(k) for k in [
@@ -48,7 +49,7 @@ def _snapshot_restore():
         "city_lat", "city_lng", "home_lat", "home_lng",
         "nearby_radius_km",
     ] if snap.get(k) is not None}
-    db.users.update_one({"id": "demo-00"}, {"$set": fields})
+    db.users.update_one({"id": QA_ID}, {"$set": fields})
 
 
 class TestRadiusValidation:
@@ -61,7 +62,7 @@ class TestRadiusValidation:
         r = _set_radius(km)
         assert r.status_code == 200, r.text
         # verify persisted
-        u = db.users.find_one({"id": "demo-00"})
+        u = db.users.find_one({"id": QA_ID})
         assert u.get("nearby_radius_km") == km
 
 

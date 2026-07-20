@@ -345,6 +345,14 @@ async def upload_video_file(file: UploadFile = File(...), user=Depends(current_u
 @router.post("/users/video")
 async def upload_video(req: VideoUploadReq, user=Depends(current_user)):
     video_url = req.video_url or ""
+    # Only accept URLs our own upload pipeline produces — GCS objects or the
+    # legacy local mount. Blocks crafted values (e.g. demo-video paths that
+    # would trip the ghost-demo purge) from ever landing on a real account.
+    if video_url and not (
+        video_url.startswith("https://storage.googleapis.com/")
+        or video_url.startswith("/api/user-videos/")
+    ):
+        raise HTTPException(400, "Invalid video URL")
     transcript = req.transcript or "Hey, nice to meet you!"
     source_lang = req.source_lang or "en"
     had_video = bool(user.get("video_url"))

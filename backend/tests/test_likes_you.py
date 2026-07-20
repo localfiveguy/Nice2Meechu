@@ -13,6 +13,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://hyperlocal-video.preview.emergentagent.com').rstrip('/')
 TOKEN = os.environ.get("TEST_SESSION_TOKEN", "")
 HEADERS = {'Authorization': f'Bearer {TOKEN}', 'Content-Type': 'application/json'}
+QA_ID = requests.get(f"{BASE_URL}/api/users/me", headers=HEADERS, timeout=15).json()["user"]["id"]
 
 MONGO_URL = 'mongodb://localhost:27017'
 DB_NAME = 'test_database'
@@ -31,11 +32,11 @@ def find_item(feed, uid):
 async def _cleanup():
     client = AsyncIOMotorClient(MONGO_URL)
     db = client[DB_NAME]
-    await db.matches.delete_many({'user_ids': {'$all': ['demo-00', 'demo-01']}})
-    await db.swipes.delete_many({'user_id': 'demo-00', 'target_user_id': 'demo-01'})
-    seed = await db.swipes.find_one({'user_id': 'demo-01', 'target_user_id': 'demo-00', 'action': 'like'})
+    await db.matches.delete_many({'user_ids': {'$all': [QA_ID, 'demo-01']}})
+    await db.swipes.delete_many({'user_id': QA_ID, 'target_user_id': 'demo-01'})
+    seed = await db.swipes.find_one({'user_id': 'demo-01', 'target_user_id': QA_ID, 'action': 'like'})
     if not seed:
-        await db.swipes.insert_one({'user_id': 'demo-01', 'target_user_id': 'demo-00', 'action': 'like'})
+        await db.swipes.insert_one({'user_id': 'demo-01', 'target_user_id': QA_ID, 'action': 'like'})
     client.close()
 
 

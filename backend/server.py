@@ -71,6 +71,23 @@ app.add_middleware(
 
 
 @app.on_event("startup")
+async def _ensure_user_indexes():
+    """Unique indexes stop concurrent sign-ins from creating duplicate
+    accounts (find-then-insert race). Partial filters skip docs where the
+    field is absent/null."""
+    try:
+        for field in ("email", "google_sub", "apple_sub"):
+            await db.users.create_index(
+                field,
+                unique=True,
+                partialFilterExpression={field: {"$type": "string"}},
+                name=f"uniq_{field}",
+            )
+    except Exception:
+        logger.exception("user index creation failed (non-fatal)")
+
+
+@app.on_event("startup")
 async def _retire_legacy_sample_demos():
     """Delete old stock-video demo users (handles luna/kai/rumi/sol/indie/noa
     whose video_url pointed at the deprecated /api/videos/v{n}.mp4 stock files).

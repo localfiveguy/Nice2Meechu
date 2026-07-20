@@ -15,6 +15,7 @@ BASE_URL = os.environ.get(
 ).rstrip("/")
 TOKEN = os.environ.get("TEST_SESSION_TOKEN", "")
 HEADERS = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
+QA_ID = requests.get(f"{BASE_URL}/api/users/me", headers=HEADERS, timeout=15).json()["user"]["id"]
 
 MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
@@ -41,7 +42,7 @@ def _get_user_doc(uid):
 
 @pytest.fixture(scope="module", autouse=True)
 def restore_state():
-    snap00 = _get_user_doc("demo-00")
+    snap00 = _get_user_doc(QA_ID)
     snap02 = _get_user_doc("demo-02")
     assert snap00 and snap02, "demo-00 or demo-02 not seeded"
     yield
@@ -70,7 +71,7 @@ class TestBackfillMigration:
         assert not missing, f"users with city but no home_city: {missing}"
 
     def test_demo00_home_is_tokyo(self):
-        u = _get_user_doc("demo-00")
+        u = _get_user_doc(QA_ID)
         assert "Tokyo" in (u.get("home_city") or ""), u.get("home_city")
 
 
@@ -86,7 +87,7 @@ class TestLocationSetHomeFlag:
         me = _me()
         assert me["city"].startswith("Paris"), me["city"]
         assert "Tokyo" in me["home_city"], f"home moved! {me['home_city']}"
-        doc = _get_user_doc("demo-00")
+        doc = _get_user_doc(QA_ID)
         assert "Tokyo" in (doc.get("home_city") or "")
         assert doc.get("home_lat") == pytest.approx(35.6762, abs=0.01)
 
@@ -100,11 +101,11 @@ class TestLocationSetHomeFlag:
         assert r.status_code == 200, r.text
         me = _me()
         assert "Tokyo" in me["city"] and "Tokyo" in me["home_city"], me
-        doc = _get_user_doc("demo-00")
+        doc = _get_user_doc(QA_ID)
         assert doc.get("home_lat") == pytest.approx(35.6762, abs=0.01)
 
     def test_c_set_home_true_without_city_does_not_change_home(self):
-        before = _get_user_doc("demo-00").get("home_city")
+        before = _get_user_doc(QA_ID).get("home_city")
         r = requests.post(
             f"{BASE_URL}/api/users/location",
             headers=HEADERS,
@@ -112,35 +113,53 @@ class TestLocationSetHomeFlag:
             timeout=15,
         )
         assert r.status_code == 200, r.text
-        after = _get_user_doc("demo-00").get("home_city")
+        after = _get_user_doc(QA_ID).get("home_city")
         assert after == before, f"home changed from {before} to {after} without city"
 
 
 class TestFeedUsesHomeCity:
     def test_feed_matches_target_home_city(self):
+        # NOTE: demo users can't be used here — seed_demo_users() pins demo
+        # homes to their canonical metros on every feed call (by design).
+        # Use a throwaway real user homed in Tokyo instead.
         requests.post(
             f"{BASE_URL}/api/users/location",
             headers=HEADERS,
             json={"lat": 35.6762, "lng": 139.6503, "city": "Tokyo, Japan", "set_home": True},
             timeout=15,
         )
-        d02_orig = _get_user_doc("demo-02")
-        assert "Tokyo" in (d02_orig.get("home_city") or "")
+        tid = f"throwaway-homecity-{uuid.uuid4().hex[:8]}"
+        db.users.insert_one({
+            "id": tid, "email": f"{tid}@example.com", "name": "Home City User",
+            "codename": "Testing Comet", "handle": None, "avatar_emoji": "🌙",
+            "vibes": [], "language": "en",
+            "city": "Tokyo, Japan", "home_city": "Tokyo, Japan",
+            "lat": 35.68, "lng": 139.65, "home_lat": 35.68, "home_lng": 139.65,
+            "city_lat": 35.68, "city_lng": 139.65,
+            "video_url": "https://storage.googleapis.com/test-fixtures/intro.mp4",
+            "transcript": "test", "source_lang": "en", "is_demo": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        try:
+            feed = _feed()
+            ids = [it.get("id") for it in feed]
+            assert tid in ids, f"Tokyo-homed user missing from Tokyo feed: {ids}"
 
-        db.users.update_one({"id": "demo-02"}, {"$set": {"city": "Paris, France"}})
-        feed = _feed()
-        ids = [it.get("id") for it in feed]
-        assert "demo-02" in ids, f"demo-02 dropped after only-browsing change: {ids}"
+            db.users.update_one({"id": tid}, {"$set": {"city": "Paris, France"}})
+            feed = _feed()
+            ids = [it.get("id") for it in feed]
+            assert tid in ids, f"user dropped after only-browsing change: {ids}"
 
-        db.users.update_one({"id": "demo-02"}, {"$set": {"home_city": "Paris, France"}})
-        feed = _feed()
-        ids = [it.get("id") for it in feed]
-        assert "demo-02" not in ids, f"demo-02 still in Tokyo feed after home moved: {ids}"
-
-        db.users.update_one(
-            {"id": "demo-02"},
-            {"$set": {"city": d02_orig["city"], "home_city": d02_orig["home_city"]}},
-        )
+            db.users.update_one({"id": tid}, {"$set": {
+                "home_city": "Paris, France",
+                "home_lat": 48.8566, "home_lng": 2.3522,
+                "lat": 48.8566, "lng": 2.3522,
+            }})
+            feed = _feed()
+            ids = [it.get("id") for it in feed]
+            assert tid not in ids, f"user still in Tokyo feed after home moved: {ids}"
+        finally:
+            db.users.delete_one({"id": tid})
 
 
 class TestPopularCitiesByResidents:

@@ -14,6 +14,7 @@ load_dotenv("/app/frontend/.env")
 BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/")
 TOKEN = os.environ.get("TEST_SESSION_TOKEN", "")
 HEADERS = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
+QA_ID = requests.get(f"{BASE_URL}/api/users/me", headers=HEADERS, timeout=15).json()["user"]["id"]
 
 MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
@@ -44,7 +45,7 @@ def _set_location(lat, lng, city, set_home=False):
 
 @pytest.fixture(scope="module", autouse=True)
 def restore_state():
-    snap = _get("demo-00")
+    snap = _get(QA_ID)
     assert snap, "demo-00 missing"
     yield
     # Restore demo-00 to Tokyo home (set_home=true equivalent)
@@ -52,7 +53,7 @@ def restore_state():
         "city", "home_city", "lat", "lng",
         "city_lat", "city_lng", "home_lat", "home_lng"
     ] if snap.get(k) is not None}
-    db.users.update_one({"id": "demo-00"}, {"$set": fields})
+    db.users.update_one({"id": QA_ID}, {"$set": fields})
     # Cleanup any leftover throwaway user
     db.users.delete_many({"id": {"$regex": "^throwaway-fartown-"}})
 
@@ -114,7 +115,7 @@ class TestMarltonNearby:
             "lat": 40.20, "lng": -74.90,
             "home_lat": 40.20, "home_lng": -74.90,
             "city_lat": 40.20, "city_lng": -74.90,
-            "video_url": "/api/videos/demo_01.mp4",
+            "video_url": "https://storage.googleapis.com/test-fixtures/intro.mp4",
             "transcript": "test",
             "source_lang": "en",
             "is_demo": False,
@@ -122,6 +123,8 @@ class TestMarltonNearby:
         })
         try:
             _set_location(39.891, -74.922, "Marlton, NJ, USA", set_home=False)
+            # radius state is shared across test files — pin it for this assert
+            requests.post(f"{BASE_URL}/api/users/nearby-radius", json={"radius_km": 25}, headers=HEADERS, timeout=15)
             j = _feed()
             ids = [i["id"] for i in j["feed"]]
             assert tid not in ids, f"FarTown user should be >25km, but present in {ids}"

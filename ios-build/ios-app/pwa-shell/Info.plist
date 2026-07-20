@@ -44,14 +44,14 @@
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
-		<true/>
+		<false/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>Capture Video by user request</string>
+	<string>The camera records your 7-second video introduction.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Track current location by user request</string>
+	<string>Your approximate location shows you people near your city. Your exact location is never shared.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Capture Audio by user request</string>
+	<string>The microphone records your voice for your 7-second video introduction.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -75,7 +75,6 @@
 	<array>
 		<string>audio</string>
 		<string>processing</string>
-		<string>remote-notification</string>
 	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
@@ -83,7 +82,7 @@
 	<string>Main</string>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
-		<string>armv7</string>
+		<string>arm64</string>
 	</array>
 	<key>UIStatusBarStyle</key>
 	<string>UIStatusBarStyleDefault</string>
