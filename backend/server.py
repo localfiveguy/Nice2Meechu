@@ -71,6 +71,21 @@ app.add_middleware(
 
 
 @app.on_event("startup")
+async def _flush_geocode_cache():
+    """Flush the 'cached forever' city→coords cache on every deploy.
+    Production's cache held entries poisoned during the pre-geocoder era
+    (e.g. 'marlton…' → Tokyo coords), which re-centered the nearby scan on
+    Tokyo forever and even wrote the poison back onto user docs. Photon
+    re-populates lazily, so a per-deploy flush is cheap and definitive."""
+    try:
+        r = await db.city_geo.delete_many({})
+        if r.deleted_count:
+            logger.info("Flushed %d geocode cache entries", r.deleted_count)
+    except Exception:
+        logger.exception("geocode cache flush failed (non-fatal)")
+
+
+@app.on_event("startup")
 async def _ensure_user_indexes():
     """Unique indexes stop concurrent sign-ins from creating duplicate
     accounts (find-then-insert race). Partial filters skip docs where the

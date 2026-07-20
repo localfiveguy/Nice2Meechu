@@ -46,6 +46,11 @@ def cleanup():
 
 @pytest.fixture(autouse=True)
 def _reset():
+    # demo-01/demo-02 are homed in Tokyo — browse Tokyo so they appear in feed.
+    requests.post(
+        f'{BASE_URL}/api/users/location', headers=HEADERS,
+        json={'lat': 35.6762, 'lng': 139.6503, 'city': 'Tokyo, Japan', 'set_home': False},
+    )
     cleanup()
     yield
     cleanup()

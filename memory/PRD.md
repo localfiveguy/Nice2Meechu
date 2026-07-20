@@ -373,6 +373,9 @@ A hyperlocal, video-first social app where users connect by watching short video
 - LOW: ghost-purge regex anchored (`/videos/demo_\d+\.(mp4|webm)(\?|$)`); `/users/video` validates URL prefix (GCS or /api/user-videos only).
 - Test suite repaired: fresh 365-day TEST_SESSION_TOKEN (QA user), demo-00 dependencies replaced with QA_ID (demo users are heal-pinned now), stale onboarding/sample-video/samples tests updated to current schema, re-seeded test-john-erial + test-kathy-cherryhill fixtures with GCS-style URLs. 102/102 passing.
 
+## 2026-06 — Tokyo-in-Marlton R5: FINAL root cause = poisoned geocode cache
+- `db.city_geo` (cached forever) held marlton→Tokyo coords in prod; `_browse_center` trusted it, centered nearby scan on Tokyo, wrote poison back to user docs. REPRODUCED exactly in preview (Tokyo demos 0 km in Marlton), fixed via startup flush of city_geo (`_flush_geocode_cache` in server.py). Build `v1.6.2-geocache-flush`. Post-fix feed verified: real nearby people only (Voorhees 3.9 / Cherry Hill 8.3 / Erial 15.5). Tests 102/102 twice (made likes_you + unlike_swipe location-self-sufficient).
+
 ## Next Tasks
-- User: REDEPLOY (v1.6.1 ghost purge + review fixes) → verify build stamp at nice2meechu.com/api/ → check Marlton.
+- User: REDEPLOY → verify `"build":"v1.6.2-geocache-flush"` at nice2meechu.com/api/ → Marlton must be Tokyo-free (this time the root cause was reproduced before fixing).
 - Then: Play Console AAB upload (paste back Play App Signing SHA-256); Save to GitHub → ASC → Codemagic.

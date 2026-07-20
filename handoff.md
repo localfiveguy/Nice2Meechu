@@ -332,20 +332,25 @@ Test credentials: `/app/memory/test_credentials.md` (git-ignored) — includes
 
 ## 15. Incident History & Hard-Won Lessons
 
-1. **"Tokyo users in Marlton" (4 rounds)**:
+1. **"Tokyo users in Marlton" (5 rounds — FINAL root cause found in R5)**:
    - R1: coordinate mixing in feed query → haversine guardrails.
    - R2: popular-cities list cache poisoning → Photon geocoder validation on all
      location writes.
    - R3 (prod-only): old prod demo docs were seeded into the viewer's browsing city
      by a pre-fix build; alignment pass now heals demo locations on every feed call.
    - R4 (prod-only): **ghost demos** — ancient records with demo videos but NO
-     `is_demo` flag (or stripped flags) masqueraded as real Marlton residents and
-     dodged all cleanup. Fix: `seed_demo_users()` now (a) deletes any user whose
-     `video_url` matches `/videos/demo_` with a non-`demo-NN` id, and (b) aligns/
-     heals/re-flags by **id** (not flag), so flag-stripped demo-NN docs recover.
-     Build stamp `v1.6.1-ghost-demo-purge` at `GET /api/` verifies prod version.
-   - Lesson: preview & prod DBs diverge; data bugs must be reasoned about per-env,
-     and cleanup must key on invariants (video fingerprint) not mutable flags.
+     `is_demo` flag masqueraded as real Marlton residents. Fix: purge by video-URL
+     fingerprint + heal/re-flag by id.
+   - R5 (prod-only, THE actual persistent cause): **poisoned geocode cache** —
+     `db.city_geo` ("cached forever") held `marlton… → Tokyo coords` from the
+     pre-geocoder era. `_browse_center()` trusted the cache anchor, re-centered
+     the nearby scan on Tokyo, AND wrote the poison back onto user docs.
+     Reproduced exactly in preview (Tokyo demos at 0 km in Marlton), fixed by
+     flushing `city_geo` on every startup (Photon re-populates lazily).
+     Build stamp `v1.6.2-geocache-flush` at `GET /api/` verifies prod version.
+   - Lessons: preview & prod DBs diverge; "cached forever" + trust-the-cache is a
+     poison-persistence machine; always REPRODUCE with prod-shaped data before
+     declaring a fix; a build stamp on `GET /api/` ends "did it deploy?" debates.
 2. **Failed prod deploy**: k8s probes need root-level `GET /health` — never remove.
 3. **Apple Hide-My-Email duplicate**: relay email ≠ Gmail → duplicate account.
    Manual fix applied for the operator (apple_sub moved to the Steavin account).

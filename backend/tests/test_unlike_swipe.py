@@ -15,6 +15,11 @@ def _cleanup():
 
 @pytest.fixture(autouse=True)
 def cleanup_before_after():
+    # demo-01 is homed in Tokyo — browse Tokyo so it appears in the feed.
+    requests.post(
+        f"{BASE_URL}/api/users/location", headers=HEADERS,
+        json={"lat": 35.6762, "lng": 139.6503, "city": "Tokyo, Japan", "set_home": False},
+    )
     _cleanup()
     yield
     _cleanup()
