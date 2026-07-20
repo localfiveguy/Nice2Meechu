@@ -13,6 +13,54 @@ from core import ADMIN_EMAILS, _get_gcs_bucket, db, logger
 router = APIRouter()
 
 
+@router.get("/admin/diagnose-feed")
+async def diagnose_feed(user=Depends(current_user)):
+    """Production visibility for the Tokyo-in-Marlton saga: dumps the viewer's
+    stored location, the geocode cache entry, the computed browse center, and
+    every local/nearby feed candidate with raw home coords + video URL prefix.
+    Open in a signed-in browser: /api/admin/diagnose-feed"""
+    _require_admin(user)
+    from feed import _browse_center, _local_candidates, _nearby_candidates
+
+    viewer_city = (user.get("city") or "").strip().split(",")[0].strip().lower()
+    base_filter = {
+        "id": {"$ne": user["id"]},
+        "video_url": {"$ne": None, "$exists": True},
+    }
+    locals_ = await _local_candidates(base_filter, viewer_city) if viewer_city else []
+    lat, lng, healed = await _browse_center(user, locals_) if viewer_city else (None, None, False)
+    radius = user.get("nearby_radius_km") or 10
+    nearby = []
+    if lat is not None:
+        nearby = await _nearby_candidates(base_filter, lat, lng, radius, {c["id"] for c in locals_})
+    geo = await db.city_geo.find_one(
+        {"key": (user.get("city") or "").strip().lower()}, {"_id": 0}
+    )
+
+    def slim(u):
+        d = {k: u.get(k) for k in (
+            "id", "codename", "first_name", "home_city", "home_lat", "home_lng",
+            "lat", "lng", "city", "is_demo", "created_at",
+        )}
+        d["video_url_prefix"] = (u.get("video_url") or "")[:70]
+        d["near_km"] = u.get("_near_km")
+        return d
+
+    return {
+        "build": "v1.6.3-feed-diagnose",
+        "you": {k: user.get(k) for k in (
+            "id", "email", "city", "city_lat", "city_lng", "lat", "lng",
+            "home_city", "home_lat", "home_lng", "nearby_radius_km",
+        )},
+        "geocache_entry_for_your_city": geo,
+        "browse_center": {"lat": lat, "lng": lng, "healed_this_request": healed},
+        "locals_count": len(locals_),
+        "locals": [slim(u) for u in locals_],
+        "nearby_count": len(nearby),
+        "nearby": [slim(u) for u in nearby],
+    }
+
+
 def _require_admin(user):
     """Reject the request unless the caller's email is in ADMIN_EMAILS env."""
     if not ADMIN_EMAILS:
