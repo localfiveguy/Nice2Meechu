@@ -83,7 +83,11 @@ async def current_user(
 # ---------------------------------------------------------------------------
 @router.get("/")
 async def root():
-    return {"app": "Nice2Meechu", "auth": "google-direct" if GOOGLE_CLIENT_ID else "google-emergent"}
+    return {
+        "app": "Nice2Meechu",
+        "build": "v1.6-demo-location-healing",
+        "auth": "google-direct" if GOOGLE_CLIENT_ID else "google-emergent",
+    }
 
 
 # REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
