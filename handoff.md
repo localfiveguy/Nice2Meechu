@@ -330,13 +330,20 @@ Test credentials: `/app/memory/test_credentials.md` (git-ignored) — includes
 
 ## 15. Incident History & Hard-Won Lessons
 
-1. **"Tokyo users in Marlton" (3 rounds)**:
+1. **"Tokyo users in Marlton" (4 rounds)**:
    - R1: coordinate mixing in feed query → haversine guardrails.
    - R2: popular-cities list cache poisoning → Photon geocoder validation on all
      location writes.
    - R3 (prod-only): old prod demo docs were seeded into the viewer's browsing city
      by a pre-fix build; alignment pass now heals demo locations on every feed call.
-   - Lesson: preview & prod DBs diverge; data bugs must be reasoned about per-env.
+   - R4 (prod-only): **ghost demos** — ancient records with demo videos but NO
+     `is_demo` flag (or stripped flags) masqueraded as real Marlton residents and
+     dodged all cleanup. Fix: `seed_demo_users()` now (a) deletes any user whose
+     `video_url` matches `/videos/demo_` with a non-`demo-NN` id, and (b) aligns/
+     heals/re-flags by **id** (not flag), so flag-stripped demo-NN docs recover.
+     Build stamp `v1.6.1-ghost-demo-purge` at `GET /api/` verifies prod version.
+   - Lesson: preview & prod DBs diverge; data bugs must be reasoned about per-env,
+     and cleanup must key on invariants (video fingerprint) not mutable flags.
 2. **Failed prod deploy**: k8s probes need root-level `GET /health` — never remove.
 3. **Apple Hide-My-Email duplicate**: relay email ≠ Gmail → duplicate account.
    Manual fix applied for the operator (apple_sub moved to the Steavin account).

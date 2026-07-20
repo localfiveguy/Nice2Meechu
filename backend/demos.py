@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter
 
-from core import LANG_NAMES, ROOT_DIR, VIBES_POOL, _rng, db
+from core import LANG_NAMES, ROOT_DIR, VIBES_POOL, _rng, db, logger
 
 router = APIRouter()
 
@@ -64,10 +64,22 @@ async def seed_demo_users():
     if not personas:
         return
     desired_ids = {f"demo-{p['idx']:02d}" for p in personas}
+    # Purge ghost demos: ancient seeds sometimes lack the is_demo flag, so they
+    # masquerade as real users (with demo videos) and dodge both stale cleanup
+    # and location healing. A demo video URL is the one reliable fingerprint —
+    # real uploads live in GCS / user-videos, never /videos/demo_NN.
+    ghosts = await db.users.delete_many({
+        "video_url": {"$regex": r"/videos/demo_"},
+        "id": {"$nin": list(desired_ids)},
+    })
+    if ghosts.deleted_count:
+        logger.info("Purged %d ghost demo users", ghosts.deleted_count)
+
     existing_docs = {
         u["id"]: u
         async for u in db.users.find(
-            {"is_demo": True}, {"_id": 0, "id": 1, "home_city": 1}
+            {"$or": [{"is_demo": True}, {"id": {"$in": list(desired_ids)}}]},
+            {"_id": 0, "id": 1, "home_city": 1},
         )
     }
     existing = set(existing_docs)
@@ -90,6 +102,7 @@ async def seed_demo_users():
             "handle": _demo_handle_for(p),
             "first_name": p.get("name") or None,
             "transcript": p.get("transcript", ""),
+            "is_demo": True,
         }
         # Location healing: very old seeds placed demos into whatever city the
         # viewer was browsing (e.g. Tokyo personas homed in Marlton). Enforce
