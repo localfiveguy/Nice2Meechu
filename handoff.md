@@ -332,7 +332,7 @@ Test credentials: `/app/memory/test_credentials.md` (git-ignored) — includes
 
 ## 15. Incident History & Hard-Won Lessons
 
-1. **"Tokyo users in Marlton" (5 rounds — FINAL root cause found in R5)**:
+1. **"Tokyo users in Marlton" (5 rounds — RESOLVED, user-confirmed in production 2026-06)**:
    - R1: coordinate mixing in feed query → haversine guardrails.
    - R2: popular-cities list cache poisoning → Photon geocoder validation on all
      location writes.

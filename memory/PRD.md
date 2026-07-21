@@ -381,6 +381,9 @@ A hyperlocal, video-first social app where users connect by watching short video
 - server.py: one-shot startup migration `repair_user_coords_v1` (marker in db.migrations) — non-demo users whose stored city/home coords are >100 km from a fresh geocode of their labels get city_lat/city_lng/home_lat/home_lng overwritten from Photon (per-run memo, no cache reads). Tested: planted Marlton-labeled user with Tokyo coords → repaired to 39.90,-74.93 on restart. 102/102 tests green. Build `v1.6.4-coord-repair`.
 - Also this session: admin diagnostic `GET /api/admin/diagnose-feed` (dumps viewer location state, geocache entry, browse center, locals/nearby raw docs); ADMIN_EMAILS now includes steavinrice@gmail.com + qa-tester.
 
+## 2026-06 — ✅ Tokyo-in-Marlton RESOLVED (user-confirmed in production on v1.6.4)
+The combination that killed it: geocode-cache flush on startup (R5) + one-shot user-coord repair migration + cache-free heal writes. User verified Marlton is clean.
+
 ## Next Tasks
-- User: REDEPLOY → verify `"build":"v1.6.4-coord-repair"` → check Marlton; if Tokyo persists, open /api/admin/diagnose-feed signed-in and send screenshot (endpoint shipped for exactly this).
-- Then: Play Console AAB upload (paste back Play App Signing SHA-256); Save to GitHub → ASC → Codemagic.
+- Play Console: upload AAB → paste back the Play App Signing SHA-256 (assetlinks.json update + redeploy).
+- App Store: Save to GitHub → ASC app record + API key → Codemagic integration `nice2meechu-asc` → first build (babysit it; Swift never compiled).
