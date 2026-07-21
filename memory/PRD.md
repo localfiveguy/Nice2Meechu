@@ -376,6 +376,11 @@ A hyperlocal, video-first social app where users connect by watching short video
 ## 2026-06 — Tokyo-in-Marlton R5: FINAL root cause = poisoned geocode cache
 - `db.city_geo` (cached forever) held marlton→Tokyo coords in prod; `_browse_center` trusted it, centered nearby scan on Tokyo, wrote poison back to user docs. REPRODUCED exactly in preview (Tokyo demos 0 km in Marlton), fixed via startup flush of city_geo (`_flush_geocode_cache` in server.py). Build `v1.6.2-geocache-flush`. Post-fix feed verified: real nearby people only (Voorhees 3.9 / Cherry Hill 8.3 / Erial 15.5). Tests 102/102 twice (made likes_you + unlike_swipe location-self-sufficient).
 
+## 2026-06 — Coord-repair (user-directed hardening, v1.6.4)
+- feed.py heal extended: when browsing own home city, home_lat/home_lng also repaired — sourced ONLY from a fresh Photon geocode (`_geocode_city(..., use_cache=False)`), never cache/anchor values; fresh value also preferred for persisted city coords.
+- server.py: one-shot startup migration `repair_user_coords_v1` (marker in db.migrations) — non-demo users whose stored city/home coords are >100 km from a fresh geocode of their labels get city_lat/city_lng/home_lat/home_lng overwritten from Photon (per-run memo, no cache reads). Tested: planted Marlton-labeled user with Tokyo coords → repaired to 39.90,-74.93 on restart. 102/102 tests green. Build `v1.6.4-coord-repair`.
+- Also this session: admin diagnostic `GET /api/admin/diagnose-feed` (dumps viewer location state, geocache entry, browse center, locals/nearby raw docs); ADMIN_EMAILS now includes steavinrice@gmail.com + qa-tester.
+
 ## Next Tasks
-- User: REDEPLOY → verify `"build":"v1.6.2-geocache-flush"` at nice2meechu.com/api/ → Marlton must be Tokyo-free (this time the root cause was reproduced before fixing).
+- User: REDEPLOY → verify `"build":"v1.6.4-coord-repair"` → check Marlton; if Tokyo persists, open /api/admin/diagnose-feed signed-in and send screenshot (endpoint shipped for exactly this).
 - Then: Play Console AAB upload (paste back Play App Signing SHA-256); Save to GitHub → ASC → Codemagic.

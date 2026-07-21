@@ -295,10 +295,25 @@ async def feed(user=Depends(current_user)):
         if healed:
             # Self-heal the stale stored coords so map/radius/popular-cities
             # all agree with the actual browse city from now on.
-            await db.users.update_one(
-                {"id": user["id"]},
-                {"$set": {"city_lat": center_lat, "city_lng": center_lng}},
-            )
+            update = {"city_lat": center_lat, "city_lng": center_lng}
+            # When the user is browsing their own home city, repair home
+            # coords too — but ONLY from a fresh geocode of the home city
+            # label (never cached/derived values; see the R5 poisoning saga).
+            home_label = (user.get("home_city") or "").strip()
+            if home_label and home_label.split(",")[0].strip().lower() == viewer_city:
+                fresh_lat, fresh_lng = await _geocode_city(home_label, use_cache=False)
+                if fresh_lat is not None:
+                    if (
+                        user.get("home_lat") is None
+                        or haversine_km(user["home_lat"], user["home_lng"], fresh_lat, fresh_lng) > 100
+                    ):
+                        update["home_lat"] = fresh_lat
+                        update["home_lng"] = fresh_lng
+                    # Prefer the fresh geocode over the (possibly cache-derived)
+                    # anchor for the persisted browse center as well.
+                    update["city_lat"] = fresh_lat
+                    update["city_lng"] = fresh_lng
+            await db.users.update_one({"id": user["id"]}, {"$set": update})
             logger.warning(
                 "feed: healed stale city coords for user %s (city=%s → %.4f,%.4f)",
                 user["id"], viewer_city, center_lat, center_lng,

@@ -90,16 +90,19 @@ def generate_codename() -> str:
     return f"{_rng.choice(CODENAME_ADJ)} {_rng.choice(CODENAME_NOUN)}"
 
 
-async def _geocode_city(city_full: str) -> tuple:
+async def _geocode_city(city_full: str, use_cache: bool = True) -> tuple:
     """Resolve a city label ("Marlton, New Jersey, United States") to coords
     via Photon, cached forever in db.city_geo. Returns (lat, lng) or (None,
-    None) on failure — failures are NOT cached so transient outages retry."""
+    None) on failure — failures are NOT cached so transient outages retry.
+    Pass use_cache=False when the result will be persisted onto a user record:
+    cached entries must never flow back into user docs (poisoning vector)."""
     key = (city_full or "").strip().lower()
     if not key:
         return None, None
-    cached = await db.city_geo.find_one({"key": key}, {"_id": 0})
-    if cached:
-        return cached.get("lat"), cached.get("lng")
+    if use_cache:
+        cached = await db.city_geo.find_one({"key": key}, {"_id": 0})
+        if cached:
+            return cached.get("lat"), cached.get("lng")
     try:
         import httpx
         async with httpx.AsyncClient(timeout=5) as http:

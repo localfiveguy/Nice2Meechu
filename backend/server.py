@@ -7,6 +7,7 @@ CORS, and startup/shutdown lifecycle (migrations + background workers).
 """
 import asyncio
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -68,6 +69,58 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def _repair_mismatched_user_coords():
+    """One-shot migration: any NON-demo user whose stored coordinates disagree
+    (>100 km) with a FRESH geocode of their stored city labels gets home_lat/
+    home_lng/city_lat/city_lng overwritten from that fresh geocode. Repairs
+    accounts poisoned during the cached-geocode era. Cached coordinates are
+    never used — every value written comes straight from Photon this run."""
+    if await db.migrations.find_one({"id": "repair_user_coords_v1"}):
+        return
+    from core import _geocode_city, haversine_km
+
+    fresh_this_run: dict = {}
+
+    async def fresh(label: str) -> tuple:
+        key = label.strip().lower()
+        if key not in fresh_this_run:
+            fresh_this_run[key] = await _geocode_city(label, use_cache=False)
+        return fresh_this_run[key]
+
+    fixed = 0
+    async for u in db.users.find(
+        {"is_demo": {"$ne": True}},
+        {"_id": 0, "id": 1, "city": 1, "home_city": 1,
+         "city_lat": 1, "city_lng": 1, "home_lat": 1, "home_lng": 1},
+    ):
+        update = {}
+        for label_f, lat_f, lng_f in (
+            ("city", "city_lat", "city_lng"),
+            ("home_city", "home_lat", "home_lng"),
+        ):
+            label = (u.get(label_f) or "").strip()
+            if not label:
+                continue
+            g_lat, g_lng = await fresh(label)
+            if g_lat is None:
+                continue
+            s_lat, s_lng = u.get(lat_f), u.get(lng_f)
+            if s_lat is None or haversine_km(s_lat, s_lng, g_lat, g_lng) > 100:
+                update[lat_f] = g_lat
+                update[lng_f] = g_lng
+        if update:
+            await db.users.update_one({"id": u["id"]}, {"$set": update})
+            fixed += 1
+            logger.warning("coord repair: user %s → %s", u["id"], update)
+    await db.migrations.insert_one({
+        "id": "repair_user_coords_v1",
+        "at": datetime.now(timezone.utc).isoformat(),
+        "fixed": fixed,
+    })
+    logger.info("Coord-repair migration complete: %d users fixed", fixed)
 
 
 @app.on_event("startup")
