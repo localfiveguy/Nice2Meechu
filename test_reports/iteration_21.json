@@ -1,0 +1,34 @@
+{
+  "summary": "Auth surface health verification after the iOS Safari 'no Google accounts shown' report. Confirmed the sign-in screen and all auth endpoints are healthy — user's issue is expected Google behavior (they cleared Safari data, which logs them out of Google itself, so Google's own sign-in page correctly shows an empty email field). No regression in our code. Backend: 9/9 pytest cases pass (google invalid=401, google missing=422, google-redirect invalid=303 with auth_error=invalid_credential in Location, google-redirect missing=422, apple invalid=401, /auth/me no-creds=401, /auth/me with QA Bearer=200 returns user+onboarded, /auth/me bad Bearer=401, build stamp v1.6.4-coord-repair). Frontend: SignInScreen renders both 'Continue with Google' (GIS iframe from accounts.google.com) and 'Continue with Apple' (data-testid=signin-apple-button visible); window.google.accounts.id is loaded; no gisError/idpiframe/origin errors in console.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "SignInScreen (mobile 390x844)", "issues": ["Minor: GSI logs 'google.accounts.id.initialize() is called multiple times' warning — likely from React StrictMode double-invoke or effect re-run. Not blocking, but worth guarding the init call with a ref/flag to silence the warning and avoid rebinding the callback."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_auth_surface.py",
+    "/app/test_reports/pytest/auth_surface.xml"
+  ],
+  "action_items": [
+    "None — user-reported issue is not an app bug. Google's sign-in page showing an empty email field after Safari data-clear is expected: clearing site data also clears the google.com cookies that keep the user signed into Google. Consider adding a short helper hint on the SignInScreen when auth_error=invalid_credential (or when the popup closes without a credential) suggesting the user sign in to Google first, but this is a UX polish, not a fix.",
+    "Optional: guard GIS initialize() with a ref to eliminate the 'called multiple times' warning."
+  ],
+  "critical_code_review_comments": [
+    "/api/auth/google-redirect properly returns 303 with `?auth_error=invalid_credential` on bad JWT (not 500) — good defensive design for iOS ITP redirect mode.",
+    "/api/auth/google returns generic 'Invalid Google credential' 401 (no info leak) — good.",
+    "Apple JWKS client caches keys with lifespan=86400 — good; won't hammer appleid.apple.com.",
+    "Both google and google-redirect share _finalize_google_signin — no code duplication.",
+    "Redirect endpoint also embeds session token in URL fragment (#st=...) as ITP-bounce fallback — good iOS Safari mitigation, and fragments are not sent to servers so no security leak."
+  ],
+  "updated_files": ["/app/backend/tests/test_auth_surface.py"],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "100% (surface checks)"},
+  "test_credentials": "TEST_SESSION_TOKEN=sttest_SnTv9X5GmiggyZq5vKriLEqtcFmSMN4s from /app/memory/test_credentials.md — valid, /auth/me returned qa-tester user.",
+  "seed_data_creation": "None — used existing QA session token.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Reusable auth-surface health suite at /app/backend/tests/test_auth_surface.py (9 tests, ~3s). Run with `export TEST_SESSION_TOKEN=... && pytest backend/tests/test_auth_surface.py -v`. Covers google/google-redirect/apple/me endpoints. Frontend surface verified via Playwright: apple button data-testid=signin-apple-button, google via GIS iframe (iframe[src*='accounts.google.com']).",
+  "rca of the issue": "User's Safari data-clear removes google.com cookies too → Google itself is signed out → Google's account-picker legitimately shows no accounts and an empty email field. This is Google's UI, not ours. Our sign-in surface (GIS init, Apple button, backend endpoints) is fully healthy — verified by 9/9 backend tests and Playwright surface check. Mitigation: user just needs to type their email or sign into Google.com first; optionally we could show a hint 'Not seeing your account? Sign in to Google first.' on auth_error return."
+}
