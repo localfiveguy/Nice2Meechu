@@ -1,0 +1,35 @@
+{
+  "summary": "Retest of webm→mp4 transcode fix (iter 22 CRITICAL bug). Backend suite: all 7/7 tests in test_webm_transcode.py PASS — webm upload now returns .mp4 URL whose served bytes begin with ISO-BMFF ftyp and ffprobe reports h264. Original iOS Safari black-video bug is fixed at the transport layer. Frontend regression is BLOCKED: QA user fixture is missing the `age` field so App.js routeToNext() sends the session straight to Onboarding instead of Feed — feed-card-video never renders. This is a fixture-data issue, not a code regression.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "QA session_token login → Feed",
+        "issue": "App.js routeToNext() (line 92) requires u.handle && u.first_name && u.city && u.age. QA user (id 2b0f5a67-…) returns from /api/auth/me with handle=qa.tester, first_name=QA, city='Marlton, NJ, USA' but NO `age` field. User is forced into Onboarding screen (screenshot: 'Create your profile', QA prefilled) and feed-card-video never mounts. Blocks all frontend feed regression testing.",
+        "affected_selectors": ["[data-testid=\"feed-card-video\"]", "[data-testid=\"feed-like-btn\"]", "[data-testid=\"feed-pass-btn\"]", "[data-testid=\"feed-city-pill\"]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_webm_transcode.py",
+    "/app/test_reports/pytest/webm_transcode_iter23.xml"
+  ],
+  "action_items": [
+    "Set `age` on the QA user fixture (id 2b0f5a67-2961-401f-889d-8672a49f7556) — e.g. age=30 — so routeToNext lands on 'feed'. Alternatively (weaker), add missing-age handling to the routing gate. After fix, retest the frontend regression items (single mp4 <source>, readyState≥2, like/pass/mute/city-pill).",
+    "Confirm QA user home_city stays 'Tokyo, Japan' after any fixture update (test_home_city.py depends on it)."
+  ],
+  "critical_code_review_comments": [
+    "FeedCard.js line 91 still emits type='video/webm' when URL ends in .webm — safe now that all stored intros are transcoded to mp4, but the branch is effectively dead code and could be removed to simplify.",
+    "routeToNext gate silently drops users to onboarding when ANY required field is missing (handle/first_name/city/age). Add a console.warn in dev mode listing which field failed — would have caught the missing-age fixture immediately."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "blocked (fixture)"},
+  "test_credentials": "TEST_SESSION_TOKEN=sttest_SnTv9X5GmiggyZq5vKriLEqtcFmSMN4s (QA user 2b0f5a67-2961-401f-889d-8672a49f7556); cookie session_token=<token>, domain=hyperlocal-video.preview.emergentagent.com, httpOnly, secure, sameSite=None.",
+  "seed_data_creation": "None. Backend feed test set QA browsing city to Marlton NJ (home_city preserved as Tokyo).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend transcode fix VERIFIED end-to-end — webm upload writes real h264/aac mp4 to GCS (bytes[4:8]==b'ftyp'). Only frontend feed regression is outstanding, and it is gated on the QA fixture gaining an `age` value. Once that's set, re-run the Playwright script above (viewport 390x844, cookie session_token=sttest_… on the preview host) and verify: (1) single <source type='video/mp4'>, (2) v.readyState>=2 with no MediaError, (3) like/pass buttons clickable, (4) tap-to-unmute toggles video.muted, (5) city pill shows Marlton.",
+  "rca of the issue": "N/A — original webm→mp4 bug from iter 22 is fixed and verified. Frontend blocker is a data-fixture gap (missing age) exposed by App.js routeToNext gate; not a regression introduced by the transcode fix."
+}

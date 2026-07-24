@@ -345,7 +345,7 @@ async def upload_video_file(file: UploadFile = File(...), user=Depends(current_u
 
         def _upload() -> None:
             blob.upload_from_file(
-                spool,
+                upload_src,
                 content_type=ct,
                 rewind=True,
                 predefined_acl="publicRead",
@@ -354,10 +354,16 @@ async def upload_video_file(file: UploadFile = File(...), user=Depends(current_u
 
         await run_in_threadpool(_upload)
     finally:
-        try:
-            spool.close()
-        except Exception:
-            pass
+        for f in {spool, upload_src}:
+            try:
+                f.close()
+            except Exception:
+                pass
+        for p in tmp_paths:
+            try:
+                _os.unlink(p)
+            except OSError:
+                pass
 
     # Cache-bust query so the <video> element refetches after re-record.
     video_url = f"{blob.public_url}?v={int(datetime.now(timezone.utc).timestamp())}"
