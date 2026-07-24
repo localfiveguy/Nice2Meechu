@@ -27,7 +27,7 @@ function loadAppleScript() {
 // Google login. Uses Apple's JS SDK popup flow; the identity token is
 // verified server-side at POST /api/auth/apple. Renders nothing until
 // REACT_APP_APPLE_SERVICE_ID is configured.
-export function AppleSignInButton() {
+export function AppleSignInButton({ hint }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -99,7 +99,7 @@ export function AppleSignInButton() {
         className="text-[10px] text-white/40 text-center max-w-[280px] leading-snug"
         data-testid="signin-apple-email-hint"
       >
-        Used Google before? Choose "Share My Email" so we recognize you.
+        {hint || 'Used Google before? Choose "Share My Email" so we recognize you.'}
       </p>
     </div>
   );

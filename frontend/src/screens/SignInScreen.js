@@ -20,6 +20,7 @@ export function SignInScreen() {
   // hand the user off to Safari instead of letting them spin on a broken
   // button. The check runs once on mount; PWA mode never changes mid-session.
   const [iosPwaBlocked] = useState(() => isIosWebkit() && isStandalonePwa());
+  const [iosDevice] = useState(() => isIosWebkit());
 
   // Called by GIS when the user completes Google sign-in. The `response.credential`
   // is a Google-issued ID-token JWT we hand off to the backend for verification.
@@ -143,6 +144,12 @@ export function SignInScreen() {
       </p>
 
       <div className="mt-auto flex flex-col items-center gap-3">
+        {/* iPhone/iPad: Apple goes first — it uses the Apple ID the device is
+            already signed into (one tap + Face ID), whereas Google can only
+            offer accounts signed in to Safari's google.com. */}
+        {iosDevice && (
+          <AppleSignInButton hint="Uses the Apple ID already on this device — one tap, no passwords." />
+        )}
         {iosPwaBlocked ? (
           <div
             className="w-full max-w-sm rounded-2xl border border-[#FF4D4D]/25 bg-[#FF4D4D]/8 px-4 py-4"
@@ -184,7 +191,16 @@ export function SignInScreen() {
             style={{ colorScheme: "light" }}
           />
         )}
-        <AppleSignInButton />
+        {iosDevice && !iosPwaBlocked && (
+          <p
+            className="text-center text-[10px] text-white/40 max-w-[280px] leading-snug"
+            data-testid="signin-google-ios-hint"
+          >
+            Google only shows accounts signed in to Safari. If it asks for an
+            email, sign in once — it will remember you after that.
+          </p>
+        )}
+        {!iosDevice && <AppleSignInButton />}
         {gisError && (
           <p className="text-center text-xs text-red-400" data-testid="signin-error">
             {gisError}

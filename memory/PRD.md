@@ -387,3 +387,6 @@ The combination that killed it: geocode-cache flush on startup (R5) + one-shot u
 ## Next Tasks
 - Play Console: upload AAB → paste back the Play App Signing SHA-256 (assetlinks.json update + redeploy).
 - App Store: Save to GitHub → ASC app record + API key → Codemagic integration `nice2meechu-asc` → first build (babysit it; Swift never compiled).
+
+## 2026-06 — iOS sign-in reorder (Apple-first on iPhone/iPad)
+- User couldn't get Google account chooser after clearing Safari data (expected: clearing data logs Safari out of google.com; websites can't see app-level Google accounts — iOS sandboxing). Fix: on iOS, "Continue with Apple" renders FIRST ("Uses the Apple ID already on this device — one tap, no passwords"); Google below with Safari hint. Desktop/Android unchanged. Verified via UA-emulated iOS + desktop screenshots. NEEDS DEPLOY.
