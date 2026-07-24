@@ -83,10 +83,13 @@ export function FeedCard({ item, isActive, myLang, onLike, onPass, onUnlike, cur
         data-testid="feed-card-video"
         key={item.video_url}
       >
-        {item.video_url && item.video_url.endsWith(".mp4") && (
-          <source src={item.video_url.replace(".mp4", ".webm")} type="video/webm" />
-        )}
-        <source src={item.video_url} type={item.video_url?.endsWith(".webm") ? "video/webm" : "video/mp4"} />
+        {/* Single source: all stored intros are H.264 mp4 (webm uploads are
+            transcoded server-side — iOS Safari can't decode webm). Extension
+            check strips the ?v= cache-bust query so GCS URLs type correctly. */}
+        <source
+          src={item.video_url}
+          type={(item.video_url || "").split("?")[0].endsWith(".webm") ? "video/webm" : "video/mp4"}
+        />
       </video>
       {/* tap-to-unmute pill (top-center) — shown only while muted */}
       {muted && (

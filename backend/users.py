@@ -1,6 +1,7 @@
 """User profile: onboarding, community rules, location/home, GDPR endpoints,
 safety (report/block), and intro-video uploads."""
 import asyncio
+import shutil
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -289,9 +290,12 @@ async def upload_video_file(file: UploadFile = File(...), user=Depends(current_u
     # 25 MB cap. We stream-read into a SpooledTemporaryFile so we can validate
     # size before talking to GCS — and so a malicious client can't OOM us.
     MAX_BYTES = 25 * 1024 * 1024
+    import os as _os
     import tempfile
     spool = tempfile.SpooledTemporaryFile(max_size=4 * 1024 * 1024, mode="w+b")
     total = 0
+    upload_src = spool
+    tmp_paths: list = []
     try:
         while True:
             chunk = await file.read(1 << 20)
@@ -307,6 +311,24 @@ async def upload_video_file(file: UploadFile = File(...), user=Depends(current_u
             raise HTTPException(400, "Empty or corrupt video file")
 
         spool.seek(0)
+        if ext == "webm":
+            # iOS Safari can't decode webm — re-encode to H.264 mp4 so the
+            # intro plays on every device. On transcode failure keep the webm
+            # (a Chrome-only video beats a blocked onboarding).
+            from transcode import transcode_to_mp4
+            try:
+                tmp_in = tempfile.NamedTemporaryFile(suffix=".webm", delete=False)
+                tmp_paths.extend([tmp_in.name, tmp_in.name + ".mp4"])
+                shutil.copyfileobj(spool, tmp_in)
+                tmp_in.close()
+                await run_in_threadpool(transcode_to_mp4, tmp_in.name, tmp_in.name + ".mp4")
+                upload_src = open(tmp_in.name + ".mp4", "rb")  # noqa: SIM115
+                ext, ctype = "mp4", "video/mp4"
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("webm→mp4 transcode failed for %s (%s) — storing webm", user["id"], exc)
+                spool.seek(0)
+                upload_src = spool
+
         bucket = _get_gcs_bucket()
         # If the user previously recorded in a different browser (Safari mp4 ↔
         # Chrome webm), nuke the other extension so we don't serve stale.

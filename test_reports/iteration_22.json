@@ -1,0 +1,58 @@
+{
+  "summary": "Validated build v1.6.5-webm-transcode. CRITICAL: /api/users/video/upload's webm branch returns a .mp4 URL and GCS reports content-type: video/mp4, but the stored bytes are still the ORIGINAL webm (EBML magic 1a45dfa3). iOS Safari will continue to see a black card despite the transcode wiring. Startup migration + feed + Cosmic Phoenix intro are all correct H.264/AAC mp4 — only the runtime upload path is broken.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/users/video/upload (webm branch)",
+        "issue": "Uploaded webm→mp4 URL serves webm/matroska bytes (magic 1a45dfa3, video codec vp8) with Content-Type video/mp4. The transcoded mp4 file is created on tmp but never uploaded — the inner `_upload()` closure calls `blob.upload_from_file(spool, ...)` while `spool` still holds the original webm bytes; `upload_src` (the mp4 file handle) is assigned but never used. Fix: `blob.upload_from_file(upload_src, rewind=True, ...)` (and ensure the temp mp4 handle is closed in finally). iOS Safari will still fail to decode intros recorded on Chrome/Android post-fix.",
+        "priority": "CRITICAL",
+        "reproduction": "curl -X POST $BURL/api/users/video/upload -H 'Authorization: Bearer <QA>' -F 'file=@/tmp/gen.webm;type=video/webm'  →  returned URL .mp4 → curl the URL → first 4 bytes = 0x1a45dfa3 (EBML), ffprobe reports vp8+opus in matroska container.",
+        "evidence": "test_webm_transcode.py::test_webm_upload_returns_mp4_url_and_serves_true_mp4 FAILED with AssertionError showing bytes[4:8]=b'\\x9fB\\x86\\x81' (expected b'ftyp')."
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "GET /api/auth/me",
+        "issue": "QA user returns `onboarded: true` but `video_url: null` and `home_city: 'Tokyo'` (geocode-cache poison remnant). Frontend still routes to /onboarding profile step, blocking browser-side feed testing with this token. Not directly related to webm fix."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Authenticated feed via QA session_token cookie",
+        "issue": "App routes to onboarding 'Create your profile' page instead of feed for the QA user (video_url is null, home_city is stale 'Tokyo'). Could not render feed-card-video in the browser to verify readyState>=2 end-to-end. Temporarily patching the QA user's video_url in DB did not bypass onboarding — suggests router uses first-load /api/auth/me snapshot or additional gating.",
+        "affected_selectors": ["[data-testid=\"feed-card-video\"]"]
+      }
+    ],
+    "design_issues": [],
+    "code_review_note": "FeedCard.js single-source render + `.split('?')[0].endsWith('.webm')` extension probe is correct — the ?v= cache-bust query no longer breaks the type attribute. That layer is fine; the observable prod bug is entirely on the backend upload path above."
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_webm_transcode.py",
+    "/app/test_reports/pytest/webm_transcode.xml"
+  ],
+  "action_items": [
+    "PRIMARY: /app/backend/users.py `upload_video_file` — replace `blob.upload_from_file(spool, ...)` with `blob.upload_from_file(upload_src, rewind=True, ...)` so the transcoded mp4 file (not the original webm spool) is what actually lands in GCS. Also close the opened mp4 file handle in the finally block.",
+    "After the fix, re-upload a real libvpx webm via the QA token and verify: (a) GET returns first 8 bytes containing 'ftyp' and (b) ffprobe reports h264 video / aac audio.",
+    "Consider: also assert content-type video/mp4 on upload by pinning `ct='video/mp4'` when ext=='mp4' post-transcode (already correctly set, just noting).",
+    "Nice-to-have: extend /app/backend/tests/test_video_upload_codec.py or add the new test_webm_transcode.py to CI so this regression cannot ship silently — the existing suite only checked HTTP 200 + URL suffix, not the actual bytes served.",
+    "Unrelated: geocode-poison remnant on QA user (home_city='Tokyo', home_lat/lng Tokyo) — either re-run geocode repair migration or reset QA user's home_city."
+  ],
+  "critical_code_review_comments": [
+    "users.py L295-355: `upload_src` is dead code in the transcoded-webm branch — the inner `_upload` closure captures `spool` by name, not the outer `upload_src`. Static analyzer / linter (e.g. ruff F841) would catch this if enabled.",
+    "users.py: opened file handle `open(tmp_in.name + '.mp4', 'rb')` is never closed (would be moot once the fix above uses it, but should live in a `with` or finally).",
+    "server.py `_run_webm_transcode_migration` correctly uses `upload_from_filename(dst, ...)` — that path is fine; the divergence between the two code paths hid the bug during the migration self-verification."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_webm_transcode.py (new)"
+  ],
+  "success_rate": {"backend": "86% (6/7 — the one failure is the reported critical bug)", "frontend": "N/A — onboarding routing blocked browser-side feed test"},
+  "test_credentials": "TEST_SESSION_TOKEN=sttest_SnTv9X5GmiggyZq5vKriLEqtcFmSMN4s (QA user, id 2b0f5a67-2961-401f-889d-8672a49f7556, Marlton NJ). Backend Bearer works; browser cookie login lands on onboarding.",
+  "seed_data_creation": "None persistent. Temporarily patched QA user video_url in db.users to attempt frontend feed rendering, then reverted to null.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Once main agent fixes users.py to actually upload `upload_src` (the transcoded mp4) instead of `spool`, re-run: `pytest /app/backend/tests/test_webm_transcode.py -v`. All 7 tests should pass. The critical assertion is `body[4:8] == b'ftyp'` and ffprobe finding 'h264' — those are the iOS Safari playability guarantees. Also spot-check any newly-uploaded intro via curl HEAD/GET and confirm bytes start with 00 00 00 XX 66 74 79 70 (ISO-BMFF).",
+  "rca_of_the_issue": "SYMPTOM: iOS-only black video card for real users; supposed fix ships a webm→mp4 transcoder in POST /api/users/video/upload. VERIFICATION FAILURE: While the URL rename (.webm→.mp4) and Content-Type header (video/mp4) are applied, the file body in GCS is the untranscoded webm. ROOT CAUSE: variable-shadowing bug in /app/backend/users.py L314-355 — the transcoded output is opened into `upload_src` but the inline `_upload` closure hardcodes `spool`, so `upload_from_file` streams the original webm bytes into `<uid>.mp4`. Migration path (_run_webm_transcode_migration in server.py) is independent and correct (uses upload_from_filename on the transcoded dst), which is why the DB shows 0 .webm URLs and existing users like Cosmic Phoenix play fine — that masked the runtime upload regression during self-verification. MITIGATION: 1-line change: `blob.upload_from_file(upload_src, rewind=True, ...)`; also close `upload_src` in finally."
+}

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="7" time="5.052" timestamp="2026-07-24T00:41:44.293620+00:00" hostname="agent-env-0fbef79c-8f06-4402-9f9b-fba6fc1f3a48"><testcase classname="backend.tests.test_webm_transcode" name="test_auth_token_valid" time="0.323" /><testcase classname="backend.tests.test_webm_transcode" name="test_webm_upload_returns_mp4_url_and_serves_true_mp4" time="1.582"><failure message="AssertionError: URL served with .mp4 extension but bytes are NOT mp4/ISO-BMFF (first 16 bytes: 1a45dfa39f4286810142f7810142f281). iOS Safari will still fail.&#10;assert b'\x9fB\x86\x81' == b'ftyp'&#10;  &#10;  At index 0 diff: b'\x9f' != b'f'&#10;  &#10;  Full diff:&#10;  - b'ftyp'&#10;  + b'\x9fB\x86\x81'">backend/tests/test_webm_transcode.py:88: in test_webm_upload_returns_mp4_url_and_serves_true_mp4
+    assert body[4:8] == b"ftyp", (
+E   AssertionError: URL served with .mp4 extension but bytes are NOT mp4/ISO-BMFF (first 16 bytes: 1a45dfa39f4286810142f7810142f281). iOS Safari will still fail.
+E   assert b'\x9fB\x86\x81' == b'ftyp'
+E     
+E     At index 0 diff: b'\x9f' != b'f'
+E     
+E     Full diff:
+E     - b'ftyp'
+E     + b'\x9fB\x86\x81'</failure></testcase><testcase classname="backend.tests.test_webm_transcode" name="test_mp4_upload_returns_mp4_url" time="0.596" /><testcase classname="backend.tests.test_webm_transcode" name="test_upload_rejects_too_small" time="0.104" /><testcase classname="backend.tests.test_webm_transcode" name="test_upload_rejects_wrong_mime" time="0.117" /><testcase classname="backend.tests.test_webm_transcode" name="test_upload_rejects_oversize" time="1.119" /><testcase classname="backend.tests.test_webm_transcode" name="test_marlton_feed_all_mp4" time="1.069" /></testsuite></testsuites>

@@ -124,6 +124,84 @@ async def _repair_mismatched_user_coords():
 
 
 @app.on_event("startup")
+async def _transcode_webm_intros():
+    """One-shot migration (runs in the background so startup stays fast):
+    iOS Safari can't play webm, so every real user's stored .webm intro gets
+    re-encoded to H.264 mp4 in GCS and their video_url repointed. Idempotent
+    across environments — the bucket is shared, so an mp4 rendered by preview
+    is simply reused when production runs its own pass; webm originals are
+    kept so the other environment's un-migrated URLs never 404."""
+    if await db.migrations.find_one({"id": "transcode_webm_videos_v1"}):
+        return
+    asyncio.create_task(_run_webm_transcode_migration())
+
+
+async def _run_webm_transcode_migration():
+    import re
+    import tempfile as _tempfile
+
+    from starlette.concurrency import run_in_threadpool
+
+    from core import _get_gcs_bucket
+    from transcode import transcode_to_mp4
+
+    pat = re.compile(r"^https://storage\.googleapis\.com/([^/]+)/(user_videos/[^?]+)\.webm(?:\?.*)?$")
+    fixed = failed = 0
+    try:
+        bucket = _get_gcs_bucket()
+    except Exception:
+        # No marker written → retries on next startup once GCS is reachable.
+        logger.exception("webm transcode migration: GCS unavailable, deferred")
+        return
+    async for u in db.users.find(
+        {"is_demo": {"$ne": True}, "video_url": {"$regex": r"\.webm(\?|$)"}},
+        {"_id": 0, "id": 1, "video_url": 1},
+    ):
+        m = pat.match(u.get("video_url") or "")
+        if not m or m.group(1) != bucket.name:
+            continue
+        stem = m.group(2)
+        try:
+            def _ensure_mp4() -> bool:
+                mp4_blob = bucket.blob(f"{stem}.mp4")
+                if mp4_blob.exists():
+                    return True
+                webm_blob = bucket.blob(f"{stem}.webm")
+                if not webm_blob.exists():
+                    return False
+                with _tempfile.TemporaryDirectory() as td:
+                    src, dst = f"{td}/in.webm", f"{td}/out.mp4"
+                    webm_blob.download_to_filename(src)
+                    transcode_to_mp4(src, dst)
+                    mp4_blob.cache_control = "public, max-age=31536000"
+                    mp4_blob.upload_from_filename(
+                        dst, content_type="video/mp4",
+                        predefined_acl="publicRead", timeout=120,
+                    )
+                return True
+
+            if not await run_in_threadpool(_ensure_mp4):
+                failed += 1
+                logger.warning("webm→mp4 migration: source blob missing for user %s", u["id"])
+                continue
+            stamp = int(datetime.now(timezone.utc).timestamp())
+            new_url = f"https://storage.googleapis.com/{bucket.name}/{stem}.mp4?v={stamp}"
+            await db.users.update_one({"id": u["id"]}, {"$set": {"video_url": new_url}})
+            fixed += 1
+            logger.info("webm→mp4 migrated: user %s", u["id"])
+        except Exception:  # noqa: BLE001
+            failed += 1
+            logger.exception("webm→mp4 migration failed for user %s", u["id"])
+    await db.migrations.insert_one({
+        "id": "transcode_webm_videos_v1",
+        "at": datetime.now(timezone.utc).isoformat(),
+        "fixed": fixed,
+        "failed": failed,
+    })
+    logger.info("webm→mp4 migration complete: %d fixed, %d failed", fixed, failed)
+
+
+@app.on_event("startup")
 async def _flush_geocode_cache():
     """Flush the 'cached forever' city→coords cache on every deploy.
     Production's cache held entries poisoned during the pre-geocoder era
