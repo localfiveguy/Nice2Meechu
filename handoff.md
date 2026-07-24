@@ -425,3 +425,15 @@ account, Android keystore passwords, GCS JSON key (file git-ignored).
 - QA fixture user 2b0f5a67 must keep home_city "Tokyo, Japan" (test_home_city.py) but now has age/rules/video so cookie login lands on the feed.
 - GCS bucket is SHARED with production — never delete non-test objects from preview.
 **Status**: ✅ verified in preview; ⚠️ REQUIRES REDEPLOY to nice2meechu.com.
+
+
+---
+
+## 19. 2026-06 (later): Nearby-cities system REMOVED (v1.6.6-home-town-only)
+
+Owner decision: videos must appear ONLY in their home town. Removed: `_nearby_candidates`, `_radius_suggestion`, `/api/users/nearby-radius`, 10/25/50 radius pills, widen-radius button/banner, "FROM <TOWN> · N KM" chips, and the "someone new joined nearby" push broadcast (match/message pushes REMAIN on the same `notify_new_nearby` opt-in flag — legacy field name kept).
+Replacement: `_same_town_candidates` in feed.py — home coords within `SAME_TOWN_KM=8` (core.py) of the browsed city's center count as locals. Photon-verified: Marlton↔Evesham 6.5 km (merged), Medford/Cherry Hill 9.4+ km (excluded). Do NOT re-add radius-based spreading without explicit owner request.
+Preview fixtures test-john-erial/test-kathy-cherryhill now have REAL playable mp4s in gs://nicemeechu/user_videos/ (old placeholder test-fixtures URL was a 403 → black card the owner reported).
+CRITICAL preview-vs-prod context: real signups exist ONLY in the production DB; preview can never show them. Production real videos remain black on iPhone until this build is deployed (webm→mp4 migration repoints URLs on prod startup; mp4s pre-rendered in the shared bucket).
+Tests: tests/test_home_town_feed.py new; test_nearby_feed.py + test_nearby_radius.py deleted; suite 109/109. Testing agent iteration_24 frontend 100%.
+Status: ✅ verified in preview; ⚠️ REQUIRES REDEPLOY to nice2meechu.com.

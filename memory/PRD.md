@@ -391,6 +391,19 @@ The combination that killed it: geocode-cache flush on startup (R5) + one-shot u
 ## 2026-06 — iOS sign-in reorder (Apple-first on iPhone/iPad)
 - User couldn't get Google account chooser after clearing Safari data (expected: clearing data logs Safari out of google.com; websites can't see app-level Google accounts — iOS sandboxing). Fix: on iOS, "Continue with Apple" renders FIRST ("Uses the Apple ID already on this device — one tap, no passwords"); Google below with Safari hint. Desktop/Android unchanged. Verified via UA-emulated iOS + desktop screenshots. NEEDS DEPLOY.
 
+## 2026-06 — ✅ Nearby-cities system REMOVED (owner request, v1.6.6-home-town-only)
+- Owner: "a video should only show in its home city, not every town within 25 km." Full removal, all confirmed via ask_human:
+  1. Feed: `_nearby_candidates`/`_radius_suggestion` deleted. New `_same_town_candidates` (feed.py): people whose HOME coords are within `SAME_TOWN_KM=8` (core.py) of the browsed city's center ALSO count as locals — absorbs naming variants of the SAME town (Photon-verified: Marlton↔Evesham centers 6.5 km; Medford/Cherry Hill 9.4+ km stay out). Merged chronological order. city_stats.total = len(feed). `radius_suggestion` + `near_km` gone from the response.
+  2. `/api/users/nearby-radius` endpoint removed (NearbyRadiusReq model kept, marked legacy).
+  3. Frontend removals: widen-radius button/banner (FeedScreen + EmptyFeedState), 10/25/50 radius pills (ChangeLocationScreen; handleClose simplified), "FROM <TOWN> · N KM" chip (FeedCard `feed-nearby-badge`).
+  4. Push: "someone new joined nearby" broadcast REMOVED entirely (users.py trigger + push.py notify_new_nearby). Match & message pushes REMAIN, gated on the same `notify_new_nearby` opt-in flag (legacy field name). NotifyMeButton pill removed from empty state; Profile row copy now "Notify me: matches & messages".
+- admin diagnose-feed updated (`same_town` keys, build v1.6.6-home-town-only). Tests: test_nearby_feed.py + test_nearby_radius.py deleted; new tests/test_home_town_feed.py (7 tests: Evesham absorbs Marlton resident, Cherry Hill/Erial don't leak, no radius_suggestion/near_km, endpoint 404). Suite 109/109. Testing agent iteration_24: frontend 100% (all removed elements absent, retained flows work).
+- ⚠️ REQUIRES REDEPLOY.
+
+## 2026-06 — Preview fixture videos fixed (black "Test Orbit" card)
+- Owner saw a black video for Test Orbit in Erial ON PREVIEW. Cause: QA fixtures test-john-erial / test-kathy-cherryhill pointed at a nonexistent placeholder (`storage.googleapis.com/test-fixtures/intro.mp4` → 403). Generated real H.264 test clips, uploaded to `gs://nicemeechu/user_videos/test-john-erial.mp4` + `test-kathy-cherryhill.mp4`, updated preview video_urls. Erial feed now serves a playable mp4.
+- KEY CONTEXT for future agents: real signups (Erial/Egg Harbor/Marlton people) exist ONLY in the PRODUCTION DB. Preview cannot show them — its DB has only fixtures + owner's account. Production real videos stay black on iPhone until the v1.6.5/v1.6.6 build is DEPLOYED (webm→mp4 migration repoints their URLs; mp4s already pre-rendered in the shared bucket).
+
 ## 2026-06 — ✅ Real-user videos black on iPhone: webm→mp4 transcode (v1.6.5)
 - **Report (production, user-confirmed context)**: Marlton/Egg Harbor feeds showed real-user CARDS but videos didn't play on iPhone. Demos (mp4) always played.
 - **Root cause**: 16/20 real intros in the shared GCS bucket were `.webm` (Chrome/Android MediaRecorder). iOS Safari cannot decode webm → black card.
