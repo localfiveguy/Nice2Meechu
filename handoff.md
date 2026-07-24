@@ -406,3 +406,22 @@ account, Android keystore passwords, GCS JSON key (file git-ignored).
 - Component refactors: ChangeLocationScreen (557 lines), VideoPick, FeedScreen, App.js
 - CI: wire the 102-test suite into GitHub Actions once the repo is on GitHub
 - Store listing screenshot polish; localized listings
+
+
+---
+
+## 18. 2026-06 (later): iPhone black-video fix — webm→mp4 transcode (v1.6.5)
+
+**Bug (production)**: real-user cards appeared in Marlton/Egg Harbor but videos were black on iPhone. Demos (mp4) played fine.
+**Root cause**: 16/20 real intros in GCS bucket `nicemeechu` were `.webm` (Chrome/Android MediaRecorder); iOS Safari cannot decode webm.
+**Fix (build v1.6.5-webm-transcode)**:
+- `/app/backend/transcode.py` — H.264/AAC mp4 encode via pip `imageio-ffmpeg` static binary (in requirements.txt → present in prod image).
+- `POST /api/users/video/upload` transcodes webm uploads to mp4 (fallback: store webm if encode fails); deletes `.webm` sibling.
+- One-shot background startup migration `transcode_webm_videos_v1` (server.py) repoints non-demo `.webm` video_urls to mp4 siblings, transcoding when the sibling is missing. Webm originals kept (other env's URLs must not 404). Marker is per-environment DB → production repoints its own URLs on first deploy; all 15 playable prod webm blobs are ALREADY pre-rendered to mp4 in the shared bucket, so prod's pass is instant.
+- `FeedCard.js` — single `<source>`, query-string-safe extension check (removed the .webm probe source that also broke `type=` on `?v=` URLs).
+**Verification**: testing agent iteration_22 caught a critical (upload closure still sent the webm spool — fixed), iteration_23 backend 100%: served bytes `ftyp isom`, ffprobe h264+aac. Suite 118/118 incl. new `/app/backend/tests/test_webm_transcode.py`. Frontend DOM verified (feed, mp4 source, no MediaError, controls).
+**Gotchas for future agents**:
+- Headless Chromium has NO h264 codec — all mp4 (demos included) show MediaError 4 / readyState 0 in Playwright. Never diagnose that as an app bug.
+- QA fixture user 2b0f5a67 must keep home_city "Tokyo, Japan" (test_home_city.py) but now has age/rules/video so cookie login lands on the feed.
+- GCS bucket is SHARED with production — never delete non-test objects from preview.
+**Status**: ✅ verified in preview; ⚠️ REQUIRES REDEPLOY to nice2meechu.com.

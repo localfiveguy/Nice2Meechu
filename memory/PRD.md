@@ -390,3 +390,16 @@ The combination that killed it: geocode-cache flush on startup (R5) + one-shot u
 
 ## 2026-06 — iOS sign-in reorder (Apple-first on iPhone/iPad)
 - User couldn't get Google account chooser after clearing Safari data (expected: clearing data logs Safari out of google.com; websites can't see app-level Google accounts — iOS sandboxing). Fix: on iOS, "Continue with Apple" renders FIRST ("Uses the Apple ID already on this device — one tap, no passwords"); Google below with Safari hint. Desktop/Android unchanged. Verified via UA-emulated iOS + desktop screenshots. NEEDS DEPLOY.
+
+## 2026-06 — ✅ Real-user videos black on iPhone: webm→mp4 transcode (v1.6.5)
+- **Report (production, user-confirmed context)**: Marlton/Egg Harbor feeds showed real-user CARDS but videos didn't play on iPhone. Demos (mp4) always played.
+- **Root cause**: 16/20 real intros in the shared GCS bucket were `.webm` (Chrome/Android MediaRecorder). iOS Safari cannot decode webm → black card.
+- **Fix (build `v1.6.5-webm-transcode`)**:
+  1. `POST /api/users/video/upload` now transcodes webm→H.264/AAC mp4 (`/app/backend/transcode.py`, static ffmpeg from pip `imageio-ffmpeg` — works in prod image; faststart, crf 26). Falls back to storing webm if transcode fails. Deletes the `.webm` sibling.
+  2. One-shot background startup migration `transcode_webm_videos_v1` (server.py): rewrites every non-demo `.webm` GCS video_url to an mp4 sibling; transcodes if missing, reuses if present. Webm originals KEPT so un-migrated prod URLs never 404. Marker per-environment → prod repoints its own URLs on deploy.
+  3. All 15 playable production webm blobs PRE-RENDERED to mp4 siblings in the shared bucket (prod migration = URL repoint only). 1 blob (2b0f5a67, 4 KB) was corrupt — never playable anywhere; QA test upload later replaced it with a valid mp4.
+  4. `FeedCard.js`: single `<source>` with query-string-safe extension check (old code injected a `.webm` probe source and broke `type=` on `?v=` URLs).
+- **Testing-agent caught a CRITICAL during review (iteration_22)**: `_upload` closure still uploaded `spool` (original webm) instead of the transcoded `upload_src` — a leftover from a corrupted earlier edit. Fixed; iteration_23 retest: backend 100%, served bytes `ftyp isom`, ffprobe h264(High)+aac(LC). New regression suite `/app/backend/tests/test_webm_transcode.py` (7 tests, byte-level). Full suite 118/118.
+- **Frontend verified via Playwright DOM**: feed lands for QA user, real user Cosmic Phoenix (Voorhees · 3 km) shows in Marlton, single `video/mp4` source, no MediaError, like/pass/mute/pill work. NOTE: headless Chromium has NO h264 codec (`canPlayType('avc1')` = ''), so readyState stays 0 there for ALL mp4 (demos too) — that's a test-browser limitation, not an app bug; do not chase it.
+- QA fixture user (2b0f5a67) gained: `age: 30`, `agreed_to_rules_at`, valid `video_url`, browse city Marlton. Home stays **Tokyo** — test_home_city.py depends on it.
+- ⚠️ REQUIRES REDEPLOY to nice2meechu.com — prod migration then repoints its users' URLs (mp4s already in bucket).
