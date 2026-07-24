@@ -41,11 +41,11 @@ GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "")
 GCS_BUCKET = os.environ.get("GCS_BUCKET", "")
 SESSION_TTL = timedelta(days=7)
 
-# "Nearby towns": people whose HOME is within this radius of the browsing
-# city's center also appear in the feed (after the locals). Users can
-# override per-account via /users/nearby-radius (10 / 25 / 50 km).
-NEARBY_RADIUS_KM = 25
-ALLOWED_NEARBY_RADII = {10, 25, 50}
+# Same-town coordinate tolerance: a person "belongs" to a browsed city when
+# their HOME coords are within this distance of the city's center. Absorbs
+# naming variants of the SAME town (Marlton ↔ Evesham centers are 6.5 km
+# apart) without reaching neighboring towns (Medford/Cherry Hill are 9.4+ km).
+SAME_TOWN_KM = 8
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("nice2meechu")

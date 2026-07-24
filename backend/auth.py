@@ -86,7 +86,7 @@ async def current_user(
 async def root():
     return {
         "app": "Nice2Meechu",
-        "build": "v1.6.5-webm-transcode",
+        "build": "v1.6.6-home-town-only",
         "auth": "google-direct" if GOOGLE_CLIENT_ID else "google-emergent",
     }
 

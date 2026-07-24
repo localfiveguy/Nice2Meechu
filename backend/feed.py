@@ -3,12 +3,11 @@ import asyncio
 import re
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
 
 from fastapi import APIRouter, Depends
 
 from auth import current_user
-from core import ALLOWED_NEARBY_RADII, NEARBY_RADIUS_KM, _geocode_city, _rng, db, haversine_km, logger
+from core import SAME_TOWN_KM, _geocode_city, _rng, db, haversine_km, logger
 from demos import _is_demo_user, seed_demo_users
 from models import SwipeReq
 from push import notify_user
@@ -159,44 +158,24 @@ async def _local_candidates(base_filter: dict, viewer_city: str) -> list:
     ]
 
 
-async def _nearby_candidates(base_filter: dict, lat: float, lng: float, radius_km: float, seen_ids: set) -> list:
-    """People whose HOME is within radius_km of the browsing city's center
-    (e.g. Erial ↔ Marlton, ~15 km). Sorted by distance; `_near_km` annotated."""
-    nearby = []
+async def _same_town_candidates(base_filter: dict, lat: float, lng: float, seen_ids: set) -> list:
+    """People whose HOME coords fall within SAME_TOWN_KM of the browsing
+    city's center but whose home LABEL differs — absorbs naming variants of
+    the same town (e.g. Marlton ↔ Evesham Township). This is a fixed
+    same-town tolerance, NOT a radius: videos never spread to neighboring
+    towns (the old 10/25/50 km nearby system was removed by owner request)."""
+    extra = []
     async for u in db.users.find(
-        _bbox_filter(base_filter, lat, lng, radius_km), {"_id": 0, "email": 0}
+        _bbox_filter(base_filter, lat, lng, SAME_TOWN_KM), {"_id": 0, "email": 0}
     ).limit(120):
         if u["id"] in seen_ids:
             continue
         d = haversine_km(lat, lng, u.get("home_lat"), u.get("home_lng"))
-        if d > radius_km:
+        if d > SAME_TOWN_KM:
             continue
         u["_near_km"] = d
-        nearby.append(u)
-    nearby.sort(key=lambda x: (x["_near_km"], x.get("created_at") or ""))
-    return nearby
-
-
-async def _radius_suggestion(base_filter: dict, lat: float, lng: float, radius_km: float, exclude_ids: set) -> Optional[dict]:
-    """How many MORE people the next radius tier (10→25→50) would surface —
-    powers the one-tap 'widen to N km?' retention prompt. None when maxed out
-    or when widening adds nobody."""
-    next_km = next((r for r in sorted(ALLOWED_NEARBY_RADII) if r > radius_km), None)
-    if not next_km:
-        return None
-    extra = 0
-    async for u in db.users.find(
-        _bbox_filter(base_filter, lat, lng, next_km),
-        {"_id": 0, "id": 1, "home_lat": 1, "home_lng": 1},
-    ).limit(300):
-        if u["id"] in exclude_ids:
-            continue
-        d = haversine_km(lat, lng, u.get("home_lat"), u.get("home_lng"))
-        if radius_km < d <= next_km:
-            extra += 1
-    if not extra:
-        return None
-    return {"current_km": radius_km, "next_km": next_km, "extra_people": extra}
+        extra.append(u)
+    return extra
 
 
 async def _liked_me_ids(user_id: str, candidate_ids: list) -> set:
@@ -226,10 +205,7 @@ def _feed_item(c: dict, user: dict, liked_me_ids: set, prior_action_by_id: dict)
         "source_lang": c.get("source_lang", "en"),
         "distance_km": haversine_km(user.get("lat"), user.get("lng"), c.get("lat"), c.get("lng")),
         "is_demo": bool(c.get("is_demo")),
-        # Short home-town label — the card shows "from <Town>" when the
-        # person's home differs from the city being browsed (nearby).
         "home_city": (c.get("home_city") or "").split(",")[0].strip(),
-        "near_km": c.get("_near_km"),
         # True when this person already liked the viewer — liking back matches instantly.
         "likes_you": c["id"] in liked_me_ids,
         # null until the viewer swipes; else "like"/"pass". Lets the client skip
@@ -274,10 +250,11 @@ async def _browse_center(user: dict, locals_: list) -> tuple:
 
 @router.get("/feed")
 async def feed(user=Depends(current_user)):
-    """STRICT hyperlocal feed: locals (chronological) + nearby towns (by
-    distance) within the viewer's radius. No silent fallback to other cities —
-    'near you' stays honest. Blocked users excluded entirely; liked/passed
-    users included but marked via prior_action."""
+    """STRICT home-town feed: only people whose HOME is this city — matched by
+    label or by home coords within SAME_TOWN_KM of the city center (absorbs
+    Marlton↔Evesham-style naming variants). Videos never spread to neighboring
+    towns. Blocked users excluded entirely; liked/passed users included but
+    marked via prior_action."""
     await seed_demo_users()
     prior_action_by_id, blocked_ids = await _prior_actions(user["id"])
     viewer_city = (user.get("city") or "").strip().split(",")[0].strip().lower()
@@ -287,8 +264,6 @@ async def feed(user=Depends(current_user)):
         "video_url": {"$ne": None, "$exists": True},
     }
 
-    nearby: list = []
-    radius_suggestion = None
     if viewer_city:
         candidates = await _local_candidates(base_filter, viewer_city)
         center_lat, center_lng, healed = await _browse_center(user, candidates)
@@ -319,14 +294,14 @@ async def feed(user=Depends(current_user)):
                 user["id"], viewer_city, center_lat, center_lng,
             )
         if center_lat is not None and center_lng is not None:
-            radius_km = user.get("nearby_radius_km") or NEARBY_RADIUS_KM
-            nearby = await _nearby_candidates(
-                base_filter, center_lat, center_lng, radius_km, {c["id"] for c in candidates}
+            extras = await _same_town_candidates(
+                base_filter, center_lat, center_lng, {c["id"] for c in candidates}
             )
-            candidates.extend(nearby)
-            radius_suggestion = await _radius_suggestion(
-                base_filter, center_lat, center_lng, radius_km, {c["id"] for c in candidates}
-            )
+            if extras:
+                candidates.extend(extras)
+                # Same-town people ARE locals — keep the single chronological
+                # "first video made here" ordering.
+                candidates.sort(key=lambda c: c.get("created_at") or "")
     else:
         # No city set yet → nearest-by-distance fallback so a brand-new user
         # without a city still sees content.
@@ -343,21 +318,12 @@ async def feed(user=Depends(current_user)):
 
     # city_stats lets the frontend distinguish "genuinely empty" from
     # "exhausted" so the empty-state copy can be honest about which it is.
-    city_stats = None
-    if viewer_city:
-        city_total = await db.users.count_documents({
-            "id": {"$ne": user["id"]},
-            "home_city": {"$regex": f"^{re.escape(viewer_city)}", "$options": "i"},
-            "video_url": {"$ne": None, "$exists": True},
-        })
-        city_stats = {"total": city_total + len(nearby), "remaining": len(out)}
+    city_stats = {"total": len(out), "remaining": len(out)} if viewer_city else None
 
     return {
         "feed": out[:60],
         "city_stats": city_stats,
         "saved_position": saved_position,
-        # Present when widening the nearby radius would add ≥1 more person.
-        "radius_suggestion": radius_suggestion,
         # Sign-ups attributed to this viewer's ?ref=<handle> link.
         "referral_count": user.get("referral_count", 0),
     }

@@ -2,12 +2,11 @@ import React from "react";
 import { toast } from "sonner";
 import { MapPin, Share2 } from "lucide-react";
 import { shareOrCopy } from "../lib/api";
-import { NotifyMeButton } from "./NotifyMeButton";
 import { track } from "../analytics";
 
 // Feed empty state: "pick a city" / "you're first here" / "you've seen everyone",
-// plus the widen-radius and notify-me retention actions.
-export function EmptyFeedState({ user, setUser, cityStats, radiusSuggestion, onWiden, onOpenLocation, onRefresh }) {
+// plus the notify-me retention action.
+export function EmptyFeedState({ user, cityStats, onOpenLocation, onRefresh }) {
   if (!user.city) {
     return (
       <div className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center gap-4">
@@ -60,15 +59,8 @@ export function EmptyFeedState({ user, setUser, cityStats, radiusSuggestion, onW
         </>
       )}
 
-      {radiusSuggestion && (
-        <button className="btn-primary mt-2 flex items-center gap-2" onClick={onWiden} data-testid="feed-widen-radius-btn">
-          {exhausted
-            ? `+${radiusSuggestion.extra_people} more within ${radiusSuggestion.next_km} km — widen?`
-            : `${radiusSuggestion.extra_people} ${radiusSuggestion.extra_people === 1 ? "person" : "people"} within ${radiusSuggestion.next_km} km — widen?`}
-        </button>
-      )}
       <button
-        className={`${radiusSuggestion ? "btn-ghost" : "btn-primary mt-2"} flex items-center gap-2`}
+        className="btn-primary mt-2 flex items-center gap-2"
         onClick={onOpenLocation}
         data-testid="feed-change-location"
       >
@@ -79,7 +71,6 @@ export function EmptyFeedState({ user, setUser, cityStats, radiusSuggestion, onW
           <Share2 size={16} /> Share this app
         </button>
       )}
-      <NotifyMeButton user={user} setUser={setUser} />
       <button className="text-xs text-white/45 underline" onClick={onRefresh} data-testid="feed-refresh">
         Check again
       </button>

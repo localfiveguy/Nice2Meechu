@@ -1,6 +1,5 @@
 """User profile: onboarding, community rules, location/home, GDPR endpoints,
 safety (report/block), and intro-video uploads."""
-import asyncio
 import shutil
 import uuid
 from datetime import datetime, timezone
@@ -10,12 +9,12 @@ from fastapi import APIRouter, Cookie, Depends, File, Header, HTTPException, Res
 from fastapi.concurrency import run_in_threadpool
 
 from auth import current_user
-from core import ALLOWED_NEARBY_RADII, _OG_CACHE, _geocode_city, _get_gcs_bucket, _rng, db, haversine_km, logger
+from core import _OG_CACHE, _geocode_city, _get_gcs_bucket, _rng, db, haversine_km, logger
 from models import (
     BlockReq,
     CityPositionReq,
     LocationUpdate,
-    NearbyRadiusReq,
+    NearbyRadiusReq,  # legacy, endpoint removed
     OnboardingReq,
     ReportReq,
     RulesAcceptReq,
@@ -120,16 +119,6 @@ async def update_location(req: LocationUpdate, user=Depends(current_user)):
     update["lng"] = lng
     await db.users.update_one({"id": user["id"]}, {"$set": update})
     return {"ok": True}
-
-
-@router.post("/users/nearby-radius")
-async def set_nearby_radius(req: NearbyRadiusReq, user=Depends(current_user)):
-    if req.radius_km not in ALLOWED_NEARBY_RADII:
-        raise HTTPException(400, "radius_km must be one of 10, 25, 50")
-    await db.users.update_one(
-        {"id": user["id"]}, {"$set": {"nearby_radius_km": req.radius_km}}
-    )
-    return {"ok": True, "radius_km": req.radius_km}
 
 
 @router.get("/users/me")
@@ -383,14 +372,8 @@ async def upload_video(req: VideoUploadReq, user=Depends(current_user)):
         raise HTTPException(400, "Invalid video URL")
     transcript = req.transcript or "Hey, nice to meet you!"
     source_lang = req.source_lang or "en"
-    had_video = bool(user.get("video_url"))
     await db.users.update_one(
         {"id": user["id"]},
         {"$set": {"video_url": video_url, "transcript": transcript, "source_lang": source_lang}},
     )
-    # First-ever intro saved → tell opted-in neighbors someone new is here.
-    if video_url and not had_video:
-        from push import notify_new_nearby
-        fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0})
-        asyncio.create_task(notify_new_nearby(fresh))
     return {"video_url": video_url, "transcript": transcript, "source_lang": source_lang}

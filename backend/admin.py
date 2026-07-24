@@ -20,7 +20,7 @@ async def diagnose_feed(user=Depends(current_user)):
     every local/nearby feed candidate with raw home coords + video URL prefix.
     Open in a signed-in browser: /api/admin/diagnose-feed"""
     _require_admin(user)
-    from feed import _browse_center, _local_candidates, _nearby_candidates
+    from feed import _browse_center, _local_candidates, _same_town_candidates
 
     viewer_city = (user.get("city") or "").strip().split(",")[0].strip().lower()
     base_filter = {
@@ -29,10 +29,9 @@ async def diagnose_feed(user=Depends(current_user)):
     }
     locals_ = await _local_candidates(base_filter, viewer_city) if viewer_city else []
     lat, lng, healed = await _browse_center(user, locals_) if viewer_city else (None, None, False)
-    radius = user.get("nearby_radius_km") or 10
-    nearby = []
+    same_town = []
     if lat is not None:
-        nearby = await _nearby_candidates(base_filter, lat, lng, radius, {c["id"] for c in locals_})
+        same_town = await _same_town_candidates(base_filter, lat, lng, {c["id"] for c in locals_})
     geo = await db.city_geo.find_one(
         {"key": (user.get("city") or "").strip().lower()}, {"_id": 0}
     )
@@ -47,17 +46,17 @@ async def diagnose_feed(user=Depends(current_user)):
         return d
 
     return {
-        "build": "v1.6.3-feed-diagnose",
+        "build": "v1.6.6-home-town-only",
         "you": {k: user.get(k) for k in (
             "id", "email", "city", "city_lat", "city_lng", "lat", "lng",
-            "home_city", "home_lat", "home_lng", "nearby_radius_km",
+            "home_city", "home_lat", "home_lng",
         )},
         "geocache_entry_for_your_city": geo,
         "browse_center": {"lat": lat, "lng": lng, "healed_this_request": healed},
         "locals_count": len(locals_),
         "locals": [slim(u) for u in locals_],
-        "nearby_count": len(nearby),
-        "nearby": [slim(u) for u in nearby],
+        "same_town_count": len(same_town),
+        "same_town": [slim(u) for u in same_town],
     }
 
 

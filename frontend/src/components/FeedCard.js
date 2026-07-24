@@ -121,19 +121,6 @@ export function FeedCard({ item, isActive, myLang, onLike, onPass, onUnlike, cur
         )}
       </div>
 
-      {/* Nearby-town origin chip — shown when this person's HOME town differs
-          from the city being browsed (they live within the nearby radius). */}
-      {item.home_city && currentCity && !(item.is_demo && demoNameHint) &&
-        item.home_city.toLowerCase() !== currentCity.split(",")[0].trim().toLowerCase() && (
-        <div
-          className="absolute top-[3.4rem] left-5 px-2.5 py-1 rounded-full glass-dark text-[10px] uppercase tracking-widest font-bold text-white/80 flex items-center gap-1 pointer-events-none"
-          data-testid="feed-nearby-badge"
-        >
-          <MapPin size={10} className="text-[#00E5FF]" />
-          <span>from {item.home_city}{typeof item.near_km === "number" ? ` · ${Math.round(item.near_km)} km` : ""}</span>
-        </div>
-      )}
-
       {/* AI demo: "hear me say my name" hint — fades in for ~2.4s on activation
           to prime the viewer that the audio actually speaks the codename, which
           is a key differentiator from text-based dating apps. */}

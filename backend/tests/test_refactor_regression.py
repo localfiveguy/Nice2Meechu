@@ -273,12 +273,6 @@ def test_location_set_home(auth_client):
     assert r.status_code == 200, r.text
 
 
-@pytest.mark.parametrize("km,expected", [(10, 200), (25, 200), (50, 200), (7, 400), (100, 400)])
-def test_nearby_radius(auth_client, km, expected):
-    r = auth_client.post(f"{BASE_URL}/api/users/nearby-radius", json={"radius_km": km})
-    assert r.status_code == expected, f"km={km} → {r.status_code} {r.text}"
-
-
 def test_city_position_and_me(auth_client):
     r = auth_client.post(f"{BASE_URL}/api/users/me/city-position", json={"city": "new york", "index": 3})
     assert r.status_code == 200, r.text

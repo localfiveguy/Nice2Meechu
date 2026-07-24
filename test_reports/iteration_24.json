@@ -1,0 +1,32 @@
+{
+  "summary": "Frontend verification of v1.6.6-home-town-only feature removal. QA user browsing Marlton NJ. All removed elements confirmed absent; retained elements confirmed working.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verifications": {
+    "feed_nearby_badge_removed": "PASS - feed-nearby-badge not present on cards; only feed-distance-badge (city pill) renders 'MARLTON / NJ'",
+    "marlton_expected_card": "PASS - exactly 1 card: Cosmic Phoenix (Voorhees), matching same-town 8km rule; Erial/Cherry Hill fixtures absent",
+    "change_location_radius_removed": "PASS - change-location-radius testid absent; zero elements with 'radius' testid",
+    "change_location_retained": "PASS - search input, popular cities (15), map, set-home checkbox, X close all work",
+    "empty_state_reykjavik": "PASS - 'You're the first in Reykjavík!' shown; feed-widen-radius-btn absent; notify-me-btn absent; feed-change-location (Explore another city), feed-first-share, feed-refresh present",
+    "profile_notify_toggle": "PASS - notify-me-toggle present with copy 'Notify me: matches & messages'",
+    "feed_controls_regression": "PASS - like/pass/restart/mute buttons present and clickable; mute toggle works; no console errors from removed props",
+    "backend_spotcheck": "PASS - GET /api/feed has no radius_suggestion key, items have no near_km; POST /api/users/nearby-radius returns 404 (endpoint removed)"
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "EmptyFeedState no longer imports NotifyMeButton — clean removal, no dead imports",
+    "ChangeLocationScreen handleClose simplified to onClose() — no residual radius side-effects"
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (spot-check)", "frontend": "100%"},
+  "test_credentials": "TEST_SESSION_TOKEN=sttest_SnTv9X5GmiggyZq5vKriLEqtcFmSMN4s (QA user Marlton NJ)",
+  "seed_data_creation": "None. Restored QA browsing city to Marlton, NJ after Reykjavik test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "v1.6.6-home-town-only removal fully verified end-to-end. Home city fixture (Tokyo) untouched; browsing city restored to Marlton."
+}
