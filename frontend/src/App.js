@@ -17,6 +17,7 @@ import { FeedScreen } from "./screens/FeedScreen";
 import { MatchesScreen } from "./screens/MatchesScreen";
 import { ChatScreen } from "./screens/ChatScreen";
 import { ProfileScreen } from "./screens/ProfileScreen";
+import LinkGoogleScreen from "./screens/LinkGoogleScreen";
 
 import { DemoPeekWidget } from "./components/DemoPeekWidget";
 import { MatchCelebration } from "./components/MatchCelebration";
@@ -98,6 +99,9 @@ export default function App() {
   // Push-notification deep link (/?chat=<match_id>) captured at mount —
   // consumed after auth hydration to land straight in that conversation.
   const pendingChatRef = useRef(null);
+  // Set when an Apple "Hide My Email" sign-in just created a new account
+  // (?link_google=1) — routes to the link-existing-Google screen once.
+  const pendingLinkRef = useRef(false);
   const openPendingChat = useCallback(async (u) => {
     const matchId = pendingChatRef.current;
     if (!matchId || !u?.video_url) return false; // not fully onboarded → normal routing
@@ -133,6 +137,12 @@ export default function App() {
         window.history.replaceState(null, "", chatUrl.pathname + chatUrl.search + chatUrl.hash);
       }
       const ref = search.get("ref");
+      if (search.get("link_google")) {
+        pendingLinkRef.current = true;
+        const lu = new URL(window.location.href);
+        lu.searchParams.delete("link_google");
+        window.history.replaceState(null, "", lu.pathname + lu.search + lu.hash);
+      }
       if (ref) {
         // Validate: only allow handle-safe chars and cap length to prevent localStorage abuse
         const safe = ref.toLowerCase().trim().replace(/[^a-z0-9._-]/g, "").slice(0, 32);
@@ -219,7 +229,10 @@ export default function App() {
       try {
         const { data } = await api.get("/auth/me");
         setUser(data.user);
-        if (!(await openPendingChat(data.user))) routeToNext(data.user);
+        // Fresh Hide-My-Email account → offer Google linking before onboarding.
+        if (pendingLinkRef.current && data.user && !data.user.google_sub && !data.user.video_url) {
+          setScreen("link-google");
+        } else if (!(await openPendingChat(data.user))) routeToNext(data.user);
       } catch (err) {
         // not authenticated yet → show splash briefly, then sign-in
         setTimeout(() => setScreen("signin"), 1500);
@@ -273,6 +286,13 @@ export default function App() {
           {screen === "splash" && <Splash key="splash" />}
           {screen === "auth-callback" && <AuthCallback key="auth-callback" />}
           {screen === "signin" && <SignInScreen key="signin" />}
+          {screen === "link-google" && user && (
+            <LinkGoogleScreen
+              key="link-google"
+              onLinked={() => window.location.reload()}
+              onSkip={() => { pendingLinkRef.current = false; routeToNext(user); }}
+            />
+          )}
           {screen === "onboarding" && user && (
             <Onboarding key="onb" user={user} onDone={(u) => { setUser(u); setScreen("community-rules"); }} />
           )}

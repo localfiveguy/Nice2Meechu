@@ -1,0 +1,34 @@
+{
+  "summary": "Verified Apple 'Hide My Email' → Google account-linking feature. Backend guard suite (test_apple_link.py, 3/3) passed; full-suite baseline unchanged. Frontend link-screen flow tested end-to-end with a seeded relay user + session: link screen renders on ?link_google=1, official GIS button mounts inside link-google-button, skip routes to onboarding, direct visit (no param) skips the link screen, QA cookie login still lands on the feed, and anonymous visitors still see the Google+Apple signin screen. Seeded data cleaned up; QA fixture (home_city='Tokyo, Japan') untouched.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verifications": {
+    "backend_test_apple_link": "PASS - 3/3 (test_link_google_requires_auth 401, test_link_google_rejects_non_relay_accounts 400 for QA user, test_link_google_bad_credential_rejected_for_relay_account 401 + relay row survives)",
+    "link_screen_renders_with_param": "PASS - data-testid link-google-screen mounted after navigating relay user to /?link_google=1; heading 'One account, all your stuff.' present",
+    "gis_button_mounts": "PASS - official Google iframe rendered inside data-testid link-google-button (1 GIS child); no link-google-error shown",
+    "skip_link_copy": "PASS - data-testid link-google-skip reads \"I'm new here — continue\"",
+    "skip_routes_to_onboarding": "PASS - clicking skip removes link-google-screen and lands on onboarding (Create your profile / first-name step); only console noise was an unrelated 404 (favicon/asset), no app errors",
+    "no_param_goes_straight_to_onboarding": "PASS - navigating same relay user to / (no ?link_google=1) renders onboarding directly; link-google-screen absent",
+    "qa_cookie_login_feed_regression": "PASS - QA session token still lands on feed-screen (feed-card-0, feed-like-button, feed-distance-badge etc. all present) — routing untouched for existing users",
+    "anon_signin_regression": "PASS - anonymous visit renders signin-screen with signin-google-button (GIS iframe) + signin-apple-button + signin-apple-email-hint"
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_apple_link.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "LinkGoogleScreen re-runs gis.initialize() in an effect that also mounts a globally-shared GIS instance — the GSI_LOGGER warning ('initialize() is called multiple times') is emitted on the link screen. Benign here (only one instance is active at a time) but worth guarding with a ref if a future screen also calls initialize() during the same session."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (3/3 apple-link)", "frontend": "100% (5/5 link-screen scenarios)"},
+  "test_credentials": "TEST_SESSION_TOKEN=sttest_SnTv9X5GmiggyZq5vKriLEqtcFmSMN4s (QA user, feed). Seeded relay user t-linkui-a7d51941 + session sttest_linkui_a7d51941 used during test then fully deleted.",
+  "seed_data_creation": "Inserted then deleted: users {id:t-linkui-a7d51941, email:a7d51941@privaterelay.appleid.com, apple_sub:apple-a7d51941, handle:null, video_url:null} + matching user_sessions row (expires_at as real datetime, +1h). Verified QA user record intact after cleanup (home_city 'Tokyo, Japan', video_url present).",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Apple Hide-My-Email → Google linking feature is fully working end-to-end. Route: ?link_google=1 captured by pendingLinkRef, /auth/me returns relay user (no google_sub, no video_url), App.js branches to LinkGoogleScreen. GIS renders inline; skip routes via routeToNext() to onboarding. iOS redirect merge path uses /api/auth/google-redirect?link=<token>; desktop POST /api/auth/link-google — only the desktop guard endpoints were reachable via HTTP tests (401/400/401), full merge covered in-process. QA fixture untouched. No action items.",
+  "rca_of_the_issue": "N/A - no defects found."
+}

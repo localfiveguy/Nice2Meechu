@@ -72,6 +72,13 @@ export function AppleSignInButton({ hint }) {
       if (data.token) localStorage.setItem("n2m_token", data.token);
       localStorage.removeItem("n2m_ref");
       track("sign_in_completed", { method: "apple", onboarded: !!data.onboarded, referred: !!ref });
+      // "Hide My Email" just created a brand-new account → offer to link an
+      // existing Google account before onboarding (prevents duplicates).
+      if (data.created && data.private_relay && data.link_token) {
+        sessionStorage.setItem("n2m_link_token", data.link_token);
+        window.location.href = "/?link_google=1";
+        return;
+      }
       window.location.reload();
     } catch (err) {
       console.error("apple sign-in failed", err);

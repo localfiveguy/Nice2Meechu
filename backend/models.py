@@ -56,6 +56,10 @@ class NearbyRadiusReq(BaseModel):
     radius_km: int
 
 
+class LinkGoogleReq(BaseModel):
+    credential: str
+
+
 class TranslateReq(BaseModel):
     text: str = Field(..., max_length=2000)
     target_lang: str

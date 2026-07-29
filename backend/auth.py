@@ -2,7 +2,7 @@
 import asyncio
 import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
@@ -22,7 +22,7 @@ from core import (
     generate_codename,
     logger,
 )
-from models import AppleIdTokenReq, GoogleIdTokenReq, SessionExchangeReq
+from models import AppleIdTokenReq, GoogleIdTokenReq, LinkGoogleReq, SessionExchangeReq
 
 router = APIRouter()
 
@@ -204,6 +204,7 @@ async def auth_google_redirect(
     credential: str = Form(...),
     g_csrf_token: Optional[str] = Form(None),
     ref: Optional[str] = None,
+    link: Optional[str] = None,
 ):
     """Redirect-mode counterpart of /auth/google. Used as `login_uri` for GIS
     when `ux_mode: "redirect"` — Google posts the JWT credential here via
@@ -242,6 +243,19 @@ async def auth_google_redirect(
         picture=idinfo.get("picture"),
         ref=ref,
     )
+    # iOS redirect-mode account linking (?link=<one-time token> on login_uri):
+    # move the Apple identity from the fresh Hide-My-Email relay account onto
+    # whichever account this Google sign-in resolved to, then drop the relay
+    # duplicate. Failures never break the sign-in itself.
+    if link:
+        try:
+            relay = await db.users.find_one({"link_token": link}, {"_id": 0})
+            exp = relay.get("link_token_expires") if relay else None
+            valid = bool(exp) and datetime.fromisoformat(exp) > datetime.now(timezone.utc)
+            if relay and valid and _relay_mergeable(relay) and relay["id"] != result["user"]["id"]:
+                await _merge_apple_relay(relay, result["user"])
+        except Exception:  # noqa: BLE001
+            logger.exception("redirect-mode apple link failed (sign-in unaffected)")
     # Some iOS Safari installs silently drop the session cookie set during a
     # cross-site redirect (ITP bounce-tracking mitigation), leaving the user
     # bounced back to the sign-in screen with no error. Hand the token back in
@@ -325,20 +339,21 @@ _apple_jwk_client = pyjwt.PyJWKClient(
 
 async def _upsert_apple_user(
     *, apple_sub: str, email: Optional[str], name: Optional[str], ref: Optional[str]
-) -> dict:
+) -> tuple:
     """Find-or-create the user from an Apple identity token. Lookup order:
     apple_sub (stable Apple identifier) → email (links Apple to an existing
     Google account) → create new. Apple only sends the name on the very first
-    authorization, so it's only trusted at account-creation time."""
+    authorization, so it's only trusted at account-creation time.
+    Returns (user, created)."""
     existing = await db.users.find_one({"apple_sub": apple_sub}, {"_id": 0})
     if existing:
-        return existing
+        return existing, False
 
     if email:
         by_email = await db.users.find_one({"email": email}, {"_id": 0})
         if by_email:
             await db.users.update_one({"id": by_email["id"]}, {"$set": {"apple_sub": apple_sub}})
-            return await db.users.find_one({"id": by_email["id"]}, {"_id": 0})
+            return await db.users.find_one({"id": by_email["id"]}, {"_id": 0}), False
 
     if not email:
         raise HTTPException(401, "Apple did not share an email for this account")
@@ -374,8 +389,7 @@ async def _upsert_apple_user(
     user, created = await _insert_user_or_get_existing(new_user, {"apple_sub": apple_sub})
     if created and ref_user_id:
         await db.users.update_one({"id": ref_user_id}, {"$inc": {"referral_count": 1}})
-    return user
-
+    return user, created
 
 @router.post("/auth/apple")
 async def auth_apple_id_token(req: AppleIdTokenReq, response: Response):
@@ -409,7 +423,7 @@ async def auth_apple_id_token(req: AppleIdTokenReq, response: Response):
     # Only trust the email claim when Apple marks it verified (claim may be
     # bool or string). Unverified emails must never link to existing accounts.
     email_verified = claims.get("email_verified") in (True, "true")
-    user = await _upsert_apple_user(
+    user, created = await _upsert_apple_user(
         apple_sub=apple_sub,
         email=claims.get("email") if email_verified else None,
         name=(req.name or "").strip() or None,
@@ -425,7 +439,101 @@ async def auth_apple_id_token(req: AppleIdTokenReq, response: Response):
         secure=True,
         samesite="none",
     )
-    return {"token": token, "user": user, "onboarded": bool(user.get("handle"))}
+    payload = {
+        "token": token,
+        "user": user,
+        "onboarded": bool(user.get("handle")),
+        "created": created,
+        "private_relay": (user.get("email") or "").endswith("@privaterelay.appleid.com"),
+    }
+    # Brand-new "Hide My Email" account → hand the frontend a short-lived
+    # one-time token so it can offer "link my existing Google account". The
+    # iOS redirect-mode Google flow carries it back via ?link=<token>.
+    if created and payload["private_relay"]:
+        link_token = secrets.token_urlsafe(24)
+        await db.users.update_one({"id": user["id"]}, {"$set": {
+            "link_token": link_token,
+            "link_token_expires": (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat(),
+        }})
+        payload["link_token"] = link_token
+    return payload
+
+
+# ---------------------------------------------------------------------------
+# Apple "Hide My Email" → existing Google account linking
+# ---------------------------------------------------------------------------
+def _relay_mergeable(u: dict) -> bool:
+    """Only brand-new, EMPTY Apple relay accounts may be auto-merged — this
+    guard guarantees no video/profile can ever be lost in a merge."""
+    return bool(
+        u.get("apple_sub")
+        and not u.get("google_sub")
+        and not u.get("video_url")
+        and (u.get("email") or "").endswith("@privaterelay.appleid.com")
+    )
+
+
+async def _merge_apple_relay(relay: dict, target: dict) -> None:
+    """Move the Apple identity from the empty relay account onto the target
+    (existing) account, then delete the relay duplicate + its sessions.
+    Order matters: the unique apple_sub index requires the relay doc to drop
+    the sub before the target can take it."""
+    await db.users.update_one({"id": relay["id"]}, {"$unset": {"apple_sub": ""}})
+    await db.users.update_one(
+        {"id": target["id"]},
+        {"$set": {"apple_sub": relay["apple_sub"], "apple_relay_email": relay.get("email")}},
+    )
+    await db.user_sessions.delete_many({"user_id": relay["id"]})
+    await db.users.delete_one({"id": relay["id"]})
+    logger.info(
+        "Apple account %s linked into existing user %s (relay duplicate removed)",
+        relay["id"], target["id"],
+    )
+
+
+@router.post("/auth/link-google")
+async def auth_link_google(req: LinkGoogleReq, response: Response, user=Depends(current_user)):
+    """Popup-mode account linking: a freshly-created Apple 'Hide My Email'
+    user proves ownership of a Google account (GIS credential) and we merge
+    the empty relay account into the existing Google one, returning a session
+    for the merged account."""
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(500, "GOOGLE_CLIENT_ID not configured")
+    if not _relay_mergeable(user):
+        raise HTTPException(400, "This account can't be auto-linked")
+
+    try:
+        idinfo = google_id_token.verify_oauth2_token(
+            req.credential, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=60
+        )
+    except ValueError as exc:
+        logger.warning("link-google token verification failed: %s", exc)
+        raise HTTPException(401, "Invalid Google credential")
+    email = idinfo.get("email")
+    if not email or not idinfo.get("email_verified", False):
+        raise HTTPException(401, "Google account email not verified")
+
+    target = await db.users.find_one({"google_sub": idinfo.get("sub")}, {"_id": 0})
+    if not target:
+        target = await db.users.find_one({"email": email}, {"_id": 0})
+    if not target or target["id"] == user["id"]:
+        raise HTTPException(404, "no-existing-account")
+    if target.get("apple_sub") and target["apple_sub"] != user.get("apple_sub"):
+        raise HTTPException(409, "That Google account is already linked to a different Apple ID")
+
+    await _merge_apple_relay(user, target)
+    target = await db.users.find_one({"id": target["id"]}, {"_id": 0})
+    token = await _mint_session(target["id"])
+    response.set_cookie(
+        key="session_token",
+        value=token,
+        max_age=int(SESSION_TTL.total_seconds()),
+        path="/",
+        httponly=True,
+        secure=True,
+        samesite="none",
+    )
+    return {"token": token, "user": target, "onboarded": bool(target.get("handle")), "merged": True}
 
 
 @router.get("/auth/me")
