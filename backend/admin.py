@@ -46,7 +46,7 @@ async def diagnose_feed(user=Depends(current_user)):
         return d
 
     return {
-        "build": "v1.6.6-home-town-only",
+        "build": "v1.6.7-apple-google-link",
         "you": {k: user.get(k) for k in (
             "id", "email", "city", "city_lat", "city_lng", "lat", "lng",
             "home_city", "home_lat", "home_lng",

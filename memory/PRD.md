@@ -391,6 +391,20 @@ The combination that killed it: geocode-cache flush on startup (R5) + one-shot u
 ## 2026-06 — iOS sign-in reorder (Apple-first on iPhone/iPad)
 - User couldn't get Google account chooser after clearing Safari data (expected: clearing data logs Safari out of google.com; websites can't see app-level Google accounts — iOS sandboxing). Fix: on iOS, "Continue with Apple" renders FIRST ("Uses the Apple ID already on this device — one tap, no passwords"); Google below with Safari hint. Desktop/Android unchanged. Verified via UA-emulated iOS + desktop screenshots. NEEDS DEPLOY.
 
+## 2026-06 — ✅ Apple "Hide My Email" → Google account linking (v1.6.7 scope)
+- Owner picked this feature after seeing his own duplicate ("Ember Orbit") in the Marlton feed.
+- `/auth/apple` now returns `created`, `private_relay`, and (for brand-new relay accounts) a 30-min one-time `link_token`. AppleSignInButton redirects to `/?link_google=1`; App.js routes to new `LinkGoogleScreen` before onboarding.
+- Desktop: GIS popup → `POST /api/auth/link-google` (verify credential → find target by google_sub/verified email → merge → session for target). iOS: GIS redirect mode with `?link=<token>` on `/api/auth/google-redirect` — merge happens during redirect, sign-in never breaks on merge failure.
+- Merge (`_merge_apple_relay`): unset apple_sub on relay → set apple_sub + `apple_relay_email` on target → delete relay user + sessions. Guard (`_relay_mergeable`): apple_sub present, no google_sub, no video_url, @privaterelay email — empty accounts only, zero data-loss risk.
+- Error paths: 404 no-existing-account → UI toasts + continues as new; 409 Google already linked to a different Apple ID; 400 non-relay accounts.
+- Tested: in-process full-merge simulation (mocked Google verifier — apple_sub moved, relay deleted, session minted), new `tests/test_apple_link.py` guard suite, full backend 112/112, testing agent iteration_25 100% frontend (link screen renders, GIS button mounts, skip → onboarding, no-param → onboarding, existing-user feed routing regression clean).
+- ⚠️ REQUIRES REDEPLOY to reach production.
+
+## 2026-06 — Production check-in notes (owner recordings)
+- Egg Harbor plays the correct real video on iPhone ✅ (webm fix confirmed working in prod).
+- Marlton feed showed "Ember Orbit" (owner's own duplicate account — motivates linking feature), Carlo (Cherry Hill) and John (Erial). WHY they appear needs prod data: John's video says Erial but his card shows in Marlton AND Voorhees → his saved home is likely NOT Erial (label and/or coords point to the Marlton/Voorhees area). "Erial" missing from the popular-cities list supports this. Owner's diagnose-feed attempt failed (copied URL included a stray quote → 404); waiting on retype: nice2meechu.com/api/admin/diagnose-feed while browsing Marlton. Owner has NOT yet said whether Carlo/John in Marlton is wrong — do not "fix" before his answer + diagnose data.
+- Owner explicitly asked to STOP mentioning the Play Store AAB — publishing is parked for months.
+
 ## 2026-06 — ✅ Nearby-cities system REMOVED (owner request, v1.6.6-home-town-only)
 - Owner: "a video should only show in its home city, not every town within 25 km." Full removal, all confirmed via ask_human:
   1. Feed: `_nearby_candidates`/`_radius_suggestion` deleted. New `_same_town_candidates` (feed.py): people whose HOME coords are within `SAME_TOWN_KM=8` (core.py) of the browsed city's center ALSO count as locals — absorbs naming variants of the SAME town (Photon-verified: Marlton↔Evesham centers 6.5 km; Medford/Cherry Hill 9.4+ km stay out). Merged chronological order. city_stats.total = len(feed). `radius_suggestion` + `near_km` gone from the response.

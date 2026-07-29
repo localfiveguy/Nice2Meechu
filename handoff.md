@@ -133,9 +133,19 @@ Frontend: react-router-dom, framer-motion, leaflet, axios, sonner, lucide-react,
    (`nice2meechu.app.web`), iss = appleid.apple.com.
    - Link order: `apple_sub` → verified email match → create new.
    - **Email linking requires the `email_verified` claim** (bool or "true").
-   - **"Hide My Email" trap**: relay emails create duplicates if the user joined
-     via Google before. UI hint under the button warns. No automated merge flow
-     yet (one manual DB merge was done for the operator).
+   - **"Hide My Email" handling (v1.6.7)**: relay emails used to create silent
+     duplicates. Now `/auth/apple` returns `created` + `private_relay` + a
+     30-min one-time `link_token` for brand-new relay accounts; the frontend
+     routes to `LinkGoogleScreen` (`/?link_google=1`) offering "link your
+     existing Google account". Desktop popup → `POST /auth/link-google`
+     (GIS credential verified, merge, new session). iOS redirect →
+     `/api/auth/google-redirect?link=<token>` merges during the redirect.
+     Merge = move `apple_sub` onto the Google account (+`apple_relay_email`),
+     delete the empty relay duplicate + its sessions. SAFETY GUARD
+     (`_relay_mergeable`): only accounts with apple_sub, NO google_sub, NO
+     video, and a @privaterelay.appleid.com email can ever be merged — data
+     loss is impossible. Skipping continues as a new user. The static UI hint
+     under the Apple button still nudges "Share My Email".
    - Button renders only when `REACT_APP_APPLE_SERVICE_ID` is set.
    - Owner-confirmed working on his iPhone.
 3. **Legacy** — `POST /api/auth/session` (Emergent exchange), kept for old sessions.
