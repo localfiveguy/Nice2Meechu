@@ -391,6 +391,12 @@ The combination that killed it: geocode-cache flush on startup (R5) + one-shot u
 ## 2026-06 — iOS sign-in reorder (Apple-first on iPhone/iPad)
 - User couldn't get Google account chooser after clearing Safari data (expected: clearing data logs Safari out of google.com; websites can't see app-level Google accounts — iOS sandboxing). Fix: on iOS, "Continue with Apple" renders FIRST ("Uses the Apple ID already on this device — one tap, no passwords"); Google below with Safari hint. Desktop/Android unchanged. Verified via UA-emulated iOS + desktop screenshots. NEEDS DEPLOY.
 
+## 2026-06 — ✅ Unique codenames + multi-device sessions (v1.6.8 scope)
+- Root cause of "two Ember Orbits": codename pool was only 100 combos (10 adj × 10 noun). Now 1,600 combos (40×40), uniqueness enforced at signup (`core.generate_unique_codename`, numeric-suffix fallback), and one-shot migration `unique_codenames_v1` (`server.dedupe_codenames`) renames newer duplicates — demos keep canonical names, oldest real account keeps the name. Preview run renamed 7; prod will dedupe on deploy. Gotcha fixed: `created_at` is datetime in old docs / ISO string in new — sort via `str()`.
+- Multi-device login verified: each sign-in mints its own session token; logout deletes only that token. New test proves two concurrent sessions + per-device logout. SESSION_TTL bumped 7→30 days (weekly forced re-logins were pushing the owner into duplicate-account territory).
+- Tests: suite 120/120 (`test_unique_codenames.py`: multi-device HTTP e2e, TTL, pool size, generator fallback + dedupe via single asyncio.run).
+- ⚠️ REQUIRES REDEPLOY (bundled with v1.6.8-town-label-match + admin tools).
+
 ## 2026-06 — ✅ Town-label matching + admin find/delete tools (v1.6.8-town-label-match)
 - Prod diagnose data (owner finally got it working after adding ADMIN_EMAILS to deployment env settings) explained everything: Amber/Steve-dup/John are all label-homed "Marlton" (John picked Marlton at signup though his video says Erial — owner chose to leave it to John); Carlo (Cherry Hill label, house pin 7.5 km from Marlton center) leaked via the coordinate tolerance.
 - **Owner decision: match by TOWN, not house.** `_same_town_candidates` rewritten: candidate appears only if their home-town LABEL geocodes to within SAME_TOWN_KM of the browse center (Marlton↔Evesham 6.5 km merges; Cherry Hill center 9.5 km excluded regardless of house pin). Discovery bbox = 24 km on pins, distinct labels geocoded once per request (db.city_geo cached, read-only, never persisted).

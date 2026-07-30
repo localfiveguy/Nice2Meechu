@@ -20,6 +20,7 @@ from core import (
     SESSION_TTL,
     db,
     generate_codename,
+    generate_unique_codename,
     logger,
 )
 from models import AppleIdTokenReq, GoogleIdTokenReq, LinkGoogleReq, SessionExchangeReq
@@ -119,7 +120,7 @@ async def _upsert_google_user(
         "name": name,
         "picture": picture,
         "google_sub": google_sub,
-        "codename": generate_codename(),
+        "codename": await generate_unique_codename(),
         "handle": None,
         "first_name": (name or "").strip().split(" ")[0] if name else None,
         "vibes": [],
@@ -371,7 +372,7 @@ async def _upsert_apple_user(
         "name": name,
         "picture": None,
         "apple_sub": apple_sub,
-        "codename": generate_codename(),
+        "codename": await generate_unique_codename(),
         "handle": None,
         "first_name": (name or "").strip().split(" ")[0] if name else None,
         "vibes": [],

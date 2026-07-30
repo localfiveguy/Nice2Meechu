@@ -123,6 +123,52 @@ async def _repair_mismatched_user_coords():
     logger.info("Coord-repair migration complete: %d users fixed", fixed)
 
 
+async def dedupe_codenames() -> int:
+    """Reassign fresh unique codenames to accounts sharing one — anonymous
+    identities must never be confusable. Demos keep theirs (canonical,
+    name-derived); among real users the OLDEST account keeps the name."""
+    from core import generate_unique_codename
+    fixed = 0
+    dups = db.users.aggregate([
+        {"$group": {"_id": "$codename", "n": {"$sum": 1}, "ids": {"$push": "$id"}}},
+        {"$match": {"n": {"$gt": 1}, "_id": {"$ne": None}}},
+    ])
+    async for grp in dups:
+        holders = []
+        async for u in db.users.find(
+            {"id": {"$in": grp["ids"]}}, {"_id": 0, "id": 1, "is_demo": 1, "created_at": 1}
+        ):
+            holders.append(u)
+        # demos first (never renamed), then oldest real account keeps the name.
+        # created_at is a datetime in old docs and an ISO string in new ones —
+        # str() of both sorts chronologically.
+        holders.sort(key=lambda u: (not u.get("is_demo"), str(u.get("created_at") or "")))
+        for u in holders[1:]:
+            if u.get("is_demo"):
+                continue
+            await db.users.update_one(
+                {"id": u["id"]}, {"$set": {"codename": await generate_unique_codename()}}
+            )
+            fixed += 1
+    return fixed
+
+
+@app.on_event("startup")
+async def _unique_codenames():
+    """One-shot: the original codename pool had only 100 combos, so different
+    people ended up with identical codenames (two 'Ember Orbit's in prod)."""
+    if await db.migrations.find_one({"id": "unique_codenames_v1"}):
+        return
+    fixed = await dedupe_codenames()
+    await db.migrations.insert_one({
+        "id": "unique_codenames_v1",
+        "at": datetime.now(timezone.utc).isoformat(),
+        "fixed": fixed,
+    })
+    if fixed:
+        logger.info("Codename dedupe: reassigned %d duplicate codenames", fixed)
+
+
 @app.on_event("startup")
 async def _move_signatures_off_user_docs():
     """One-shot: community-rules signature PNGs (~100 KB base64 each) used to

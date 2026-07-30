@@ -564,3 +564,7 @@ localfiveguy@gmail.com.
 - **CRITICAL ops lesson**: production env vars live in deployment settings (Home → deployed app → Settings → Environment Variables) and DO NOT sync from workspace .env. Missing ADMIN_EMAILS in prod caused admin endpoints to return Forbidden for everyone until the owner added it there.
 - Prod data facts (from diagnose): owner's main account id 213fa357 (steavinrice@gmail.com, home Voorhees); John's account is label-homed Marlton (his video says Erial — owner chose to let John fix it in-app); duplicate codenames exist (two different users both "Ember Orbit") — codename generator is not unique.
 - Tests: 116/116 (test_admin_tools.py, border-house exclusion, self-seeding webm feed test).
+
+### v1.6.8 additions (same pending deploy): unique codenames + multi-device sessions
+- Codename pool was 100 combos → two real users were both "Ember Orbit". Now 1,600 combos; `core.generate_unique_codename()` enforces uniqueness at signup; migration `unique_codenames_v1` (`server.dedupe_codenames`, callable directly) renamed 7 preview dupes — demos keep canonical names, oldest real account keeps the name. created_at is datetime in old docs / ISO string in new: sort with `str()`.
+- SESSION_TTL 7→30 days (core.py). Sessions were already multi-device (per-token mint, per-token logout) — now proven by tests/test_unique_codenames.py. Suite: 120/120.

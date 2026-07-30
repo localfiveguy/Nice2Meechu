@@ -39,7 +39,7 @@ APPLE_SERVICE_ID = os.environ.get("APPLE_SERVICE_ID", "")
 ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
 GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "")
 GCS_BUCKET = os.environ.get("GCS_BUCKET", "")
-SESSION_TTL = timedelta(days=7)
+SESSION_TTL = timedelta(days=30)
 
 # Same-town coordinate tolerance: a person "belongs" to a browsed city when
 # their HOME coords are within this distance of the city's center. Absorbs
@@ -72,8 +72,18 @@ def _get_gcs_bucket() -> gcs_storage.Bucket:
 # Seed data / naming
 # ---------------------------------------------------------------------------
 VIBES_POOL = ["Coffee", "Vinyl", "Skater", "Foodie", "Bookworm", "Gamer", "Hiker", "Artist", "Runner", "Night Owl"]
-CODENAME_ADJ = ["Velvet", "Neon", "Midnight", "Ember", "Cosmic", "Aurora", "Silken", "Vivid", "Hazel", "Indigo"]
-CODENAME_NOUN = ["Fox", "Comet", "Drift", "Echo", "Lynx", "Mirage", "Orbit", "Phoenix", "Raven", "Tide"]
+CODENAME_ADJ = [
+    "Velvet", "Neon", "Midnight", "Ember", "Cosmic", "Aurora", "Silken", "Vivid", "Hazel", "Indigo",
+    "Amber", "Arctic", "Blazing", "Breezy", "Bronze", "Cobalt", "Coral", "Crimson", "Crystal", "Dusky",
+    "Electric", "Emerald", "Feral", "Gilded", "Golden", "Ivory", "Jade", "Lunar", "Marble", "Mystic",
+    "Obsidian", "Onyx", "Opal", "Quartz", "Rustic", "Sapphire", "Scarlet", "Shadow", "Solar", "Twilight",
+]
+CODENAME_NOUN = [
+    "Fox", "Comet", "Drift", "Echo", "Lynx", "Mirage", "Orbit", "Phoenix", "Raven", "Tide",
+    "Aspen", "Blaze", "Breeze", "Cascade", "Cinder", "Cloud", "Delta", "Dune", "Ember", "Falcon",
+    "Flare", "Glacier", "Harbor", "Hawk", "Horizon", "Meadow", "Meteor", "Nova", "Otter", "Pine",
+    "Prism", "Quill", "Reef", "Ridge", "River", "Sparrow", "Summit", "Thicket", "Wolf", "Zephyr",
+]
 
 LANG_NAMES = {
     "en": "English", "es": "Spanish", "fr": "French", "de": "German", "pt": "Portuguese",
@@ -88,6 +98,20 @@ _OG_CACHE: dict[str, bytes] = {}
 
 def generate_codename() -> str:
     return f"{_rng.choice(CODENAME_ADJ)} {_rng.choice(CODENAME_NOUN)}"
+
+
+async def generate_unique_codename() -> str:
+    """A codename no other account holds — anonymous identities must never be
+    confusable (owner requirement). 1,600-combo pool; numeric suffix as the
+    theoretical-exhaustion fallback."""
+    for _ in range(25):
+        name = generate_codename()
+        if not await db.users.find_one({"codename": name}, {"_id": 1}):
+            return name
+    while True:
+        name = f"{generate_codename()} {_rng.randint(2, 999)}"
+        if not await db.users.find_one({"codename": name}, {"_id": 1}):
+            return name
 
 
 async def _geocode_city(city_full: str, use_cache: bool = True) -> tuple:
