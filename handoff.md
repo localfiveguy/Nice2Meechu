@@ -552,3 +552,15 @@ localfiveguy@gmail.com.
 - He values honest hyperlocal behavior over engagement tricks — when in doubt,
   choose "show only what's real and local" and confirm scope with him first.
 - Do not bring up store publishing unprompted.
+
+
+---
+
+## 20. 2026-06 (later): v1.6.7 + v1.6.8 — account linking, town-label matching, admin tools
+
+- **v1.6.7-apple-google-link** (LIVE in prod): Apple Hide-My-Email sign-ins that would create a new account now get a LinkGoogleScreen ("/?link_google=1") to merge into an existing Google account. Popup: POST /api/auth/link-google; iOS: redirect mode with ?link=<one-time token> on /api/auth/google-redirect. Guard `_relay_mergeable`: only empty relay accounts merge. Signature blobs moved off user docs (db.signatures + one-shot migration move_signatures_v1) — /auth/me shrank from MBs to <1 KB.
+- **v1.6.8-town-label-match** (preview, needs deploy): `_same_town_candidates` matches by TOWN LABEL geocode (label center within SAME_TOWN_KM of browse center), NOT by house pin. Owner decision after prod diagnose showed Carlo (Cherry Hill label, pin 7.5 km from Marlton center) leaking into Marlton. Marlton↔Evesham still merge (6.5 km); Cherry Hill (center 9.5 km) never does.
+- **Admin founder tools** (GET, admin-gated): /api/admin/find-user?q=… (results include delete_url) and /api/admin/delete-user?id=…&confirm=DELETE (full wipe incl. GCS videos; refuses demos + admin-listed emails). Built so the non-technical owner can remove his two production duplicates ("Vivid Raven" 1a392641-9bc8-4571-bb10-b9a925e531db + an Apple relay account) from Safari.
+- **CRITICAL ops lesson**: production env vars live in deployment settings (Home → deployed app → Settings → Environment Variables) and DO NOT sync from workspace .env. Missing ADMIN_EMAILS in prod caused admin endpoints to return Forbidden for everyone until the owner added it there.
+- Prod data facts (from diagnose): owner's main account id 213fa357 (steavinrice@gmail.com, home Voorhees); John's account is label-homed Marlton (his video says Erial — owner chose to let John fix it in-app); duplicate codenames exist (two different users both "Ember Orbit") — codename generator is not unique.
+- Tests: 116/116 (test_admin_tools.py, border-house exclusion, self-seeding webm feed test).

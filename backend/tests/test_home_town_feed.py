@@ -86,6 +86,19 @@ class TestHomeTownFeed:
         assert "test-john-erial" not in ids, ids
         assert "test-kathy-cherryhill" not in ids, ids
 
+    def test_border_house_does_not_leak_into_neighbor_town(self):
+        """Carlo case (owner decision): labeled Cherry Hill with a house pin
+        7.5 km from Marlton's center — matching is by TOWN label, so he must
+        NOT appear in the Marlton feed even though his pin is within 8 km."""
+        uid = f"tt-border-{uuid.uuid4().hex[:8]}"
+        _mk_user(uid, "Cherry Hill, NJ, USA", 39.91437, -75.02011)  # ~7.5 km from Marlton center
+        try:
+            data = _browse(*MARLTON)
+            ids = [it["id"] for it in data["feed"]]
+            assert uid not in ids, ids
+        finally:
+            db.users.delete_one({"id": uid})
+
     def test_no_radius_suggestion_in_response(self, residents):
         data = _browse(*MARLTON)
         assert "radius_suggestion" not in data, list(data.keys())

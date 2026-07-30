@@ -133,29 +133,51 @@ def test_upload_rejects_oversize(tmp_path):
 
 # ---------- feed: Marlton user should only see mp4 URLs ----------
 def test_marlton_feed_all_mp4():
-    # reset QA user location to Marlton
-    loc = requests.post(
-        f"{BASE_URL}/api/users/location",
-        headers={**AUTH, "Content-Type": "application/json"},
-        json={"city": "Marlton, NJ, USA", "lat": 39.8912, "lng": -74.9218},
-        timeout=15,
-    )
-    assert loc.status_code == 200
+    """Seed a Marlton-homed user with a GCS mp4 so the feed is non-empty
+    regardless of other data, then assert no webm URL is ever served."""
+    import uuid as _uuid
+    from datetime import datetime, timezone
+    from dotenv import load_dotenv
+    from pymongo import MongoClient
 
-    r = requests.get(f"{BASE_URL}/api/feed", headers=AUTH, timeout=30)
-    assert r.status_code == 200
-    feed = r.json().get("feed", [])
-    assert len(feed) >= 1, "expected at least one nearby user in Marlton"
+    load_dotenv("/app/backend/.env")
+    mdb = MongoClient(os.environ["MONGO_URL"])[os.environ["DB_NAME"]]
+    uid = f"tw-marlton-{_uuid.uuid4().hex[:8]}"
+    mdb.users.insert_one({
+        "id": uid, "email": f"{uid}@example.com", "codename": "Webm Town Test",
+        "handle": None, "vibes": [], "language": "en", "avatar_emoji": "🎬",
+        "city": "Marlton, NJ, USA", "home_city": "Marlton, NJ, USA",
+        "lat": 39.9006, "lng": -74.9339, "home_lat": 39.9006, "home_lng": -74.9339,
+        "city_lat": 39.9006, "city_lng": -74.9339,
+        "video_url": "https://storage.googleapis.com/nicemeechu/user_videos/test-john-erial.mp4",
+        "transcript": "test", "source_lang": "en", "is_demo": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    try:
+        # reset QA user location to Marlton
+        loc = requests.post(
+            f"{BASE_URL}/api/users/location",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"city": "Marlton, NJ, USA", "lat": 39.8912, "lng": -74.9218},
+            timeout=15,
+        )
+        assert loc.status_code == 200
 
-    real = [u for u in feed if not u.get("is_demo")]
-    assert real, "expected real (non-demo) users in Marlton feed"
-    for u in real:
-        vu = u.get("video_url") or ""
-        # allow blob: placeholders for users who haven't uploaded to GCS yet,
-        # but any GCS URL must be .mp4 (never .webm).
-        if vu.startswith("http"):
-            assert ".webm" not in vu.split("?")[0], f".webm URL still served: {u.get('codename')} {vu}"
+        r = requests.get(f"{BASE_URL}/api/feed", headers=AUTH, timeout=30)
+        assert r.status_code == 200
+        feed = r.json().get("feed", [])
+        assert len(feed) >= 1, "expected at least one user in Marlton"
 
-    codenames = {u.get("codename") for u in real}
-    # Expected fixtures + Cosmic Phoenix per review request
-    assert "Cosmic Phoenix" in codenames, f"missing Cosmic Phoenix, got {codenames}"
+        real = [u for u in feed if not u.get("is_demo")]
+        assert real, "expected real (non-demo) users in Marlton feed"
+        for u in real:
+            vu = u.get("video_url") or ""
+            # allow blob: placeholders for users who haven't uploaded to GCS yet,
+            # but any GCS URL must be .mp4 (never .webm).
+            if vu.startswith("http"):
+                assert ".webm" not in vu.split("?")[0], f".webm URL still served: {u.get('codename')} {vu}"
+
+        codenames = {u.get("codename") for u in real}
+        assert "Webm Town Test" in codenames, f"missing seeded Marlton user, got {codenames}"
+    finally:
+        mdb.users.delete_one({"id": uid})

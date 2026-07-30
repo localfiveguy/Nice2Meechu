@@ -13,6 +13,84 @@ from core import ADMIN_EMAILS, _get_gcs_bucket, db, logger
 router = APIRouter()
 
 
+@router.get("/admin/find-user")
+async def admin_find_user(q: str = "", user=Depends(current_user)):
+    """Founder tool: locate accounts by name/email/codename/handle/home city
+    (or exact id). Open signed-in in a browser: /api/admin/find-user?q=steve
+    Each result includes a ready-made delete_url."""
+    _require_admin(user)
+    if len(q.strip()) < 2:
+        raise HTTPException(400, "q must be at least 2 characters")
+    q = q.strip()
+    rx = {"$regex": re.escape(q), "$options": "i"}
+    out = []
+    async for u in db.users.find(
+        {"$or": [{"email": rx}, {"name": rx}, {"first_name": rx}, {"codename": rx},
+                 {"handle": rx}, {"home_city": rx}, {"id": q}]},
+        {"_id": 0, "id": 1, "email": 1, "name": 1, "first_name": 1, "codename": 1,
+         "handle": 1, "home_city": 1, "city": 1, "is_demo": 1, "created_at": 1,
+         "google_sub": 1, "apple_sub": 1, "video_url": 1},
+    ).limit(25):
+        out.append({
+            "id": u["id"],
+            "codename": u.get("codename"),
+            "first_name": u.get("first_name"),
+            "email": u.get("email"),
+            "handle": u.get("handle"),
+            "home_city": u.get("home_city"),
+            "browsing_city": u.get("city"),
+            "created_at": u.get("created_at"),
+            "signin": "+".join(filter(None, [
+                "google" if u.get("google_sub") else None,
+                "apple" if u.get("apple_sub") else None,
+            ])) or "legacy",
+            "has_video": bool(u.get("video_url")),
+            "is_demo": bool(u.get("is_demo")),
+            "delete_url": f"/api/admin/delete-user?id={u['id']}&confirm=DELETE",
+        })
+    return {"count": len(out), "users": out}
+
+
+@router.get("/admin/delete-user")
+async def admin_delete_user(id: str = "", confirm: str = "", user=Depends(current_user)):
+    """Founder tool: permanently wipe a (duplicate) account and everything it
+    owns. GET so it runs from a phone browser. Guarded by admin auth, an
+    explicit confirm=DELETE, and hard refusals for demo accounts and any
+    account on the admin list (you can't nuke your main account)."""
+    _require_admin(user)
+    if confirm != "DELETE":
+        raise HTTPException(400, "Add &confirm=DELETE to the address to really delete")
+    target = await db.users.find_one({"id": id}, {"_id": 0})
+    if not target:
+        raise HTTPException(404, "No user with that id")
+    if target.get("is_demo"):
+        raise HTTPException(403, "Demo accounts are managed automatically")
+    if (target.get("email") or "").lower() in ADMIN_EMAILS:
+        raise HTTPException(403, "Refusing to delete an admin account")
+    uid = target["id"]
+    await db.messages.delete_many({"$or": [{"from_user_id": uid}, {"to_user_id": uid}]})
+    await db.matches.delete_many({"user_ids": uid})
+    await db.swipes.delete_many({"$or": [{"user_id": uid}, {"target_user_id": uid}]})
+    await db.user_sessions.delete_many({"user_id": uid})
+    await db.push_subscriptions.delete_many({"user_id": uid})
+    await db.signatures.delete_many({"user_id": uid})
+    await db.users.delete_one({"id": uid})
+    # Best-effort: remove their intro video blobs from GCS too.
+    try:
+        bucket = _get_gcs_bucket()
+        def _purge_blobs():
+            for ext in ("mp4", "webm", "mov"):
+                blob = bucket.blob(f"user_videos/{uid}.{ext}")
+                if blob.exists():
+                    blob.delete()
+        await run_in_threadpool(_purge_blobs)
+    except Exception:  # noqa: BLE001
+        logger.exception("delete-user: GCS video purge failed for %s (account already deleted)", uid)
+    logger.info("ADMIN delete-user: %s (%s / %s) removed by %s",
+                uid, target.get("codename"), target.get("email"), user.get("email"))
+    return {"ok": True, "deleted": uid, "codename": target.get("codename"), "email": target.get("email")}
+
+
 @router.get("/admin/diagnose-feed")
 async def diagnose_feed(user=Depends(current_user)):
     """Production visibility for the Tokyo-in-Marlton saga: dumps the viewer's
@@ -46,7 +124,7 @@ async def diagnose_feed(user=Depends(current_user)):
         return d
 
     return {
-        "build": "v1.6.7-apple-google-link",
+        "build": "v1.6.8-town-label-match",
         "you": {k: user.get(k) for k in (
             "id", "email", "city", "city_lat", "city_lng", "lat", "lng",
             "home_city", "home_lat", "home_lng",

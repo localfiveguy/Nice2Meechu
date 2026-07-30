@@ -391,6 +391,14 @@ The combination that killed it: geocode-cache flush on startup (R5) + one-shot u
 ## 2026-06 — iOS sign-in reorder (Apple-first on iPhone/iPad)
 - User couldn't get Google account chooser after clearing Safari data (expected: clearing data logs Safari out of google.com; websites can't see app-level Google accounts — iOS sandboxing). Fix: on iOS, "Continue with Apple" renders FIRST ("Uses the Apple ID already on this device — one tap, no passwords"); Google below with Safari hint. Desktop/Android unchanged. Verified via UA-emulated iOS + desktop screenshots. NEEDS DEPLOY.
 
+## 2026-06 — ✅ Town-label matching + admin find/delete tools (v1.6.8-town-label-match)
+- Prod diagnose data (owner finally got it working after adding ADMIN_EMAILS to deployment env settings) explained everything: Amber/Steve-dup/John are all label-homed "Marlton" (John picked Marlton at signup though his video says Erial — owner chose to leave it to John); Carlo (Cherry Hill label, house pin 7.5 km from Marlton center) leaked via the coordinate tolerance.
+- **Owner decision: match by TOWN, not house.** `_same_town_candidates` rewritten: candidate appears only if their home-town LABEL geocodes to within SAME_TOWN_KM of the browse center (Marlton↔Evesham 6.5 km merges; Cherry Hill center 9.5 km excluded regardless of house pin). Discovery bbox = 24 km on pins, distinct labels geocoded once per request (db.city_geo cached, read-only, never persisted).
+- **Admin founder tools** (GET, browser-friendly, admin-gated): `/api/admin/find-user?q=<name/email/city/id>` (25 results, each with ready delete_url) and `/api/admin/delete-user?id=<id>&confirm=DELETE` (full wipe: user, sessions, swipes, matches, messages, push subs, signatures + best-effort GCS video purge). Refuses demo accounts and any admin-listed email (owner can't nuke his main).
+- Owner's plan: DELETE BOTH duplicates ("Vivid Raven" id 1a392641-9bc8-4571-bb10-b9a925e531db + the Apple relay account) via these tools after deploying.
+- Tests: suite now 116/116 (new test_admin_tools.py roundtrip; border-house exclusion test; test_webm_transcode Marlton test now self-seeding). Build stamp v1.6.8-town-label-match.
+- ⚠️ REQUIRES REDEPLOY. Also learned + documented: production env vars are managed in deployment settings (Home → deployed app → Settings → Environment Variables), NOT synced from workspace .env — this was the diagnose "Forbidden" root cause (fixed by owner).
+
 ## 2026-06 — ✅ Apple "Hide My Email" → Google account linking (v1.6.7 scope)
 - Owner picked this feature after seeing his own duplicate ("Ember Orbit") in the Marlton feed.
 - `/auth/apple` now returns `created`, `private_relay`, and (for brand-new relay accounts) a 30-min one-time `link_token`. AppleSignInButton redirects to `/?link_google=1`; App.js routes to new `LinkGoogleScreen` before onboarding.

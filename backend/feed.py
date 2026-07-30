@@ -159,22 +159,40 @@ async def _local_candidates(base_filter: dict, viewer_city: str) -> list:
 
 
 async def _same_town_candidates(base_filter: dict, lat: float, lng: float, seen_ids: set) -> list:
-    """People whose HOME coords fall within SAME_TOWN_KM of the browsing
-    city's center but whose home LABEL differs — absorbs naming variants of
-    the same town (e.g. Marlton ↔ Evesham Township). This is a fixed
-    same-town tolerance, NOT a radius: videos never spread to neighboring
-    towns (the old 10/25/50 km nearby system was removed by owner request)."""
-    extra = []
+    """Naming-variant absorption, matched by TOWN LABEL: a person appears in a
+    browsed city only when their labeled home town's own center geocodes to
+    within SAME_TOWN_KM of the browse center (Marlton ↔ Evesham Township,
+    6.5 km apart, are the same town under two names). Deliberately NOT
+    matched by house pin — a Cherry Hill house 7.5 km from Marlton's center
+    must NOT appear in Marlton (owner decision, 2026-06: match towns, not
+    houses)."""
+    nearby_pins = []
     async for u in db.users.find(
-        _bbox_filter(base_filter, lat, lng, SAME_TOWN_KM), {"_id": 0, "email": 0}
-    ).limit(120):
-        if u["id"] in seen_ids:
+        _bbox_filter(base_filter, lat, lng, SAME_TOWN_KM * 3), {"_id": 0, "email": 0}
+    ).limit(200):
+        if u["id"] not in seen_ids:
+            nearby_pins.append(u)
+    if not nearby_pins:
+        return []
+    extra = []
+    label_centers: dict = {}
+    for u in nearby_pins:
+        label = (u.get("home_city") or "").strip()
+        if not label:
             continue
-        d = haversine_km(lat, lng, u.get("home_lat"), u.get("home_lng"))
-        if d > SAME_TOWN_KM:
+        key = label.lower()
+        if key not in label_centers:
+            try:
+                label_centers[key] = await _geocode_city(label)
+            except Exception:  # noqa: BLE001
+                label_centers[key] = (None, None)
+        c_lat, c_lng = label_centers[key]
+        if c_lat is None:
             continue
-        u["_near_km"] = d
-        extra.append(u)
+        d = haversine_km(lat, lng, c_lat, c_lng)
+        if d <= SAME_TOWN_KM:
+            u["_near_km"] = d
+            extra.append(u)
     return extra
 
 
