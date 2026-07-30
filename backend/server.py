@@ -124,6 +124,34 @@ async def _repair_mismatched_user_coords():
 
 
 @app.on_event("startup")
+async def _move_signatures_off_user_docs():
+    """One-shot: community-rules signature PNGs (~100 KB base64 each) used to
+    be stored ON the user doc, bloating every /auth/me response to megabytes.
+    Move them into db.signatures and unset the field."""
+    if await db.migrations.find_one({"id": "move_signatures_v1"}):
+        return
+    moved = 0
+    async for u in db.users.find(
+        {"signature_data_url": {"$exists": True}},
+        {"_id": 0, "id": 1, "signature_data_url": 1, "agreed_to_rules_at": 1},
+    ):
+        await db.signatures.update_one(
+            {"user_id": u["id"]},
+            {"$set": {"data_url": u["signature_data_url"], "at": u.get("agreed_to_rules_at")}},
+            upsert=True,
+        )
+        await db.users.update_one({"id": u["id"]}, {"$unset": {"signature_data_url": ""}})
+        moved += 1
+    await db.migrations.insert_one({
+        "id": "move_signatures_v1",
+        "at": datetime.now(timezone.utc).isoformat(),
+        "moved": moved,
+    })
+    if moved:
+        logger.info("Signature migration: moved %d signatures off user docs", moved)
+
+
+@app.on_event("startup")
 async def _transcode_webm_intros():
     """One-shot migration (runs in the background so startup stays fast):
     iOS Safari can't play webm, so every real user's stored .webm intro gets

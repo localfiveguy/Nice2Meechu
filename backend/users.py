@@ -80,11 +80,18 @@ async def accept_rules(req: RulesAcceptReq, user=Depends(current_user)):
         raise HTTPException(400, "All community rules must be accepted")
     if not req.signature_data_url or not req.signature_data_url.startswith("data:image/"):
         raise HTTPException(400, "Signature is required")
+    now = datetime.now(timezone.utc).isoformat()
     update = {
-        "agreed_to_rules_at": datetime.now(timezone.utc).isoformat(),
+        "agreed_to_rules_at": now,
         "agreed_rules_items": req.accepted_items,
-        "signature_data_url": req.signature_data_url[:200_000],  # safety cap
     }
+    # The signature PNG (~100 KB base64) lives in its own collection — storing
+    # it on the user doc once bloated every /auth/me response to megabytes.
+    await db.signatures.update_one(
+        {"user_id": user["id"]},
+        {"$set": {"data_url": req.signature_data_url[:200_000], "at": now}},
+        upsert=True,
+    )
     await db.users.update_one({"id": user["id"]}, {"$set": update})
     user.update(update)
     return {"user": user}
