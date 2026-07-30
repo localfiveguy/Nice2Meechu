@@ -391,6 +391,12 @@ The combination that killed it: geocode-cache flush on startup (R5) + one-shot u
 ## 2026-06 — iOS sign-in reorder (Apple-first on iPhone/iPad)
 - User couldn't get Google account chooser after clearing Safari data (expected: clearing data logs Safari out of google.com; websites can't see app-level Google accounts — iOS sandboxing). Fix: on iOS, "Continue with Apple" renders FIRST ("Uses the Apple ID already on this device — one tap, no passwords"); Google below with Safari hint. Desktop/Android unchanged. Verified via UA-emulated iOS + desktop screenshots. NEEDS DEPLOY.
 
+## 2026-06 — ✅ First Match Celebration (confetti + tips)
+- `/swipe` now returns `first_match: true` when the new match is the swiper's first ever (counted before insert).
+- `MatchCelebration.js` rebuilt: CSS-only confetti rain (40 pieces, no library, testid `match-confetti`) + "Your first match 🎉" tips card (testid `first-match-tips`, 3 short tips) — BOTH rendered only when `first_match`. Root got `pb-28` so "Keep browsing" clears the bottom nav (tips card had pushed it behind).
+- Tested: new `tests/test_first_match.py` (flag true on 1st mutual like, false on 2nd) + live Playwright e2e (seeded liker, real like tap → celebration with confetti + tips, clean close). Suite 121/121.
+- ⚠️ REQUIRES REDEPLOY (bundled with v1.6.8 batch).
+
 ## 2026-06 — ✅ Welcome Tour for brand-new accounts
 - 3-step overlay on first feed visit (`WelcomeTour.js`, testids welcome-tour/-title/-next/-skip/-dots): (1) Meet people through video, (2) Like to match, (3) Your town, your feed. "Start exploring" / "Skip tour" both persist via `POST /users/welcome-tour-done`.
 - One-shot migration `welcome_tour_backfill_v1` marks all EXISTING users as done — only accounts created after this ships see it (owner's fresh signup will).

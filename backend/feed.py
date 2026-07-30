@@ -402,6 +402,9 @@ async def swipe(req: SwipeReq, user=Depends(current_user)):
     if not await _check_mutual_match(target, user["id"]):
         return {"match": False}
 
+    # Their very first match ever → the frontend adds confetti + first-timer tips.
+    first_match = await db.matches.count_documents({"user_ids": user["id"]}) == 0
+
     match_id = str(uuid.uuid4())
     await db.matches.insert_one(
         {
@@ -420,6 +423,7 @@ async def swipe(req: SwipeReq, user=Depends(current_user)):
     return {
         "match": True,
         "match_id": match_id,
+        "first_match": first_match,
         "matched_user": {
             "id": target["id"],
             "handle": target.get("handle"),
