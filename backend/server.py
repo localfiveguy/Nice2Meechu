@@ -154,6 +154,22 @@ async def dedupe_codenames() -> int:
 
 
 @app.on_event("startup")
+async def _welcome_tour_backfill():
+    """One-shot: mark every EXISTING account as having seen the welcome tour —
+    only accounts created after this ships get the 3-step intro."""
+    if await db.migrations.find_one({"id": "welcome_tour_backfill_v1"}):
+        return
+    r = await db.users.update_many(
+        {"welcome_tour_done": {"$exists": False}}, {"$set": {"welcome_tour_done": True}}
+    )
+    await db.migrations.insert_one({
+        "id": "welcome_tour_backfill_v1",
+        "at": datetime.now(timezone.utc).isoformat(),
+        "marked": r.modified_count,
+    })
+
+
+@app.on_event("startup")
 async def _unique_codenames():
     """One-shot: the original codename pool had only 100 combos, so different
     people ended up with identical codenames (two 'Ember Orbit's in prod)."""

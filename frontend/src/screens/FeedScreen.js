@@ -8,6 +8,7 @@ import { api } from "../lib/api";
 import { BottomNav } from "../components/BottomNav";
 import { EmptyFeedState } from "../components/EmptyFeedState";
 import { FeedCard } from "../components/FeedCard";
+import { WelcomeTour } from "../components/WelcomeTour";
 import { ChangeLocationScreen } from "./ChangeLocationScreen";
 import { track } from "../analytics";
 
@@ -296,6 +297,16 @@ export function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
             {paused ? <Play size={18} fill="currentColor" /> : <Pause size={18} fill="currentColor" />}
           </button>
         </div>
+      )}
+
+      {/* One-time 3-step tour for brand-new accounts */}
+      {!loading && user && !user.welcome_tour_done && (
+        <WelcomeTour
+          onDone={() => {
+            setUser?.({ ...user, welcome_tour_done: true });
+            api.post("/users/welcome-tour-done").catch(() => {});
+          }}
+        />
       )}
 
       {confirmRestart && (

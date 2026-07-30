@@ -128,6 +128,12 @@ async def update_location(req: LocationUpdate, user=Depends(current_user)):
     return {"ok": True}
 
 
+@router.post("/users/welcome-tour-done")
+async def welcome_tour_done(user=Depends(current_user)):
+    await db.users.update_one({"id": user["id"]}, {"$set": {"welcome_tour_done": True}})
+    return {"ok": True}
+
+
 @router.get("/users/me")
 async def me(user=Depends(current_user)):
     return {"user": user}

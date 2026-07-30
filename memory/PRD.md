@@ -391,6 +391,12 @@ The combination that killed it: geocode-cache flush on startup (R5) + one-shot u
 ## 2026-06 — iOS sign-in reorder (Apple-first on iPhone/iPad)
 - User couldn't get Google account chooser after clearing Safari data (expected: clearing data logs Safari out of google.com; websites can't see app-level Google accounts — iOS sandboxing). Fix: on iOS, "Continue with Apple" renders FIRST ("Uses the Apple ID already on this device — one tap, no passwords"); Google below with Safari hint. Desktop/Android unchanged. Verified via UA-emulated iOS + desktop screenshots. NEEDS DEPLOY.
 
+## 2026-06 — ✅ Welcome Tour for brand-new accounts
+- 3-step overlay on first feed visit (`WelcomeTour.js`, testids welcome-tour/-title/-next/-skip/-dots): (1) Meet people through video, (2) Like to match, (3) Your town, your feed. "Start exploring" / "Skip tour" both persist via `POST /users/welcome-tour-done`.
+- One-shot migration `welcome_tour_backfill_v1` marks all EXISTING users as done — only accounts created after this ships see it (owner's fresh signup will).
+- Verified via Playwright: all 3 steps advance, dismisses, does NOT reappear after reload. Suite 120/120.
+- ⚠️ REQUIRES REDEPLOY (bundled with v1.6.8 batch).
+
 ## 2026-06 — Owner fresh-start (all his accounts deleted)
 - Owner chose FRESH START: delete every account he made, including his main.
 - PREVIEW: done by agent — steavinrice@gmail.com (6a486950…) and localfiveguy@gmail.com (ef81e2ac…) fully wiped (users/sessions/swipes/matches/messages/push/signatures + GCS video blobs). Suite still 120/120 — no tests depend on his accounts. NOTE for future agents: "Cosmic Phoenix"/owner accounts NO LONGER EXIST in preview; Marlton/Voorhees preview feeds rely on fixtures + self-seeded test users only.
