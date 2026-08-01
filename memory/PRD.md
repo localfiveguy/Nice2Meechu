@@ -461,3 +461,11 @@ The combination that killed it: geocode-cache flush on startup (R5) + one-shot u
 - **Frontend verified via Playwright DOM**: feed lands for QA user, real user Cosmic Phoenix (Voorhees · 3 km) shows in Marlton, single `video/mp4` source, no MediaError, like/pass/mute/pill work. NOTE: headless Chromium has NO h264 codec (`canPlayType('avc1')` = ''), so readyState stays 0 there for ALL mp4 (demos too) — that's a test-browser limitation, not an app bug; do not chase it.
 - QA fixture user (2b0f5a67) gained: `age: 30`, `agreed_to_rules_at`, valid `video_url`, browse city Marlton. Home stays **Tokyo** — test_home_city.py depends on it.
 - ⚠️ REQUIRES REDEPLOY to nice2meechu.com — prod migration then repoints its users' URLs (mp4s already in bucket).
+
+## 2026-06 — ✅ Face-check no longer rejects clothing (v1.6.9)
+- **Report (iPhone, production)**: user recording a new intro was blocked with "not dressed appropriately".
+- **Root cause**: `_REVIEW_SYSTEM_PROMPT` in `/app/backend/media.py` required "fully clothed" as part of the acceptable definition.
+- **Fix**: prompt now explicitly IGNORES clothing/attire (tank tops, gym wear, swimwear, shirtless torso all fine). Still enforced: exactly one visible face, no explicit sexual content/nudity of private parts, hate symbols/weapons, and the age-assurance gate (unchanged).
+- **Testing (agent)**: new `/app/backend/tests/test_face_check_policy.py` (6 tests, mocked LLM). Live e2e via real GPT-4o-mini: tank-top selfie → ok:true, shirtless selfie → ok:true. Full suite 127/127 passed.
+- Suite note: tests need `export TEST_SESSION_TOKEN=<see test_credentials.md>` else 3 files fail at collection.
+- ⚠️ Requires user redeploy to reach nice2meechu.com.
