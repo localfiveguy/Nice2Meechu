@@ -313,16 +313,33 @@ async def upload_video_file(file: UploadFile = File(...), user=Depends(current_u
             raise HTTPException(400, "Empty or corrupt video file")
 
         spool.seek(0)
+        # Every intro goes through a real-file pass: first a silence gate
+        # (mic denied/muted recordings are useless — John-from-Erial uploaded
+        # a 4s intro with a -91 dB flat audio track), then webm→mp4 transcode.
+        from transcode import SILENCE_MAX_DB, measure_max_volume, transcode_to_mp4
+        tmp_in = tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False)
+        tmp_paths.append(tmp_in.name)
+        shutil.copyfileobj(spool, tmp_in)
+        tmp_in.close()
+
+        try:
+            max_vol = await run_in_threadpool(measure_max_volume, tmp_in.name)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("silence check failed for %s (%s) — allowing upload", user["id"], exc)
+            max_vol = None  # fail-open: a broken checker must never block onboarding
+        if max_vol is not None and max_vol < SILENCE_MAX_DB:
+            raise HTTPException(
+                422,
+                "We couldn't hear any sound in your video. Check that your microphone "
+                "is allowed for this site and record your intro again.",
+            )
+
         if ext == "webm":
             # iOS Safari can't decode webm — re-encode to H.264 mp4 so the
             # intro plays on every device. On transcode failure keep the webm
             # (a Chrome-only video beats a blocked onboarding).
-            from transcode import transcode_to_mp4
             try:
-                tmp_in = tempfile.NamedTemporaryFile(suffix=".webm", delete=False)
-                tmp_paths.extend([tmp_in.name, tmp_in.name + ".mp4"])
-                shutil.copyfileobj(spool, tmp_in)
-                tmp_in.close()
+                tmp_paths.append(tmp_in.name + ".mp4")
                 await run_in_threadpool(transcode_to_mp4, tmp_in.name, tmp_in.name + ".mp4")
                 upload_src = open(tmp_in.name + ".mp4", "rb")  # noqa: SIM115
                 ext, ctype = "mp4", "video/mp4"

@@ -481,3 +481,12 @@ The combination that killed it: geocode-cache flush on startup (R5) + one-shot u
 - Device location is reverse-geocoded once on entering the step (Photon). If the typed/picked town differs from the GPS town, a one-time confirm card appears: "Is <GPS town> your home town?" with "Yes — use <GPS town>" (swaps label + coords) / "No — keep <typed>". Analytics events: onboarding_hometown_mismatch_shown/used_gps/kept_typed.
 - Bonus bug fixed: the fixed DemoPeekWidget (z-30) was intercepting taps on the onboarding Continue button on phone-width screens — footer now z-40, confirm card z-40 solid bg.
 - Tested via Playwright (Erial coords + typed Marlton): card shows, both button paths advance correctly, city/coords swap on "use GPS", no re-prompt after choice. testids: hometown-confirm-card, hometown-use-gps, hometown-keep-typed.
+
+## 2026-06 — ✅ Silent intro videos hard-rejected (owner: "don't let them keep it")
+- Diagnosis: John's production intro (4s) had a flat -91 dB audio track in BOTH the stored mp4 AND his original webm — his mic was denied/muted at record time. Transcode pipeline innocent. Caption is NOT a transcription: it's the on-screen script (name + city) saved at recording — so no stale-caption bug exists.
+- Fix: `/api/users/video/upload` now runs an ffmpeg volumedetect silence gate on EVERY upload (mp4 + webm) before GCS. Peak < SILENCE_MAX_DB (-60 dB) or no audio stream/unparseable file → HTTP 422 "We couldn't hear any sound…". Fail-open if the checker itself errors. `transcode.py` gained `measure_max_volume()` + `SILENCE_MAX_DB`.
+- Frontend `VideoPick.js`: 422 detail now renders in the existing reject card (same UI as face-check reject) instead of a generic toast.
+- Tests: new `tests/test_silent_video.py` (4 tests: unit + silent mp4 422 + audible 200 + silent webm 422). Rewrote `test_video_upload_codec.py` to use real ffmpeg clips with audio (garbage-byte payloads now correctly 422); real webm asserts .mp4 URL post-transcode. Full suite 133/133.
+- John's own silent video stays until he re-records (nothing server-side can restore audio that was never captured).
+- Also this session: John moved Marlton → Erial in PRODUCTION via new set-home-city admin link (user-confirmed: gone from Marlton, visible in Erial).
+- ⚠️ Silence gate requires redeploy to reach production.

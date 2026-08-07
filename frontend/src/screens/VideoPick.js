@@ -106,8 +106,14 @@ export function VideoPick({ user, onDone, onSkip }) {
       track("video_intro_set", { source: "recorded" });
       const me = await api.get("/users/me");
       onDone(me.data.user);
-    } catch {
-      toast.error("Couldn't save your intro");
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      if (err?.response?.status === 422 && detail) {
+        setRejectReason(detail);
+        track("video_upload_rejected", { reason: "silent_audio" });
+      } else {
+        toast.error("Couldn't save your intro");
+      }
     } finally {
       setLoading(false);
       setPhase(null);
