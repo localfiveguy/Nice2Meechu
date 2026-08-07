@@ -475,3 +475,9 @@ The combination that killed it: geocode-cache flush on startup (R5) + one-shot u
 - Added `GET /api/admin/set-home-city?id=<uid>&city=<label>&confirm=SET` (admin.py): admin-only, refuses demo accounts, geocodes label fresh (use_cache=False) and writes home_city/home_lat/home_lng. find-user results now include a `set_home_city_url` template.
 - Tested: new `test_set_home_city_roundtrip` in tests/test_admin_tools.py — 4/4 passed live against preview (Erial geocoded ~39.77,-75.0).
 - ⚠️ Endpoint only exists in preview until user redeploys. After deploy, user fixes John on production via find-user → set-home-city links.
+
+## 2026-06 — ✅ Home Town Confirmation at onboarding
+- Onboarding step 2 renamed "City" → "Home town" with subtext "Where you actually live — your intro video shows to people in this town."
+- Device location is reverse-geocoded once on entering the step (Photon). If the typed/picked town differs from the GPS town, a one-time confirm card appears: "Is <GPS town> your home town?" with "Yes — use <GPS town>" (swaps label + coords) / "No — keep <typed>". Analytics events: onboarding_hometown_mismatch_shown/used_gps/kept_typed.
+- Bonus bug fixed: the fixed DemoPeekWidget (z-30) was intercepting taps on the onboarding Continue button on phone-width screens — footer now z-40, confirm card z-40 solid bg.
+- Tested via Playwright (Erial coords + typed Marlton): card shows, both button paths advance correctly, city/coords swap on "use GPS", no re-prompt after choice. testids: hometown-confirm-card, hometown-use-gps, hometown-keep-typed.

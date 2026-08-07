@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { ArrowLeft, ArrowRight, MapPin } from "lucide-react";
 import { api } from "../lib/api";
-import { stripCityNoise } from "../lib/cityFormat";
+import { formatCityLabel, stripCityNoise } from "../lib/cityFormat";
 import { CityAutocomplete } from "../components/CityAutocomplete";
 import { track } from "../analytics";
 
@@ -14,23 +14,28 @@ export function Onboarding({ user, onDone }) {
   const [cityCoords, setCityCoords] = useState(null); // {lat, lng} when picked from autocomplete
   const [autoCityTried, setAutoCityTried] = useState(false);
   const [autoCityLoading, setAutoCityLoading] = useState(false);
+  const [gpsTown, setGpsTown] = useState(null); // short town name from device location
+  const [gpsLabel, setGpsLabel] = useState(null); // full "Town, State, Country" label
+  const [mismatchPrompt, setMismatchPrompt] = useState(false);
+  const [mismatchChecked, setMismatchChecked] = useState(false);
   const [age, setAge] = useState(user.age ? String(user.age) : "");
   const [loading, setLoading] = useState(false);
 
-  // Try to auto-fill the city from the user's geolocation when they land on
-  // the city step. Reverse-geocodes lat/lng → "City, Country" via Photon
-  // (same provider as autocomplete, no extra dep). Only fires:
-  //   - on first visit to step 1
-  //   - if the city field is empty (don't overwrite a manual entry)
-  //   - if we have user.lat/lng from the App-level geolocation grab
+  // Reverse-geocode the user's device location when they land on the city
+  // step (Photon, same provider as autocomplete). Two jobs:
+  //   1. pre-fill the field when it's empty
+  //   2. remember the GPS town so we can confirm "Is X your home town?" if
+  //      what they type doesn't match where they actually are (John-from-
+  //      Erial picked Marlton — this check stops that mistake).
   // Best-effort: any failure is silent, the user can still type it.
   useEffect(() => {
-    if (step !== 1 || autoCityTried || city.trim().length > 0) return;
+    if (step !== 1 || autoCityTried) return;
     const lat = user.lat;
     const lng = user.lng;
     if (typeof lat !== "number" || typeof lng !== "number") return;
     setAutoCityTried(true);
-    setAutoCityLoading(true);
+    const fieldWasEmpty = city.trim().length === 0;
+    if (fieldWasEmpty) setAutoCityLoading(true);
     (async () => {
       try {
         const r = await fetch(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}&limit=1`);
@@ -39,15 +44,17 @@ export function Onboarding({ user, onDone }) {
         if (!p) return;
         // Photon's nearest feature for a coord is usually a building/POI —
         // pick the human-readable place fields we know exist: city / town /
-        // village fallback chain. Country gets appended so the user sees the
-        // full disambiguated label, matching what autocomplete returns.
+        // village fallback chain.
         const placeName = stripCityNoise(p.city || p.town || p.village || p.county || p.name);
-        const country = p.country;
         if (!placeName) return;
-        const label = country ? `${placeName}, ${country}` : placeName;
-        setCity(label);
-        setCityCoords({ lat, lng });
-        track("onboarding_city_auto_filled", { source: "reverse_geocode" });
+        const label = formatCityLabel({ ...p, name: placeName });
+        setGpsTown(placeName);
+        setGpsLabel(label);
+        if (fieldWasEmpty) {
+          setCity(label);
+          setCityCoords({ lat, lng });
+          track("onboarding_city_auto_filled", { source: "reverse_geocode" });
+        }
       } catch {
         // SAST: intentional — reverse-geocode is a best-effort pre-fill;
         // network / parse failure silently falls back to manual typing.
@@ -60,6 +67,33 @@ export function Onboarding({ user, onDone }) {
   const total = 3;
   const next = () => setStep((s) => Math.min(total - 1, s + 1));
   const back = () => setStep((s) => Math.max(0, s - 1));
+
+  // "Is X your home town?" gate: fires once when leaving the city step if the
+  // typed town doesn't match where the device actually is.
+  const townOf = (label) => stripCityNoise((label || "").split(",")[0]).trim().toLowerCase();
+  const typedTown = stripCityNoise((city || "").split(",")[0]).trim();
+  const cityContinue = () => {
+    if (!mismatchChecked && gpsTown && townOf(city) && townOf(city) !== gpsTown.toLowerCase()) {
+      setMismatchChecked(true);
+      setMismatchPrompt(true);
+      track("onboarding_hometown_mismatch_shown", { typed: typedTown, gps: gpsTown });
+      return;
+    }
+    setMismatchPrompt(false);
+    next();
+  };
+  const useGpsTown = () => {
+    setCity(gpsLabel);
+    setCityCoords({ lat: user.lat, lng: user.lng });
+    setMismatchPrompt(false);
+    track("onboarding_hometown_mismatch_used_gps");
+    next();
+  };
+  const keepTypedTown = () => {
+    setMismatchPrompt(false);
+    track("onboarding_hometown_mismatch_kept_typed");
+    next();
+  };
   const ageNum = parseInt(age, 10);
   const canNext =
     (step === 0 && firstName.trim().length >= 1) ||
@@ -143,24 +177,45 @@ export function Onboarding({ user, onDone }) {
 
       {step === 1 && (
         <div className="mt-8">
-          <p className="text-xs uppercase tracking-widest font-bold text-[#FF4D4D] mb-2">City</p>
+          <p className="text-xs uppercase tracking-widest font-bold text-[#FF4D4D] mb-2">Home town</p>
+          <p className="text-xs text-white/45 mb-3">Where you actually live — your intro video shows to people in this town.</p>
           <CityAutocomplete
             value={city}
-            onChange={(v) => { setCity(v); setCityCoords(null); }}
+            onChange={(v) => { setCity(v); setCityCoords(null); setMismatchPrompt(false); }}
             onPick={(item) => { setCity(item.value || ""); setCityCoords({ lat: item.lat, lng: item.lng }); }}
             biasLat={user.lat}
             biasLng={user.lng}
-            onEnter={() => { if (canNext) next(); }}
+            onEnter={() => { if (canNext) cityContinue(); }}
           />
           {autoCityLoading && (
             <p className="mt-2 text-[11px] text-white/45 flex items-center gap-1" data-testid="onboarding-city-detecting">
               <MapPin size={11} className="text-white/45 animate-pulse" /> Detecting your city…
             </p>
           )}
-          {!autoCityLoading && autoCityTried && cityCoords && (
+          {!autoCityLoading && autoCityTried && cityCoords && !mismatchPrompt && (
             <p className="mt-2 text-[11px] text-white/55 flex items-center gap-1" data-testid="onboarding-city-detected">
               <MapPin size={11} className="text-[#00E5FF]" /> Detected from your location — change if wrong
             </p>
+          )}
+          {mismatchPrompt && (
+            <div className="mt-4 rounded-2xl border border-[#00E5FF]/30 bg-[#08181b] p-4 relative z-40" data-testid="hometown-confirm-card">
+              <p className="text-sm font-bold flex items-center gap-1.5">
+                <MapPin size={14} className="text-[#00E5FF]" /> Is {gpsTown} your home town?
+              </p>
+              <p className="mt-1.5 text-xs text-white/60">
+                Your location says you're in <span className="text-white/90 font-semibold">{gpsTown}</span>, but
+                you picked <span className="text-white/90 font-semibold">{typedTown}</span>. Your video appears
+                to people in your home town — pick where you really live.
+              </p>
+              <div className="mt-3 flex flex-col gap-2">
+                <button className="btn-primary py-2.5 text-sm" onClick={useGpsTown} data-testid="hometown-use-gps">
+                  Yes — use {gpsTown}
+                </button>
+                <button className="btn-ghost py-2.5 text-sm" onClick={keepTypedTown} data-testid="hometown-keep-typed">
+                  No — keep {typedTown}
+                </button>
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -184,7 +239,7 @@ export function Onboarding({ user, onDone }) {
         </div>
       )}
 
-      <div className="mt-auto flex gap-3 pt-6">
+      <div className="mt-auto flex gap-3 pt-6 relative z-40">
         {step > 0 && (
           <button className="btn-ghost" onClick={back} data-testid="onboarding-back">
             <ArrowLeft size={18} />
@@ -194,7 +249,7 @@ export function Onboarding({ user, onDone }) {
           <button
             className="btn-primary flex-1 flex items-center justify-center gap-2"
             disabled={!canNext}
-            onClick={next}
+            onClick={step === 1 ? cityContinue : next}
             data-testid="onboarding-next"
           >
             Continue <ArrowRight size={18} />
