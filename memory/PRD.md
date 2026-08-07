@@ -469,3 +469,9 @@ The combination that killed it: geocode-cache flush on startup (R5) + one-shot u
 - **Testing (agent)**: new `/app/backend/tests/test_face_check_policy.py` (6 tests, mocked LLM). Live e2e via real GPT-4o-mini: tank-top selfie → ok:true, shirtless selfie → ok:true. Full suite 127/127 passed.
 - Suite note: tests need `export TEST_SESSION_TOKEN=<see test_credentials.md>` else 3 files fail at collection.
 - ⚠️ Requires user redeploy to reach nice2meechu.com.
+
+## 2026-06 — ✅ Admin set-home-city tool (fix John-from-Erial)
+- User confirmed John (Cosmic Raven) still shows in Marlton; his profile field literally says Marlton while his video says Erial. User chose option B: fix his record via admin tool.
+- Added `GET /api/admin/set-home-city?id=<uid>&city=<label>&confirm=SET` (admin.py): admin-only, refuses demo accounts, geocodes label fresh (use_cache=False) and writes home_city/home_lat/home_lng. find-user results now include a `set_home_city_url` template.
+- Tested: new `test_set_home_city_roundtrip` in tests/test_admin_tools.py — 4/4 passed live against preview (Erial geocoded ~39.77,-75.0).
+- ⚠️ Endpoint only exists in preview until user redeploys. After deploy, user fixes John on production via find-user → set-home-city links.
