@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 
 from auth import current_user
-from core import ADMIN_EMAILS, _get_gcs_bucket, db, logger
+from core import ADMIN_EMAILS, _geocode_city, _get_gcs_bucket, db, logger
 
 router = APIRouter()
 
@@ -47,6 +47,7 @@ async def admin_find_user(q: str = "", user=Depends(current_user)):
             "has_video": bool(u.get("video_url")),
             "is_demo": bool(u.get("is_demo")),
             "delete_url": f"/api/admin/delete-user?id={u['id']}&confirm=DELETE",
+            "set_home_city_url": f"/api/admin/set-home-city?id={u['id']}&city=REPLACE_ME&confirm=SET",
         })
     return {"count": len(out), "users": out}
 
@@ -89,6 +90,38 @@ async def admin_delete_user(id: str = "", confirm: str = "", user=Depends(curren
     logger.info("ADMIN delete-user: %s (%s / %s) removed by %s",
                 uid, target.get("codename"), target.get("email"), user.get("email"))
     return {"ok": True, "deleted": uid, "codename": target.get("codename"), "email": target.get("email")}
+
+
+@router.get("/admin/set-home-city")
+async def admin_set_home_city(id: str = "", city: str = "", confirm: str = "", user=Depends(current_user)):
+    """Founder tool: correct a user's saved home town (where their video shows
+    in feeds). GET so it runs from a phone browser, e.g.:
+    /api/admin/set-home-city?id=<uid>&city=Erial,%20NJ,%20USA&confirm=SET
+    The label is geocoded fresh (no cache) so home coords stay honest."""
+    _require_admin(user)
+    city = city.strip()[:120]
+    if not id or len(city) < 2:
+        raise HTTPException(400, "Need id and city, e.g. ?id=<uid>&city=Erial, NJ, USA")
+    if confirm != "SET":
+        raise HTTPException(400, "Add &confirm=SET to the address to really change it")
+    target = await db.users.find_one({"id": id}, {"_id": 0, "id": 1, "codename": 1, "email": 1,
+                                                  "home_city": 1, "is_demo": 1})
+    if not target:
+        raise HTTPException(404, "No user with that id")
+    if target.get("is_demo"):
+        raise HTTPException(403, "Demo accounts are managed automatically")
+    lat, lng = await _geocode_city(city, use_cache=False)
+    if lat is None:
+        raise HTTPException(422, f"Could not geocode '{city}' — check spelling, include state/country")
+    await db.users.update_one(
+        {"id": id},
+        {"$set": {"home_city": city, "home_lat": lat, "home_lng": lng}},
+    )
+    logger.info("ADMIN set-home-city: %s (%s) %r -> %r by %s",
+                id, target.get("codename"), target.get("home_city"), city, user.get("email"))
+    return {"ok": True, "id": id, "codename": target.get("codename"),
+            "old_home_city": target.get("home_city"), "new_home_city": city,
+            "home_lat": lat, "home_lng": lng}
 
 
 @router.get("/admin/diagnose-feed")

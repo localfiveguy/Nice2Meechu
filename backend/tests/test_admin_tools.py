@@ -68,3 +68,35 @@ def test_delete_refuses_admin_and_demo_accounts():
 def test_admin_tools_require_admin():
     r = requests.get(f"{BASE_URL}/api/admin/find-user", params={"q": "steve"}, timeout=15)
     assert r.status_code == 401, r.text
+
+
+def test_set_home_city_roundtrip():
+    uid = f"tt-city-{uuid.uuid4().hex[:8]}"
+    _seed(uid)
+    try:
+        # missing confirm → refused
+        r = requests.get(f"{BASE_URL}/api/admin/set-home-city",
+                         params={"id": uid, "city": "Erial, NJ, USA"}, headers=AUTH, timeout=15)
+        assert r.status_code == 400, r.text
+
+        r = requests.get(f"{BASE_URL}/api/admin/set-home-city",
+                         params={"id": uid, "city": "Erial, NJ, USA", "confirm": "SET"},
+                         headers=AUTH, timeout=30)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["old_home_city"] == "Marlton, NJ, USA"
+        assert body["new_home_city"] == "Erial, NJ, USA"
+        doc = db.users.find_one({"id": uid})
+        assert doc["home_city"] == "Erial, NJ, USA"
+        assert abs(doc["home_lat"] - 39.77) < 0.3 and abs(doc["home_lng"] + 75.0) < 0.5
+
+        # unknown user / unauthenticated
+        r = requests.get(f"{BASE_URL}/api/admin/set-home-city",
+                         params={"id": "nope", "city": "Erial, NJ, USA", "confirm": "SET"},
+                         headers=AUTH, timeout=15)
+        assert r.status_code == 404, r.text
+        r = requests.get(f"{BASE_URL}/api/admin/set-home-city",
+                         params={"id": uid, "city": "Erial, NJ, USA", "confirm": "SET"}, timeout=15)
+        assert r.status_code == 401, r.text
+    finally:
+        db.users.delete_one({"id": uid})
