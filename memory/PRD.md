@@ -490,3 +490,8 @@ The combination that killed it: geocode-cache flush on startup (R5) + one-shot u
 - John's own silent video stays until he re-records (nothing server-side can restore audio that was never captured).
 - Also this session: John moved Marlton → Erial in PRODUCTION via new set-home-city admin link (user-confirmed: gone from Marlton, visible in Erial).
 - ⚠️ Silence gate requires redeploy to reach production.
+
+## 2026-10 — ✅ Founder-only DB export endpoint (user-specified code, verbatim)
+- New `backend/export_db.py`: GET /api/admin/export-db?confirm=EXPORT streams full MongoDB Extended JSON export (all collections + docs + non-_id indexes) as a download. Registered in server.py router tuple.
+- Verified in preview: no auth → 401; signed-in non-admin → 403; admin without confirm → 400; admin with confirm → streaming export works.
+- Reaches production (nice2meechu.com) on next deploy.
