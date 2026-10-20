@@ -1,0 +1,49 @@
+# Netlify config for the Nice2Meechu React frontend.
+#
+# The site and the API share ONE domain: every /api/* request is proxied
+# (status 200 rewrite, not a redirect) to the FastAPI backend on Render.
+# Keeping a single origin preserves the httpOnly session_token cookie and the
+# Google sign-in redirect URI (window.location.origin + /api/auth/google-redirect).
+#
+# Required Netlify environment variables (Site settings > Environment variables):
+#   REACT_APP_BACKEND_URL        = https://nice2meechu.com   (the site's own public URL)
+#   REACT_APP_GOOGLE_CLIENT_ID   = your Google OAuth client ID
+#   REACT_APP_APPLE_SERVICE_ID   = your Apple Services ID (if Apple sign-in is used)
+#   REACT_APP_GA4_MEASUREMENT_ID = your GA4 ID (optional)
+#
+# If the Render service ends up with a different address, change the
+# RENDER URL in the [[redirects]] block below.
+
+[build]
+  base    = "frontend"
+  command = "yarn install && yarn build"
+  publish = "build"
+
+[build.environment]
+  NODE_VERSION = "20"
+  CI = "false"            # don't fail the build on lint warnings
+  GENERATE_SOURCEMAP = "false"
+
+# --- API proxy to the FastAPI backend on Render -------------------------------
+[[redirects]]
+  from   = "/api/*"
+  to     = "https://nice2meechu-api.onrender.com/api/:splat"
+  status = 200
+  force  = true
+
+# --- Single-page-app fallback: every other path loads index.html --------------
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
+
+# --- Headers -------------------------------------------------------------------
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/static/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

@@ -4,12 +4,12 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from emergentintegrations.llm.chat import LlmChat, UserMessage
 from fastapi import APIRouter, Depends, HTTPException
 from pymongo import UpdateOne
 
 from auth import current_user
-from core import EMERGENT_LLM_KEY, LANG_NAMES, _rng, db, logger
+from core import LANG_NAMES, _rng, db, logger
+from llm import chat_text, llm_enabled
 from models import MessageReq, TranslateReq
 from push import notify_user
 
@@ -17,25 +17,21 @@ router = APIRouter()
 
 
 async def _translate_text(text: str, target_lang: str, source_lang: Optional[str]) -> str:
-    """Translate text via Emergent LLM. Returns original on same-language or LLM failure."""
+    """Translate text via the OpenAI helper (llm.py). Returns original on same-language or LLM failure."""
     if not text:
         return ""
     if (source_lang or "") == target_lang:
         return text
-    if not EMERGENT_LLM_KEY:
+    if not llm_enabled():
         return text
     target = LANG_NAMES.get(target_lang, target_lang)
     src = LANG_NAMES.get(source_lang or "", "the source language")
     try:
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=f"translate-{uuid.uuid4()}",
-            system_message=(
-                f"You are a real-time translator. Translate the user's text from {src} to {target}. "
-                "Return ONLY the translated text, no quotes, no preface, no explanation."
-            ),
-        ).with_model("openai", "gpt-4o-mini")
-        out = await chat.send_message(UserMessage(text=text))
+        out = await chat_text(
+            f"You are a real-time translator. Translate the user's text from {src} to {target}. "
+            "Return ONLY the translated text, no quotes, no preface, no explanation.",
+            text,
+        )
         return (out or text).strip()
     except Exception as exc:  # noqa: BLE001
         logger.exception("translate failed: %s", exc)
@@ -157,7 +153,7 @@ async def send_message(req: MessageReq, user=Depends(current_user)):
 
 @router.post("/translate")
 async def translate(req: TranslateReq, user=Depends(current_user)):
-    if not EMERGENT_LLM_KEY:
-        raise HTTPException(500, "EMERGENT_LLM_KEY not configured")
+    if not llm_enabled():
+        raise HTTPException(500, "OPENAI_API_KEY not configured")
     out = await _translate_text(req.text, req.target_lang, req.source_lang)
     return {"translation": out, "target_lang": req.target_lang}

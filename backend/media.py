@@ -7,12 +7,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from emergentintegrations.llm.chat import ImageContent, LlmChat, UserMessage
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 
 from auth import current_user
-from core import EMERGENT_LLM_KEY, _OG_CACHE, db, logger
+from core import _OG_CACHE, db, logger
+from llm import chat_vision, llm_enabled
 from models import FaceCheckReq
 
 router = APIRouter()
@@ -41,16 +41,11 @@ _REVIEW_SYSTEM_PROMPT = (
 
 async def _llm_review_frame(img: str) -> tuple[bool, str, Optional[int]]:
     """Ask GPT-4o vision to review the frame. Returns (ok, reason, estimated_age)."""
-    chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=f"facecheck-{uuid.uuid4()}",
-        system_message=_REVIEW_SYSTEM_PROMPT,
-    ).with_model("openai", "gpt-4o-mini")
-    msg = UserMessage(
-        text="Review this intro-video frame: is it acceptable, and what is the apparent age?",
-        file_contents=[ImageContent(image_base64=img)],
+    raw = await chat_vision(
+        _REVIEW_SYSTEM_PROMPT,
+        "Review this intro-video frame: is it acceptable, and what is the apparent age?",
+        img,
     )
-    raw = (await chat.send_message(msg)) or ""
     s = raw.strip()
     if "```" in s:
         s = s.split("```", 2)[1]
@@ -110,7 +105,7 @@ async def face_check(req: FaceCheckReq, user=Depends(current_user)):
         img = img.split(",", 1)[-1]
     if not img or len(img) < 200:
         raise HTTPException(400, "Image is required")
-    if not EMERGENT_LLM_KEY:
+    if not llm_enabled():
         return {"ok": True, "reason": "skipped (no key)", "estimated_age": None, "age_ok": True}
 
     declared_age = int(user.get("age") or 0)
@@ -239,7 +234,7 @@ async def get_handoff_doc():
     the repo. The handoff lives at the repo root (/app/handoff.md) and is
     rewritten in-place by the agent at the end of each fork — so this endpoint
     always serves the freshest copy."""
-    path = Path("/app/handoff.md")
+    path = Path(__file__).resolve().parent.parent / "handoff.md"  # repo root (was hard-coded /app/)
     if not path.is_file():
         raise HTTPException(404, "handoff.md not found")
     return FileResponse(

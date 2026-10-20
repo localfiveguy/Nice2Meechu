@@ -1,0 +1,57 @@
+# Render Blueprint for the Nice2Meechu FastAPI backend.
+# In Render: New > Blueprint > pick this repository. Render reads this file.
+#
+# Secrets marked `sync: false` are entered by hand in the Render dashboard
+# (they are never stored in the repository).
+#
+# Google Cloud Storage key: add it in Render as a "Secret File" named
+# gcs-credentials.json — Render places it at /etc/secrets/gcs-credentials.json,
+# which GOOGLE_APPLICATION_CREDENTIALS below points to.
+
+services:
+  - type: web
+    name: nice2meechu-api
+    runtime: python
+    region: virginia            # closest to the us-east1 video bucket
+    plan: starter               # always-on; "free" sleeps after 15 min idle
+    rootDir: backend
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      # --- Database (MongoDB Atlas) ---
+      - key: MONGO_URL
+        sync: false
+      - key: DB_NAME
+        sync: false
+      # --- Site / CORS ---
+      - key: CORS_ORIGINS
+        value: https://nice2meechu.com,https://www.nice2meechu.com
+      # --- Sign-in ---
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: APPLE_SERVICE_ID
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
+      # --- AI (face/age check + chat translation) ---
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: LLM_MODEL
+        value: gpt-4o-mini
+      # --- Video storage (Google Cloud Storage) ---
+      - key: GCP_PROJECT_ID
+        value: gen-lang-client-0271718241
+      - key: GCS_BUCKET
+        value: nicemeechu
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        value: /etc/secrets/gcs-credentials.json
+      # --- Web push notifications ---
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false
