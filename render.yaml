@@ -25,7 +25,7 @@ services:
       - key: MONGO_URL
         sync: false
       - key: DB_NAME
-        sync: false
+        value: nice2meechu
       # --- Site / CORS ---
       - key: CORS_ORIGINS
         value: https://nice2meechu.com,https://www.nice2meechu.com
@@ -48,6 +48,9 @@ services:
         value: nicemeechu
       - key: GOOGLE_APPLICATION_CREDENTIALS
         value: /etc/secrets/gcs-credentials.json
+      # --- One-time data import from Emergent (delete this var after import) ---
+      - key: IMPORT_TOKEN
+        generateValue: true
       # --- Web push notifications ---
       - key: VAPID_PUBLIC_KEY
         sync: false
