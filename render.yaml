@@ -31,11 +31,11 @@ services:
         value: https://nice2meechu.com,https://www.nice2meechu.com
       # --- Sign-in ---
       - key: GOOGLE_CLIENT_ID
-        sync: false
+        value: 780373908792-5paopj52a9u3pf1dh47778d22kvvajfm.apps.googleusercontent.com
       - key: APPLE_SERVICE_ID
-        sync: false
+        value: nice2meechu.app.web
       - key: ADMIN_EMAILS
-        sync: false
+        value: localfiveguy@gmail.com,steavinrice@gmail.com
       # --- AI (face/age check + chat translation) ---
       - key: OPENAI_API_KEY
         sync: false
@@ -52,9 +52,10 @@ services:
       - key: IMPORT_TOKEN
         generateValue: true
       # --- Web push notifications ---
+      # Fresh key pair for the move (no push subscriptions existed). Public half is safe to commit.
       - key: VAPID_PUBLIC_KEY
-        sync: false
+        value: BC3Go8QcJYM2tjFNXhafw5eO9zQitupQCBMXG8y7JZKhJINFZfZ_0OCwu3X9BlFBwoUjZ561UOzUhVjR3OFAPoI
       - key: VAPID_PRIVATE_KEY
         sync: false
       - key: VAPID_SUBJECT
-        sync: false
+        value: mailto:localfiveguy@gmail.com

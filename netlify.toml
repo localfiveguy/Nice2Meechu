@@ -23,6 +23,10 @@
   NODE_VERSION = "20"
   CI = "false"            # don't fail the build on lint warnings
   GENERATE_SOURCEMAP = "false"
+  # Public sign-in IDs (not secrets — they ship in the browser bundle anyway)
+  REACT_APP_BACKEND_URL      = "https://nice2meechu.com"
+  REACT_APP_GOOGLE_CLIENT_ID = "780373908792-5paopj52a9u3pf1dh47778d22kvvajfm.apps.googleusercontent.com"
+  REACT_APP_APPLE_SERVICE_ID = "nice2meechu.app.web"
 
 # --- API proxy to the FastAPI backend on Render -------------------------------
 [[redirects]]
