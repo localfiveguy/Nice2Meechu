@@ -18,7 +18,7 @@ export function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, o
   const [editing, setEditing] = useState(false);
   const [iosSheetOpen, setIosSheetOpen] = useState(false);
   const [firstName, setFirstName] = useState(user.first_name || "");
-  const [city, setCity] = useState(user.city || "");
+  const [city, setCity] = useState(user.home_city || "");
   const [cityCoords, setCityCoords] = useState(null);
   const [age, setAge] = useState(user.age ? String(user.age) : "");
   const [language, setLanguage] = useState(user.language || "en");
@@ -95,7 +95,7 @@ export function ProfileScreen({ user, setUser, unreadMatches, onTab, onLogout, o
                 {user.age ? <span className="text-white/60"> · {user.age}</span> : null}
               </div>
               <div className="mt-1 text-xs text-white/60 flex items-center gap-1.5">
-                <MapPin size={12} /> {user.city || "Somewhere on Earth"}
+                <MapPin size={12} /> {user.home_city || "Somewhere on Earth"}
               </div>
               <div className="mt-1 text-xs text-white/60 flex items-center gap-1.5">
                 <Globe size={12} /> Native: {LANG_OPTIONS.find((l) => l.code === user.language)?.name || user.language}
