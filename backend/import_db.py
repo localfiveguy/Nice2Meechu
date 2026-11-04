@@ -8,7 +8,8 @@ click Import. The file's collections REPLACE the same collections here
 Safety:
   * Disabled unless the IMPORT_TOKEN env var is set (remove it after import).
   * Refuses to run if this database already holds real (non-demo) users,
-    so it can never overwrite live data by accident.
+    unless those users came from an earlier import (practice run), so it can
+    never overwrite data people created here.
 """
 import hmac
 import os
@@ -55,8 +56,11 @@ async def import_db(token: str = Form(...), file: UploadFile = File(...)):
     if not hmac.compare_digest(token.strip(), IMPORT_TOKEN):
         raise HTTPException(403, "Wrong import token")
 
+    # Re-importing is allowed only when the users here came from an earlier
+    # import (practice run before the final switch-over); never over live data.
+    previously_imported = await db.import_meta.find_one({"_id": "emergent_import"})
     real_users = await db.users.count_documents({"is_demo": {"$ne": True}})
-    if real_users:
+    if real_users and not previously_imported:
         raise HTTPException(409, f"Refusing: this database already has {real_users} real users")
 
     raw = await file.read(_MAX_BYTES + 1)
@@ -71,7 +75,7 @@ async def import_db(token: str = Form(...), file: UploadFile = File(...)):
 
     lines = []
     for name, payload in data["collections"].items():
-        if name.startswith("system."):
+        if name.startswith("system.") or name == "import_meta":
             continue
         docs = payload.get("documents") or []
         await db[name].drop()
@@ -88,6 +92,11 @@ async def import_db(token: str = Form(...), file: UploadFile = File(...)):
                 logger.warning("import: index %s on %s skipped: %s", ix.get("name"), name, exc)
         lines.append(f"<li>{name}: {len(docs)}</li>")
 
+    await db.import_meta.update_one(
+        {"_id": "emergent_import"},
+        {"$set": {"exported_at": data.get("exported_at")}, "$inc": {"runs": 1}},
+        upsert=True,
+    )
     logger.warning("import-db completed: %d collections from export %s", len(lines), data.get("exported_at"))
     return HTMLResponse(
         "<!doctype html><meta charset='utf-8'><body style='font-family:system-ui;max-width:520px;margin:40px auto'>"
