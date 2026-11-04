@@ -29,7 +29,19 @@ load_dotenv(ROOT_DIR / ".env")
 # Config
 # ---------------------------------------------------------------------------
 mongo_url = os.environ["MONGO_URL"]
-client = AsyncIOMotorClient(mongo_url)
+# Optional: keep the database password in its own variable (MONGO_PASSWORD,
+# plus MONGO_USERNAME) instead of embedding it in MONGO_URL. When set, they
+# are passed to the driver directly, so MONGO_URL should then carry no
+# user:password@ part.
+_mongo_password = os.environ.get("MONGO_PASSWORD", "").strip()
+if _mongo_password:
+    client = AsyncIOMotorClient(
+        mongo_url,
+        username=os.environ.get("MONGO_USERNAME", "").strip() or None,
+        password=_mongo_password,
+    )
+else:
+    client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
 
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")

@@ -22,7 +22,12 @@ services:
       - key: PYTHON_VERSION
         value: "3.11.9"
       # --- Database (MongoDB Atlas) ---
+      # MONGO_URL carries no password; the driver gets it from MONGO_PASSWORD.
       - key: MONGO_URL
+        sync: false
+      - key: MONGO_USERNAME
+        value: localfiveguy_db_user
+      - key: MONGO_PASSWORD
         sync: false
       - key: DB_NAME
         value: nice2meechu
