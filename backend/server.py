@@ -18,8 +18,6 @@ from starlette.middleware.cors import CORSMiddleware
 import admin
 import auth
 import demos
-import export_db
-import import_db
 import feed
 import media
 import messaging
@@ -39,7 +37,7 @@ async def health():
     return {"status": "ok"}
 
 
-for module in (auth, users, feed, messaging, media, demos, admin, export_db, import_db, push):
+for module in (auth, users, feed, messaging, media, demos, admin, push):
     app.include_router(module.router, prefix="/api")
 
 # Serve sample intro videos through the backend so the production CDN

@@ -53,9 +53,6 @@ services:
         value: nicemeechu
       - key: GOOGLE_APPLICATION_CREDENTIALS
         value: /etc/secrets/gcs-credentials.json
-      # --- One-time data import from Emergent (delete this var after import) ---
-      - key: IMPORT_TOKEN
-        generateValue: true
       # --- Web push notifications ---
       # Fresh key pair for the move (no push subscriptions existed). Public half is safe to commit.
       - key: VAPID_PUBLIC_KEY
