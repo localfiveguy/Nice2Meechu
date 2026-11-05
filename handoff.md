@@ -1,574 +1,645 @@
-# Nice2Meechu — Complete Engineering Handoff
-_Last updated: 2026-11-05 · **Hosting moved off Emergent on 2026-11-04** — website on Netlify, API on Render, data on MongoDB Atlas (see §2, §12, §16, §21)._
-_Live build check: `GET https://nice2meechu.com/api/` · Source of truth: GitHub `localfiveguy/Nice2Meechu`, branch **`netlify-migration`** (this is what's live)._
+# Nice2Meechu — Engineering & Operations Handoff
 
-> **Read first:** sections written before 2026-11 describe Emergent paths such as `/app/backend` and supervisor commands. The code layout is unchanged (`backend/`, `frontend/` at the repo root), but nothing runs on Emergent anymore. The Emergent project was unpublished on 2026-11-05.
+_Last updated: November 2026 · Live build stamp: **v1.6.8-town-label-match** (check anytime at `GET https://nice2meechu.com/api/`)_
+_Source of truth: GitHub **`localfiveguy/Nice2Meechu`**, branch **`netlify-migration`** — this branch is what is live. Admins can download this file from `https://nice2meechu.com/api/handoff.md` while signed in._
+
+This document is written so that a new engineer, or a new AI assistant, can pick up the project cold: what the product is, where every piece runs, how changes go live, how the code is organized, which rules are deliberate, and how to fix things when they break. It contains **no passwords or keys** — only where they are kept.
 
 ---
 
-## 1. Product Snapshot
+## Table of contents
+1. Quick facts
+2. The product
+3. The owner and how to work with him
+4. Hosting map — every service and account
+5. How a change goes live
+6. Repository layout
+7. Backend architecture
+8. Startup tasks and one-shot migrations
+9. Frontend architecture and routing
+10. Authentication and sessions
+11. Data model (MongoDB)
+12. API reference
+13. Feed and location rules (the hardest-won logic)
+14. Demo persona system
+15. Video pipeline and AI safety checks
+16. Messaging and translation
+17. Push notifications
+18. Admin tools
+19. Configuration and secrets inventory
+20. Security posture
+21. Testing
+22. Runbooks
+23. Costs, renewals, and things that break if they lapse
+24. Hard rules and gotchas
+25. App store distribution (parked)
+26. Backlog
 
-**Nice2Meechu** — a hyperlocal, video-first social app. Users connect through
-short video introductions instead of profile photos.
+---
+
+## 1. Quick facts
+
+| | |
+|---|---|
+| Live site | https://nice2meechu.com (and `www.nice2meechu.com`, which redirects to it) |
+| Same site, Netlify address | https://nice2meechu.netlify.app |
+| API (direct) | https://nice2meechu-api.onrender.com (browsers never call this directly; see §5) |
+| Stack | React 19 (Create React App + craco) · FastAPI (Python 3.11) · Motor (async MongoDB) · Google Cloud Storage · OpenAI |
+| Accounts | 31 real people plus 78 demo personas |
+| Repository | github.com/localfiveguy/Nice2Meechu (public) |
+| Live branch | `netlify-migration` |
+| Tests | 15 files, 121 backend tests (`backend/tests/`) |
+
+---
+
+## 2. The product
+
+**Nice2Meechu** is a hyperlocal, video-first social app. People meet through a short spoken video introduction instead of photos.
 Tagline: **"Meet the world. Video-first. Anonymous until the spark."**
 
-- **Production**: https://nice2meechu.com (+ `www`) — deployed via Emergent, **v1.6.6-home-town-only**
-- **Preview (dev)**: https://hyperlocal-video.preview.emergentagent.com
-- **Stack**: React 19 (CRA + craco) · FastAPI · Motor (async MongoDB) · Google Cloud Storage
-- **Status**: LIVE. Both hard production bugs are resolved and deployed:
-  the "Tokyo users in Marlton" location saga (v1.6.4, user-confirmed) and the
-  "real videos black on iPhone" webm codec bug (v1.6.5/v1.6.6).
+### Core product rules (deliberate — do not change without the owner's explicit request)
+1. **Anonymous until a match.** Everyone appears under a codename (for example "Cosmic Phoenix") until two people both like each other. Then a match is created and they can chat.
+2. **Home-town-only feed.** A person's video appears **only in their own home town.** There is no "nearby" radius. An 8 km tolerance exists purely so that two names for the same physical town (Marlton and Evesham Township, NJ) count as one place. See §13.
+3. **Video-first.** One short intro video (target 7 seconds, with an on-screen script such as "Hello, my name is Steve, and I live in Voorhees, NJ, USA. Nice to meet you!") is the whole profile. All stored intros are H.264/AAC mp4 so iPhones can play them.
+4. **Honest AI.** Demo profiles exist only in 12 big world cities to make the app feel alive. They are always badged "✨ AI DEMO", never appear in small towns, and can never become real matches.
+5. **Safety first.** Every intro passes an AI check for exactly one real human face, no prohibited content, and an age gate before it is posted. Users can report and block. Users can delete their account and export their data from inside the app.
 
-### Core product rules (current, post-v1.6.6)
-1. **Anonymity until match** — users are shown by codename (e.g. "Cosmic Phoenix")
-   until a mutual like creates a match.
-2. **Home-town-only feed** — a video appears ONLY in its home town. There is NO
-   nearby-radius spreading anymore (owner explicitly removed it; see §7 and §15.7).
-   An 8 km same-town coordinate tolerance absorbs naming variants of the SAME town
-   (Marlton ↔ Evesham Township) without leaking into neighboring towns.
-3. **Video-first** — one short intro video is the whole profile. All stored intros
-   are H.264/AAC mp4 (webm uploads are transcoded server-side; iOS can't play webm).
-4. **Honest AI** — demo profiles exist only in 12 big metros to make the app feel
-   alive; always badged "✨ AI DEMO", never mixed into small towns, never matchable.
-
-### The operator (user)
-- Steven (Steavin) Rice, non-technical — needs click-by-click guidance for
-  everything (store consoles, DNS, certificates).
-- Devices: **iPhone + iPad 10.2 + Pixel 9 + Windows 11 desktop. NO MAC** — all
-  Apple workflows must be browser-based (App Store Connect web + Codemagic cloud).
-- Apple Developer Team ID: `J99N4XLB3D`.
-- Admin emails (env `ADMIN_EMAILS`): localfiveguy@gmail.com, steavinrice@gmail.com,
-  qa-tester@nice2meechu.local.
-- **Store publishing is deliberately parked**: the owner knows how to publish the
-  Play Store AAB and will do it "months from now" — he asked NOT to be reminded.
-  Do not nudge about the AAB / Play Console / App Store unless he raises it.
+### Main screens
+Splash → Sign in (Google, Apple) → Onboarding (first name, age, home town, vibes, language, avatar emoji) → Community Rules (with signature) → Intro video (record, review, AI check, upload) → Feed (swipe like or pass) → Matches → Chat (with live translation) → Profile (home town, change intro, notifications toggle, download my data, delete account).
 
 ---
 
-## 2. Environments & Deploy Workflow (current, since 2026-11-04)
+## 3. The owner and how to work with him
 
-| Piece | Service | Where to manage it |
-|---|---|---|
-| Website (React build) | **Netlify** project `nice2meechu` | app.netlify.com/projects/nice2meechu |
-| API (FastAPI) | **Render** web service `nice2meechu-api` (Starter plan, Virginia) | dashboard.render.com → nice2meechu-api |
-| Database | **MongoDB Atlas** free cluster `Cluster0` (AWS N. Virginia), database `nice2meechu` | cloud.mongodb.com → Project 0 |
-| Intro videos | **Google Cloud Storage** bucket `nicemeechu` in project `gen-lang-client-0271718241` (billing account "B of A") | console.cloud.google.com |
-| AI face check + translation | **OpenAI** API, model `gpt-4o-mini` (prepaid credit) | platform.openai.com |
-| Domain + DNS | **Network Solutions** — A `@` → `75.2.60.5`, CNAME `www` → `nice2meechu.netlify.app` (renews 2027-04-26) | networksolutions.com → Domains |
-| HTTPS | Let's Encrypt via Netlify (auto-renews) | Netlify → Domain management |
-
-**How a change goes live:** push to branch `netlify-migration` on GitHub → Netlify rebuilds the site and Render rebuilds the API automatically (Render is a Blueprint driven by `render.yaml`; Netlify is configured by `netlify.toml`). Nobody clicks "Deploy".
-
-- **One origin.** The browser only ever talks to `nice2meechu.com`. Netlify proxies `/api/*` to `https://nice2meechu-api.onrender.com` (status-200 rewrite in `netlify.toml`), so the httpOnly `session_token` cookie and the Google redirect URI keep working. `REACT_APP_BACKEND_URL` is intentionally **empty** so API calls are same-origin `/api`.
-- **No separate preview database anymore.** There is one database. `nice2meechu.netlify.app` is the same site and same data as `nice2meechu.com`.
-- **Build stamp:** `GET /api/` returns `{"build": ...}` (in `auth.py`; `admin.py` has its own copy). Bump both on meaningful changes.
-- **Health check:** Render probes `GET /health` (root level, not under `/api`) — keep that route in `server.py`.
-- `main` on GitHub holds Emergent's last saved copy (2026-11-05) and is **not** deployed. Everything from it is already in `netlify-migration`.
+- **Steven ("Steve") Rice**, independent developer and owner of the app. Email: localfiveguy@gmail.com (also signs in as steavinrice@gmail.com).
+- **Non-technical by preference.** He relies on the engineer or assistant for all code changes and avoids command-line tools. Give **click-by-click, browser-only** instructions, one step at a time, and confirm before moving on.
+- He uses text-to-speech to listen to answers: **never read code aloud.** Put code or exact values in separate copy-paste blocks and describe them in plain words.
+- He prefers **complete file replacements** over "edit line 42" instructions.
+- Devices: iPhone, iPad, Google Pixel, Windows 11 desktop. **No Mac** — all Apple work must be browser-based (App Store Connect on the web plus Codemagic cloud builds).
+- He values **honest hyperlocal behavior over engagement tricks.** When in doubt, show only what is real and local, and confirm scope with him first.
+- **Do not bring up app-store publishing** unless he raises it (§25).
+- Changes to DNS, certificates, billing, deleting data, and anything involving passwords or payment are **his clicks** — guide him to the exact button and let him press it.
 
 ---
 
-## 3. Architecture
+## 4. Hosting map — every service and account
 
-### Backend — `/app/backend` (modular FastAPI, all routes under `/api`)
+| Piece | Service and name | Plan / cost | Where to manage it |
+|---|---|---|---|
+| Website (the built React app) | **Netlify**, project `nice2meechu` (team "Steven Rice") | Free tier | app.netlify.com → Projects → nice2meechu |
+| API server (FastAPI) | **Render**, web service `nice2meechu-api` (region Virginia), managed by a Blueprint named `nice2meechu` | **Starter, about $7/month**, always on | dashboard.render.com → nice2meechu-api |
+| Database | **MongoDB Atlas**, cluster `Cluster0` (AWS N. Virginia, us-east-1), project "Project 0", database **`nice2meechu`** | Free tier (512 MB) | cloud.mongodb.com |
+| Intro video storage | **Google Cloud Storage**, bucket **`nicemeechu`**, Google Cloud project **`gen-lang-client-0271718241`** (display name "Nice2Meechu") | Pennies per month; billed to billing account **"B of A"** | console.cloud.google.com |
+| AI face/age check and chat translation | **OpenAI API**, model `gpt-4o-mini` | Prepaid credit (started with $5) | platform.openai.com → Billing / API keys |
+| Google sign-in | Google OAuth client `780373908792-5paopj52a9u3pf1dh47778d22kvvajfm.apps.googleusercontent.com` (same Google Cloud project as above) | Free | console.cloud.google.com → Google Auth Platform → Clients |
+| Apple sign-in | Apple Developer, Services ID `nice2meechu.app.web`, Team `J99N4XLB3D` | Apple Developer membership | developer.apple.com |
+| Domain and DNS | **Network Solutions**, domain `nice2meechu.com` | Auto-renews **2027-04-26** | networksolutions.com → My Account → Domains → nice2meechu.com → DNS |
+| HTTPS certificate | Let's Encrypt, issued and renewed automatically by Netlify | Free | Netlify → Domain management → HTTPS |
+| Source code | GitHub `localfiveguy/Nice2Meechu` | Free | github.com |
+
+### DNS records at Network Solutions (current, correct)
+| Type | Name | Points to | TTL |
+|---|---|---|---|
+| A | `@` | `75.2.60.5` (Netlify's load balancer) | 15 minutes |
+| CNAME | `www` | `nice2meechu.netlify.app` | 15 minutes |
+
+Nameservers stay at Network Solutions (`ns43.worldnic.com`, `ns44.worldnic.com`). Domain Lock is on.
+
+### GitHub app permissions
+- **Netlify** and **Render** GitHub apps can read the repository so they can build on every push.
+- The **Claude** GitHub app has access to this one repository so an assistant can read and push code.
+
+---
+
+## 5. How a change goes live
+
+1. A change is committed and pushed to the **`netlify-migration`** branch on GitHub.
+2. **Netlify** sees the push, runs `yarn install && yarn build` inside `frontend/`, and publishes the `build/` folder. Configuration lives in **`netlify.toml`** at the repo root. Typical build: 3–5 minutes.
+3. **Render** sees the same push and rebuilds the API from `backend/` (`pip install -r requirements.txt`, then `uvicorn server:app`). Configuration lives in **`render.yaml`** (a Render Blueprint). Typical build: 2–3 minutes. Render health-checks `GET /health` before switching traffic, so a broken build never replaces a working one.
+4. Nobody presses "Deploy". If a build fails, the previous version keeps running and Render/Netlify email localfiveguy@gmail.com.
+
+### One origin, by design
+- The browser only ever talks to **`nice2meechu.com`**. Netlify forwards every `/api/*` request to `https://nice2meechu-api.onrender.com/api/*` with a status-200 rewrite (`netlify.toml`).
+- That keeps the httpOnly `session_token` cookie first-party and keeps Google's redirect sign-in working (its return address is `window.location.origin + /api/auth/google-redirect`).
+- `REACT_APP_BACKEND_URL` is intentionally set to an **empty string**, so the frontend calls the relative path `/api`. That works on both nice2meechu.com and nice2meechu.netlify.app.
+- If the Render address ever changes, update the `[[redirects]]` block in `netlify.toml`.
+
+### Other `netlify.toml` rules
+- Every other path falls back to `/index.html` (single-page app), so deep links like `/privacy` work.
+- `/sw.js` is served `no-cache` so service-worker updates reach phones immediately.
+- `/static/*` is cached for a year (file names are content-hashed).
+
+### Branches
+- **`netlify-migration`** — live. Always work here.
+- `main` — an older snapshot of the code. Not deployed. Everything in it is already contained in `netlify-migration`. It can be retired or reset to match `netlify-migration` later.
+
+### Build stamp
+`GET /api/` returns `{"app": "Nice2Meechu", "build": "...", "auth": "google-direct"}`. The value is defined in `backend/auth.py`, and `backend/admin.py` carries its own copy for the feed diagnostic. **Bump both** on every meaningful change — it is the fastest way to answer "is my fix actually live?".
+
+---
+
+## 6. Repository layout
+
+```
+/                       repo root
+├── backend/            FastAPI app (Render builds from here)
+│   ├── server.py       entry point, CORS, router mounting, startup tasks
+│   ├── core.py         database client, constants, helpers, geocoder, storage
+│   ├── llm.py          OpenAI wrapper (text + vision)
+│   ├── auth.py  users.py  feed.py  messaging.py  media.py
+│   ├── demos.py  admin.py  push.py  transcode.py  models.py
+│   ├── videos/         79 demo mp4 files + demo_meta.json
+│   ├── tests/          pytest suite (121 tests)
+│   ├── scripts/        one-off maintenance scripts
+│   └── requirements.txt
+├── frontend/           React app (Netlify builds from here)
+│   ├── src/            App.js, screens/, components/, lib/, legal/, constants/
+│   ├── public/         index.html, manifest.json, sw.js, icons, store-assets/, .well-known/
+│   ├── craco.config.js
+│   └── package.json    (no lockfile — dependencies resolve fresh on each build)
+├── android-build/      Android TWA project (Google Play)
+├── ios-build/          iOS wrapper project (App Store)
+├── codemagic.yaml      iOS cloud build pipeline
+├── share_cards/        generated share-card images
+├── netlify.toml        website build + /api proxy
+├── render.yaml         API service definition
+└── handoff.md          this document
+```
+
+Other root files (`README.md`, `auth_testing.md`, `design_guidelines.json`, `EMAIL_ROUTING_SETUP.md`, `RESUME_DEMOS.md`, `memory/`, `test_reports/`, `test_result.md`) are older working notes and test artifacts. They are not used at runtime.
+
+---
+
+## 7. Backend architecture
+
+All routes live under `/api` except the root-level `GET /health`.
+
 | File | Responsibility |
 |---|---|
-| `server.py` | Entrypoint: `/health`, CORS (explicit allowlist), router mounting, static mounts, **startup migrations**: unique user indexes, geocode-cache flush (every boot), one-shot coord repair (`repair_user_coords_v1`), one-shot **webm→mp4 URL repoint** (`transcode_webm_videos_v1`, runs as a background task), legacy demo retirement, inactive-cleanup scheduler |
-| `core.py` | db client, env constants, `SESSION_TTL` (7 d), **`SAME_TOWN_KM = 8`**, `generate_codename()`, `haversine_km()`, `_geocode_city(label, use_cache=True)` (Photon + `db.city_geo` cache; **pass use_cache=False for anything persisted to user records**), GCS lazy init, logger |
-| `models.py` | Pydantic request models (text fields length-capped at 2000). `NearbyRadiusReq` is legacy/unused (endpoint removed) |
-| `auth.py` | Google GIS verify, **Sign in with Apple** (JWKS), legacy Emergent exchange, sessions, `_insert_user_or_get_existing` race guard, **build stamp** |
-| `users.py` | Onboarding, location change (geocoder-validated), GDPR delete/export, report/block, **GCS video upload with webm→mp4 transcode**, `/users/video` URL-prefix validation |
-| `feed.py` | `/cities/popular`, `/feed` (home-town locals + `_same_town_candidates` + browse-center healing), `/swipe` (like/pass/unlike, match creation), `/matches`, `/matches/unread` |
-| `messaging.py` | Messages, `/translate` (LLM, auth required) |
-| `media.py` | Face/age check (LLM vision), OG share cards (bounded cache 500), `/handoff.md` |
-| `demos.py` | 78 demo personas: seeding + alignment + **location healing** + **ghost purge** (runs on every feed request, idempotent) |
-| `admin.py` | `/admin/funnel`, `/admin/inactive-cleanup`, **`/admin/diagnose-feed`** (dumps viewer location state, geocache entry, browse center, raw `locals` + `same_town` candidates) |
-| `push.py` | VAPID web push subscribe/unsubscribe/status/public-key + `notify_user()` for match/message pushes. The "someone new joined nearby" broadcast was REMOVED (owner request) |
-| `transcode.py` | `transcode_to_mp4(src, dst)` — H.264/AAC mp4 (faststart, crf 26) via the static ffmpeg binary bundled in the pip package **imageio-ffmpeg** (in requirements.txt → present in the production image; no system ffmpeg needed) |
+| `server.py` | Entry point. Loads `.env` if present (local development only), sets up CORS with an explicit allowlist (`CORS_ORIGINS`), mounts every router under `/api`, mounts static folders (`/api/videos`, `/api/user-videos`, `/api/share-cards`), defines `GET /health`, and runs the startup tasks in §8. |
+| `core.py` | Database client (`MONGO_URL`, `DB_NAME`, optional `MONGO_USERNAME` + `MONGO_PASSWORD`), constants (`SESSION_TTL` = **30 days**, **`SAME_TOWN_KM = 8`**, language names), `generate_unique_codename()` (1,600 combinations, uniqueness enforced at signup), `haversine_km()`, `_geocode_city(label, use_cache=True)` (Photon geocoder plus `db.city_geo` cache — **always pass `use_cache=False` for anything written onto a user record**), lazy Google Cloud Storage client, logger. |
+| `llm.py` | Thin wrapper over the official OpenAI SDK: `llm_enabled()`, `chat_text()`, `chat_vision()`. Reads `OPENAI_API_KEY` and `LLM_MODEL` (default `gpt-4o-mini`). Callers fail open when the key is missing. |
+| `models.py` | Pydantic request models; free-text fields are capped at 2,000 characters. `NearbyRadiusReq` is a leftover and unused. |
+| `auth.py` | Google sign-in (popup and redirect), Sign in with Apple (JWKS verification), Apple-to-Google account linking, session minting, `current_user` dependency, duplicate-account race guard (`_insert_user_or_get_existing`), **build stamp**. Also contains a legacy `POST /auth/session` exchange that no current client uses; it is safe to remove. |
+| `users.py` | Onboarding, community-rules signature, location change (geocoder-validated), city position memory, welcome-tour flag, account deletion and data export, report and block, intro upload (with webm→mp4 transcode) to Google Cloud Storage, video URL validation. |
+| `feed.py` | `/cities/popular`, `/feed` (home-town locals plus same-town candidates, browse-center healing, "likes you" flag), `/swipe` (like, pass, unlike, block; match creation), `/matches`, `/matches/unread`. |
+| `messaging.py` | Chat messages (with push to the recipient) and `/translate`. |
+| `media.py` | `/video/face-check` (AI vision safety and age gate), `/og/{handle}` share-card PNGs (Pillow, bounded cache of 500), admin-only `/handoff.md`. |
+| `demos.py` | 78 demo personas: seeding, alignment, location healing, ghost purge; `/demos/sample`, `/samples`. |
+| `admin.py` | Admin-only tools (§18), plus the daily inactive-video cleanup loop. |
+| `push.py` | Web push (VAPID): subscribe, unsubscribe, status, public key, and `notify_user()` used by matches and messages. |
+| `transcode.py` | `transcode_to_mp4(src, dst)` — H.264/AAC mp4 (faststart, CRF 26) using the static ffmpeg binary bundled in the `imageio-ffmpeg` pip package, so no system ffmpeg is needed on Render. |
 
-### Frontend — `/app/frontend/src`
-- `App.js` — routing, session bootstrap, push deep links (`?chat=<match_id>`).
-  Routing gate `routeToNext()`: needs `handle + first_name + city + age` →
-  else Onboarding; then `agreed_to_rules_at` → else Community Rules; then
-  `video_url` → else VideoPick; else Feed.
-- `lib/` — `api.js` (axios + Bearer from localStorage), `push.js`, `constants.js`,
-  `cityFormat.js`, `ua.js`
-- `screens/` — Splash, SignInScreen (Apple-first on iOS), AuthCallback, Onboarding,
-  CommunityRulesScreen, VideoPick, FeedScreen, ChangeLocationScreen (Leaflet),
-  MatchesScreen, ChatScreen, ProfileScreen
-- `components/` — FeedCard (single mp4 `<source>`, query-string-safe type check),
-  AppleSignInButton, CityAutocomplete, BottomNav, MatchCelebration, ShareCard,
-  AvatarThumb, VideoEl, EmptyFeedState, NotifyMeButton (Profile row only),
-  IOSInstallSheet, SignaturePad, `ui/` (shadcn)
-- `public/sw.js` — push-only service worker (NO fetch/caching — deliberate)
-- `legal/LegalPages.jsx` — `/privacy`, terms, community rules
+### Key backend dependencies
+fastapi, uvicorn, motor/pymongo, pydantic, google-auth (Google token verification), PyJWT with `PyJWKClient` (Apple), httpx (Photon geocoder), google-cloud-storage, imageio-ffmpeg, pywebpush/py-vapid, openai, Pillow, python-multipart.
 
-### Key dependencies
-Backend: fastapi, motor, pywebpush/py-vapid, PyJWT (Apple), google-auth (Google),
-httpx (Photon geocoder), google-cloud-storage, **imageio-ffmpeg** (bundled ffmpeg),
-openai (LLM, via backend/llm.py), Pillow.
-Frontend: react-router-dom, framer-motion, leaflet, axios, sonner, lucide-react, radix/shadcn.
+### Render service settings (from `render.yaml`)
+- Runtime Python, `rootDir: backend`, Python 3.11.9.
+- Build: `pip install --upgrade pip && pip install -r requirements.txt`.
+- Start: `uvicorn server:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"`.
+- Health check path: `/health`.
+- Plan: `starter` (always on — the free plan would sleep after 15 idle minutes and make the first visitor wait up to a minute).
 
 ---
 
-## 4. Authentication (three ways in, one session system)
+## 8. Startup tasks and one-shot migrations
 
+Run by `server.py` every time the API boots:
+- Create unique partial indexes on `users.email`, `users.google_sub`, `users.apple_sub`, and other collection indexes. (Each index is created idempotently, so boots are safe.)
+- **Flush the geocode cache** (`db.city_geo`) — deliberately, on every boot (§24, rule 1).
+- Retire legacy demo records.
+- Start the **inactive-video cleanup loop** (§18): once a day, users who have not been active for 90 days have their intro video deleted from storage and must re-record when they return. Their account is kept. Controlled by `INACTIVE_CLEANUP_ENABLED` (default true), `INACTIVE_CLEANUP_DAYS` (default 90), `INACTIVE_CLEANUP_INTERVAL_SECONDS` (default one day).
+
+One-shot migrations, each recorded in `db.migrations` so they run only once:
+| Marker id | What it did |
+|---|---|
+| `repair_user_coords_v1` | Repaired user coordinates poisoned by a bad geocode cache. |
+| `transcode_webm_videos_v1` | Pointed every real `.webm` intro at an mp4 copy in storage (transcoding if needed). Runs as a background task. |
+| `move_signatures_v1` | Moved community-rules signature images off user records into `db.signatures` (user records shrank from megabytes to under 1 KB). |
+| `unique_codenames_v1` | Renamed duplicate codenames; demos keep canonical names and the oldest real account keeps a contested name. |
+| `welcome_tour_backfill_v1` | Marked existing users as having seen the welcome tour. |
+
+To re-run one: delete its marker document from `db.migrations` and restart the API (§22). All are idempotent.
+
+---
+
+## 9. Frontend architecture and routing
+
+- **`App.js`** — session bootstrap, routing, and push deep links (`/?chat=<match_id>`). Routing gate `routeToNext()`:
+  1. Missing `handle`, `first_name`, `city`, or `age` → **Onboarding**.
+  2. Missing `agreed_to_rules_at` → **Community Rules**.
+  3. Missing `video_url` → **VideoPick** (record intro).
+  4. Otherwise → **Feed**.
+- **`lib/`** — `api.js` (axios; base URL `${REACT_APP_BACKEND_URL}/api`; sends `Authorization: Bearer <n2m_token>` from localStorage), `push.js`, `constants.js`, `cityFormat.js`, `ua.js` (device detection).
+- **`screens/`** — `Splash`, `SignInScreen` (Apple first on iPhone/iPad), `AuthCallback`, `LinkGoogleScreen`, `Onboarding`, `CommunityRulesScreen`, `VideoPick`, `FeedScreen`, `ChangeLocationScreen` (Leaflet map), `MatchesScreen`, `ChatScreen`, `ProfileScreen`.
+- **`components/`** — `FeedCard` (one mp4 `<source>`, query-string-safe type check), `AppleSignInButton`, `CityAutocomplete`, `BottomNav`, `MatchCelebration`, `ShareCard`, `AvatarThumb`, `VideoEl`, `EmptyFeedState`, `NotifyMeButton`, `IOSInstallSheet`, `SignaturePad`, `WelcomeTour`, `DemoPeekWidget`, and `ui/` (shadcn components).
+- **`legal/LegalPages.jsx`** — Privacy Policy, Terms, and the safety contact link (`SAFETY_CONTACT_URL`, a Google Form that emails the owner).
+- **`public/sw.js`** — push-only service worker: handles push, notification clicks, and resubscribe. **It does no caching on purpose.**
+- **`public/index.html`** — contains only first-party code. Google Analytics 4 loads only after the visitor accepts the cookie banner.
+
+### Build-time values (all public, set in `netlify.toml`)
+`REACT_APP_BACKEND_URL` (empty), `REACT_APP_GOOGLE_CLIENT_ID`, `REACT_APP_APPLE_SERVICE_ID`. An optional `REACT_APP_GA4_MEASUREMENT_ID` enables analytics.
+
+### Frontend dependencies
+react-router-dom, framer-motion, leaflet, axios, sonner (toasts), lucide-react (icons), Radix/shadcn UI, Tailwind CSS.
+
+---
+
+## 10. Authentication and sessions
+
+### Ways to sign in
 1. **Google (primary)** — Google Identity Services.
-   - Desktop/Android: popup → `POST /api/auth/google` `{credential}`
-   - iOS Safari: redirect → `POST /api/auth/google-redirect` (form) →
-     `GET /auth-callback#token=...` (fragment; ITP drops cookies)
-   - **iOS UX rule**: on iPhone/iPad the sign-in screen shows "Continue with
-     Apple" FIRST with an explanatory hint; Google below with a Safari hint.
-     Reason: a website can only see Google accounts with an active *Safari*
-     google.com session — it can NEVER read accounts from the native
-     Google/Gmail apps (iOS sandboxing). Owner verified: signing into Google on
-     any Safari site first makes the Google button work.
-2. **Apple (App Store requirement)** — `AppleSignInButton.js`: lazy-loads Apple JS
-   SDK, popup mode, `redirectURI = origin + "/"` → `POST /api/auth/apple`
-   `{id_token, name?, ref?}` — PyJWT `PyJWKClient` against
-   `https://appleid.apple.com/auth/keys`, aud = `APPLE_SERVICE_ID`
-   (`nice2meechu.app.web`), iss = appleid.apple.com.
-   - Link order: `apple_sub` → verified email match → create new.
-   - **Email linking requires the `email_verified` claim** (bool or "true").
-   - **"Hide My Email" handling (v1.6.7)**: relay emails used to create silent
-     duplicates. Now `/auth/apple` returns `created` + `private_relay` + a
-     30-min one-time `link_token` for brand-new relay accounts; the frontend
-     routes to `LinkGoogleScreen` (`/?link_google=1`) offering "link your
-     existing Google account". Desktop popup → `POST /auth/link-google`
-     (GIS credential verified, merge, new session). iOS redirect →
-     `/api/auth/google-redirect?link=<token>` merges during the redirect.
-     Merge = move `apple_sub` onto the Google account (+`apple_relay_email`),
-     delete the empty relay duplicate + its sessions. SAFETY GUARD
-     (`_relay_mergeable`): only accounts with apple_sub, NO google_sub, NO
-     video, and a @privaterelay.appleid.com email can ever be merged — data
-     loss is impossible. Skipping continues as a new user. The static UI hint
-     under the Apple button still nudges "Share My Email".
-   - Button renders only when `REACT_APP_APPLE_SERVICE_ID` is set.
-   - Owner-confirmed working on his iPhone.
-3. **Legacy** — `POST /api/auth/session` (Emergent exchange), kept for old sessions.
+   - Desktop and Android: popup → `POST /api/auth/google` with `{credential}`.
+   - iPhone Safari: full redirect → `POST /api/auth/google-redirect` (form post) → `GET /auth-callback#token=…` (the token rides in the URL fragment because Safari's tracking prevention drops cookies during redirects).
+   - **iPhone UX rule:** the sign-in screen shows "Continue with Apple" first, with a hint, and Google below with a Safari hint. A website can only see Google accounts that are signed in **inside Safari**; it can never read accounts from the native Gmail/Google apps.
+   - Allowed origins on the Google OAuth client: `https://nice2meechu.com`, `https://www.nice2meechu.com`, `https://nice2meechu.netlify.app`. Allowed redirect URIs: each of those plus `/api/auth/google-redirect`. Any new domain must be added there, or sign-in shows "Error 400: origin_mismatch".
+2. **Apple** (required for the App Store) — `AppleSignInButton.js` lazy-loads Apple's JS SDK in popup mode with `redirectURI = origin + "/"` → `POST /api/auth/apple` with `{id_token, name?, ref?}`. The server verifies with `PyJWKClient` against `https://appleid.apple.com/auth/keys`, audience `APPLE_SERVICE_ID` (`nice2meechu.app.web`), issuer appleid.apple.com.
+   - Account lookup order: `apple_sub` → verified email → create new.
+   - Email linking requires the `email_verified` claim.
+   - **"Hide My Email" linking:** a brand-new Apple account with a private-relay email gets a 30-minute one-time `link_token` and is sent to `LinkGoogleScreen` (`/?link_google=1`) to merge into an existing Google account. Popup: `POST /api/auth/link-google`. iPhone redirect: `/api/auth/google-redirect?link=<token>`. The guard `_relay_mergeable` allows a merge only for an account with `apple_sub`, **no** `google_sub`, **no** video, and a `@privaterelay.appleid.com` email, so no data can be lost.
+   - The Apple button renders only when `REACT_APP_APPLE_SERVICE_ID` is set.
 
-**Sessions**: `secrets.token_urlsafe` in `user_sessions`, TTL 7 days. Sent as
-httpOnly cookie (SameSite=None, Secure) AND in the JSON body; frontend stores
-`n2m_token` in localStorage and sends `Authorization: Bearer`. **The localStorage
-fallback is a deliberate iOS Safari workaround — do NOT remove it** (iPhone login
-breaks without it; security review accepted the risk).
+### Sessions
+- Tokens are `secrets.token_urlsafe` values stored in `user_sessions` with `expires_at` = now + **30 days**. Each device gets its own token; logout removes only that device's token.
+- The token is sent **both** as an httpOnly cookie (`session_token`, SameSite=None, Secure) **and** in the JSON response. The frontend stores it as `n2m_token` in localStorage and sends `Authorization: Bearer`.
+- **The localStorage fallback is a deliberate iPhone Safari workaround — do not remove it.** iPhone sign-in breaks without it. The risk was reviewed and accepted.
 
-**Duplicate-account protection**: unique partial indexes on `email`, `google_sub`,
-`apple_sub` (`{$type:"string"}` filters) + `_insert_user_or_get_existing` catches
-`DuplicateKeyError` from concurrent sign-ins (race-tested).
-
-**Apple Developer config (user's account)**
-- App ID `com.nice2meechu.app` (explicit, SIWA capability ✔)
-- Services ID `nice2meechu.app.web` — domains: nice2meechu.com + preview domain;
-  Return URLs: both origins + `/`. No .p8 needed for the web popup flow.
+### Duplicate-account protection
+Unique partial indexes on `email`, `google_sub`, and `apple_sub` (filtered to string values) plus `_insert_user_or_get_existing`, which catches `DuplicateKeyError` from two simultaneous sign-ins.
 
 ---
 
-## 5. Data Model (MongoDB)
+## 11. Data model (MongoDB, database `nice2meechu`)
 
-- `users` — `{id (uuid), email, name, first_name, age, picture, google_sub?,
-  apple_sub?, codename, handle, avatar_emoji, vibes[], language,
-  home_city, home_lat, home_lng, city, city_lat, city_lng, lat, lng,
-  video_url, transcript, source_lang, is_demo?, demo_age?,
-  referrer_handle, referrer_id, referral_count, notify_new_nearby (bool —
-  legacy field name; now gates match/message pushes), nearby_radius_km
-  (legacy, ignored by code), city_positions{}, agreed_to_rules_at,
-  last_matches_viewed_at, created_at, last_active_at}`
-  - `home_*` = residence (where the video appears); `city*` = current browsing location.
-  - `video_url` is always an H.264 mp4 after v1.6.5 (GCS public URL + `?v=` cache-bust).
-- `user_sessions` — `{user_id, session_token, expires_at}`
-- `swipes` — `{id, user_id, target_user_id, action: like|pass|block, at}`
-  (upsert per pair; "unlike" deletes the row)
-- `matches` — `{id, user_ids: [sorted a,b], at}`
-- `messages` — `{id, match_id, from_user_id, text, at, ...}`
-- `reports` / `blocks` — moderation
-- `push_subscriptions` — `{endpoint (unique), keys{p256dh,auth}, user_id}`
-- `city_geo` — geocode cache `{key, lat, lng}` — **flushed on every startup** (see §15.1 R5)
-- `age_checks` — GDPR/DSA audit trail of the LLM age gate
-- `migrations` — one-shot markers: `repair_user_coords_v1`, `transcode_webm_videos_v1`
-- ObjectId never leaves the API: `{"_id": 0}` projections + uuid `id`s everywhere.
+MongoDB `_id` values never leave the API: every query projects `{"_id": 0}` and every document has a UUID `id`.
+
+- **`users`** — `id`, `email`, `name`, `first_name`, `age`, `picture`, `google_sub?`, `apple_sub?`, `apple_relay_email?`, `codename`, `handle`, `avatar_emoji`, `vibes[]`, `language`, **`home_city`, `home_lat`, `home_lng`** (where the person lives — decides where their video appears), **`city`, `city_lat`, `city_lng`** (the city they are currently browsing), `lat`, `lng`, `city_positions{}` (remembered feed position per city), `video_url`, `transcript`, `source_lang`, `is_demo?`, `demo_age?`, `referrer_handle`, `referrer_id`, `referral_count`, `notify_new_nearby` (legacy name; now the on/off switch for match and message pushes), `nearby_radius_km` (legacy, ignored), `agreed_to_rules_at`, `welcome_tour_done`, `last_matches_viewed_at`, `inactivity_cleaned_at?`, `created_at`, `last_active_at`.
+  - The Profile screen shows and edits **`home_city`** only. The browsing `city` is never displayed on a profile.
+  - `video_url` is a public Google Cloud Storage URL with a `?v=` cache-buster, always an mp4 for real users.
+  - `created_at` is a datetime in older documents and an ISO string in newer ones — sort with `str()`.
+- **`user_sessions`** — `user_id`, `session_token`, `expires_at`.
+- **`swipes`** — `id`, `user_id`, `target_user_id`, `action` (`like` | `pass` | `block`), `at`. One row per pair (upsert); "unlike" deletes the row.
+- **`matches`** — `id`, `user_ids` (sorted pair), `at`.
+- **`messages`** — `id`, `match_id`, `from_user_id`, `text`, `at`, plus translation metadata.
+- **`reports`**, **`blocks`** — moderation records.
+- **`signatures`** — community-rules signature images (moved off `users`).
+- **`push_subscriptions`** — `endpoint` (unique), `keys{p256dh, auth}`, `user_id`.
+- **`city_geo`** — geocode cache `{key, lat, lng}`. Flushed on every boot.
+- **`age_checks`** — audit trail of every AI age-gate decision (kept for GDPR/DSA accountability).
+- **`migrations`** — one-shot markers (§8).
 
 ---
 
-## 6. API Reference (all `/api` except `/health`)
+## 12. API reference
 
-**Meta**: `GET /` (app + **build stamp** + auth mode) · `GET /health` (k8s probe, root level)
+Everything is under `/api` except `/health`. "Auth" means a valid session (cookie or Bearer). "Admin" means the signed-in email is listed in `ADMIN_EMAILS`.
 
-**Auth**: `POST /auth/google` · `POST /auth/google-redirect` · `POST /auth/apple` ·
-`POST /auth/session` · `GET /auth/me` · `POST /auth/logout`
+**Meta**
+- `GET /api/` — app name, build stamp, auth mode.
+- `GET /health` — liveness probe used by Render. **Never remove it.**
 
-**Users**: `POST /users/onboarding` (first_name, city, age, vibes, language,
-avatar_emoji; sets home) · `POST /users/community-rules` · `POST /users/location`
-(geocoder-validated; optional `set_home` flag) · `GET /users/me` (returns
-`{"user": ...}`) · `POST /users/me/city-position` · `DELETE /users/me` (GDPR) ·
-`GET /users/me/export` · `POST /users/report` · `POST /users/block` ·
-`POST /users/video/upload` (multipart → **webm transcoded to mp4** → GCS) ·
-`POST /users/video` (metadata; URL must start `https://storage.googleapis.com/`
-or `/api/user-videos/`)
-- REMOVED in v1.6.6: `POST /users/nearby-radius` (404 now; regression-tested).
+**Auth**
+- `POST /auth/google` — Google popup credential → session.
+- `POST /auth/google-redirect` — Google redirect form post → `/auth-callback#token=…` (optional `?link=<token>` for Apple linking).
+- `POST /auth/apple` — Apple ID token → session (may return `link_token`).
+- `POST /auth/link-google` — merge a fresh Apple relay account into a Google account.
+- `GET /auth/me` — current user.
+- `POST /auth/logout` — ends this device's session.
+- `POST /auth/session` — legacy, unused.
 
-**Feed/Match**: `GET /cities/popular` · `GET /feed` → `{feed[], city_stats
-{total, remaining}, saved_position, referral_count}` (NO `radius_suggestion`,
-items have NO `near_km` — both removed) · `POST /swipe` (like|pass|unlike|block;
-mutual like → match + push) · `GET /matches` · `GET /matches/unread`
+**Users** (auth)
+- `POST /users/onboarding` — first name, home city, age, vibes, language, avatar; sets home coordinates.
+- `POST /users/community-rules` — records agreement plus signature.
+- `POST /users/location` — change browsing city (geocoder-validated); optional `set_home`.
+- `POST /users/me/city-position` — remember feed position for a city.
+- `POST /users/welcome-tour-done`.
+- `GET /users/me` — returns `{"user": …}`.
+- `GET /users/me/export` — download my data (GDPR).
+- `DELETE /users/me` — delete my account and all related data.
+- `POST /users/report`, `POST /users/block`.
+- `POST /users/video/upload` — multipart intro upload → webm transcoded to mp4 → Google Cloud Storage.
+- `POST /users/video` — set video metadata; the URL must start with `https://storage.googleapis.com/` or `/api/user-videos/`.
 
-**Messaging**: `GET /messages/{match_id}` · `POST /messages` (push to recipient) ·
-`POST /translate` (auth, ≤2000 chars, OpenAI gpt-4o-mini)
+**Feed and matching** (auth)
+- `GET /cities/popular`.
+- `GET /feed` → `{feed[], city_stats{total, remaining}, saved_position, referral_count}`. Items include `likes_you`. There is no radius data.
+- `POST /swipe` — `like` | `pass` | `unlike` | `block`. A mutual like creates a match and sends a push.
+- `GET /matches`, `GET /matches/unread`.
 
-**Media**: `POST /video/face-check` (LLM face + age gate) · `GET /og/{handle}`
-(share-card PNG) · `GET /handoff.md`
+**Messaging** (auth)
+- `GET /messages/{match_id}`, `POST /messages` (pushes to the recipient).
+- `POST /translate` — up to 2,000 characters, OpenAI.
 
-**Demos**: `GET /demos/sample` · `GET /samples` (vibes + languages)
+**Media**
+- `POST /video/face-check` (auth) — AI face, content, and age gate.
+- `GET /og/{handle}` — share-card PNG.
+- `GET /handoff.md` (admin) — this document.
 
-**Admin** (email ∈ ADMIN_EMAILS): `GET /admin/funnel` · `POST /admin/inactive-cleanup` ·
-`GET /admin/diagnose-feed` ← open signed-in in a browser to dump feed internals
-(`locals`, `same_town`, browse center, geocache entry, build stamp)
+**Demos**
+- `GET /demos/sample`, `GET /samples` (vibes and languages).
 
-**Push**: `GET /push/public-key` · `GET /push/status` · `POST /push/subscribe` ·
-`POST /push/unsubscribe`
+**Push**
+- `GET /push/public-key`, `GET /push/status`, `POST /push/subscribe`, `POST /push/unsubscribe`.
 
-**Static**: `/api/videos` (79 demo mp4s) · `/api/user-videos` (legacy) ·
-`/api/share-cards`.
+**Admin** — see §18.
 
----
+**Static**
+- `/api/videos/*` — 79 demo mp4s bundled with the backend.
+- `/api/user-videos/*` — legacy local uploads folder.
+- `/api/share-cards/*` — generated share images.
 
-## 7. Feed & Location System (hardest-won logic — read §15 first)
-
-**Current model (v1.6.6, owner-directed): HOME TOWN ONLY.**
-
-1. Feed candidates for a browsed city =
-   - **label locals**: `home_city` prefix-matches the browsing city (case-insensitive), PLUS
-   - **same-town coordinate matches** (`_same_town_candidates`): anyone whose
-     HOME coords are within **`SAME_TOWN_KM = 8` km** of the browse center.
-   Both merged and sorted chronologically (oldest first — "first video made here").
-2. **Why 8 km**: Photon-verified — Marlton↔Evesham Township centers are 6.5 km
-   apart (SAME physical town, two names; the map reverse-geocode returns either),
-   while the nearest genuinely different towns (Medford, Cherry Hill) are 9.4+ km.
-   8 km merges naming variants without leaking across towns.
-3. **REMOVED (do not re-add without explicit owner request)**: the whole
-   10/25/50 km nearby-radius system — `_nearby_candidates`, `_radius_suggestion`,
-   `/users/nearby-radius`, radius picker UI, widen-radius prompts/banners,
-   "FROM <TOWN> · N KM" chips. The owner's words: "remove the near cities from
-   the whole thing" — he wants a video visible ONLY in its own town.
-4. **Browse center** (`_browse_center`): anchor = median of label-locals' home
-   coords, else geocode of the browsing-city label; stored `city_lat/lng` used
-   only if within 100 km of the anchor, otherwise **healed**.
-5. **Heal writes are cache-free**: healed `city_lat/lng` (and `home_lat/lng` when
-   the user browses their own home city) are persisted ONLY from a fresh Photon
-   geocode (`use_cache=False`) — never from `db.city_geo`. Cached poison once
-   re-infected user records (§15.1 R5).
-6. **Geocoder guardrail**: `POST /users/location` validates every city change via
-   Photon (`photon.komoot.io`, httpx); if supplied coords are >100 km from where
-   the label geocodes, the label wins.
-7. `city_stats.total` = number of feed items (honest count; empty-state copy
-   distinguishes "first here" from "seen everyone").
-8. Self-exclusion: you never see your own card. "I see my own video" = the person
-   is signed into a different/duplicate account (check `apple_sub`/emails).
+FastAPI's automatic docs at `/docs` and `/redoc` are reachable on the Render address.
 
 ---
 
-## 8. Demo Persona System
+## 13. Feed and location rules (the hardest-won logic — read §24 first)
 
-- 78 personas in `/app/backend/videos/demo_meta.json` — fixed `name, city, lat,
-  lng, transcript, avatar_emoji, file` (mp4s in `/app/backend/videos`).
-- Metro-only distribution: Tokyo 12, São Paulo 11, Mumbai 10, NY 9, Lagos 8, LA 7,
-  Paris 6, London 5, Toronto 4, Madrid 3, Sydney 2, Berlin 1. Small towns get ZERO.
-- `seed_demo_users()` on **every feed request** (cheap, idempotent):
-  1. **Ghost purge**: delete any user whose `video_url` matches
-     `/videos/demo_\d+\.(mp4|webm)(\?|$)` with a non-`demo-NN` id (real uploads
-     live in GCS, so this fingerprint is safe).
-  2. Stale cleanup: `is_demo:True` with unknown id → delete.
-  3. Alignment **by id** (not flag): codename/handle/name/transcript + re-set
-     `is_demo:True` + **heal location** when `home_city` ≠ canonical metro.
-- Demo cards: "✨ AI DEMO" badge + "HEAR ME SAY MY NAME" chip; never matchable
-  (70% auto-match on like is demo-only and gated behind a real reverse-like check).
-- **Tests must never use demo-NN users as mutable subjects** — healing resets them
-  mid-test (see §14).
+**Current model: HOME TOWN ONLY.**
+
+1. The feed for a browsed city is the union of:
+   - **Label locals:** users whose `home_city` matches the browsed city label (case-insensitive prefix match), and
+   - **Same-town candidates** (`_same_town_candidates`): users whose **home-town label** geocodes to a center within **`SAME_TOWN_KM` = 8 km** of the browse center. It matches by the town label's center, **not** by the person's exact house location.
+   Results are sorted oldest first ("the first video made here").
+2. **Why 8 km:** Marlton and Evesham Township centers are 6.5 km apart — the same physical town under two names, and the map's reverse geocode returns either. The nearest genuinely different towns (Medford, Cherry Hill at 9.4–9.5 km) stay out.
+3. **Removed on purpose — do not re-add without the owner's explicit request:** the 10/25/50 km "nearby" system (`_nearby_candidates`, `_radius_suggestion`, `/users/nearby-radius`, the radius picker, widen-radius prompts, and "FROM <TOWN> · N KM" chips). The owner's words: he wants a video visible **only in its own town.**
+4. **Browse center** (`_browse_center`): the anchor is the median of the label locals' home coordinates, otherwise a fresh geocode of the browsed label. A stored `city_lat/lng` is trusted only if it is within 100 km of the anchor; otherwise it is healed.
+5. **Healing writes never use the cache.** Healed coordinates are written only from a fresh Photon geocode (`use_cache=False`), never from `db.city_geo` (§24).
+6. **Geocoder guardrail:** `POST /users/location` validates every change through Photon (`photon.komoot.io`). If supplied coordinates are more than 100 km from where the label geocodes, the label wins.
+7. `city_stats.total` is the honest number of feed items. The empty state distinguishes "you're the first here" from "you've seen everyone".
+8. You never see your own card. If someone says "I see my own video", they are signed into a second (duplicate) account — check `apple_sub` and emails with the admin tools.
 
 ---
 
-## 9. Media / Video Pipeline
+## 14. Demo persona system
 
-- Recording: `VideoPick.js` — MediaRecorder with `pickRecorderMime()` probing
-  (webm → mp4 → default; iOS Safari records mp4, Chrome/Android record webm).
-  The camera box has `shrink-0` + `minHeight: 360` — **load-bearing**: flex-column
-  pages crush aspect-ratio boxes to zero on small iPhones.
-- Upload: `POST /users/video/upload` multipart → size-capped spool (25 MB) →
-  **if webm: transcode to H.264/AAC mp4** (`transcode.py`, imageio-ffmpeg static
-  binary; fallback = store webm if the encode fails) → GCS
-  `gs://nicemeechu/user_videos/<uid>.mp4` (publicRead per-object ACL,
-  `cache_control` 1 y) → returns public URL + `?v=` cache-bust. The
-  other-extension sibling is deleted so re-records never serve stale.
-- **One-shot migration** `transcode_webm_videos_v1` (server.py, background task on
-  startup): repoints every non-demo `.webm` `video_url` to an mp4 sibling in GCS
-  (transcodes if the sibling is missing, reuses if present). Webm originals are
-  KEPT (the other environment's un-migrated URLs must not 404). Ran in both
-  environments; all production webm blobs have mp4 siblings.
-- Face/age check: `POST /video/face-check` — OpenAI `gpt-4o-mini` vision (via `backend/llm.py`, key `OPENAI_API_KEY`) confirms one real face,
-  content safety, and an age-assurance gate (hard block <16; block 16–17 claiming
-  adult). Fail-open when the LLM key is missing. Audit trail in `db.age_checks`.
-- Share cards: `GET /og/{handle}` renders branded PNGs with PIL (LiberationSans).
-- `FeedCard.js` renders ONE `<video><source>` with a query-string-safe extension
-  check (the old dual-source webm probe was removed — it also broke the `type=`
-  attribute on `?v=` URLs).
+- 78 personas defined in `backend/videos/demo_meta.json` (name, city, lat, lng, transcript, avatar emoji, file), with mp4s in `backend/videos/`.
+- Big-city-only distribution: Tokyo 12, São Paulo 11, Mumbai 10, New York 9, Lagos 8, Los Angeles 7, Paris 6, London 5, Toronto 4, Madrid 3, Sydney 2, Berlin 1. **Small towns get none.**
+- `seed_demo_users()` runs on **every feed request** (cheap and idempotent):
+  1. **Ghost purge** — deletes any user whose `video_url` matches `/videos/demo_NN.(mp4|webm)` but whose id is not `demo-NN`. Real uploads live in Google Cloud Storage, so this fingerprint is safe.
+  2. Stale cleanup — `is_demo: true` records with unknown ids are deleted.
+  3. Alignment by id — codename, handle, name, transcript, the `is_demo` flag, and home location are reset to canonical values.
+- Demo cards show the "✨ AI DEMO" badge and a "HEAR ME SAY MY NAME" chip. They are never matchable; a demo auto-like is gated behind a real reverse-like check.
+- **Never use `demo-NN` users as mutable subjects in tests** — healing resets them mid-test.
+- `backend/scripts/generate_demo_videos.py` generates demo videos.
 
 ---
 
-## 10. Push Notifications (VAPID Web Push)
+## 15. Video pipeline and AI safety checks
 
-- Keys in Render env vars (`VAPID_PUBLIC_KEY` in `render.yaml`, `VAPID_PRIVATE_KEY` secret). **A new key pair was generated for the 2026-11 move** — there were zero push subscriptions at the time, so nobody lost notifications. `push.py` via pywebpush; subs in `db.push_subscriptions`
-  (unique endpoint index); opt-in flag `users.notify_new_nearby` (LEGACY NAME —
-  it now gates match & message pushes only).
-- **Events (current)**: new match ("💌 It's a match…", tag `match-<id>`) and new
-  message ("💬 New message from…", tag `chat-<match_id>`), both via
-  `notify_user()`, both deep-linking `/?chat=<match_id>`.
-- **REMOVED (owner request)**: the "👋 Someone new just joined near <City>"
-  broadcast and its first-video trigger. Do not re-add unprompted.
-- UI: single opt-in surface — Profile row toggle (`notify-me-toggle`), copy
-  "Notify me: matches & messages". The empty-feed "Notify me" pill was removed.
-- `sw.js` handles push + notificationclick + resubscribe; NO fetch/caching.
-- iOS web push only works for Home-Screen PWAs (16.4+). The iOS native wrapper
-  has push **stubbed** (placeholder Firebase plist; drop in a real one later).
+### Recording (`VideoPick.js`)
+- `MediaRecorder` with `pickRecorderMime()`: tries webm, then mp4, then the browser default (iPhone Safari records mp4; Chrome and Android record webm).
+- The camera/review box uses `shrink-0` and a minimum height of 360 px so flex layouts cannot crush it on small iPhones, and a **maximum height of 50dvh** so the red **Continue** button below it always stays on screen.
+- Flow: record (with on-screen script) → review → **Continue** → "Verifying your video…" (face check) → "Saving…" (upload). "Re-record" starts over.
 
----
+### AI face, content, and age gate
+- `POST /video/face-check` sends one still frame to OpenAI `gpt-4o-mini` vision (through `llm.py`). It must find **exactly one real human face**, no prohibited content, and pass the age gate: hard block under 16; block 16–17 when the person claims to be an adult.
+- **Fails open** if the OpenAI key is missing or OpenAI errors, so an outage never locks out sign-ups. Watch the OpenAI balance (§23).
+- Every decision is written to `db.age_checks`.
+- The frame is not stored after the check (as stated in the Privacy Policy).
 
-## 11. Store Distribution (PARKED — owner will publish months from now, do not nudge)
+### Upload (`POST /users/video/upload`)
+1. Multipart upload, MIME allowlist (webm/mp4, codec suffixes normalized), **25 MB cap**, spooled to disk (no memory blow-up).
+2. If webm: transcode to H.264/AAC mp4 with `transcode.py` (falls back to storing the webm only if encoding fails).
+3. Upload to `gs://nicemeechu/user_videos/<user-id>.mp4`, public-read per object, cache-control one year.
+4. Return the public URL with a `?v=` cache-buster. The other-extension sibling is deleted so a re-record never serves the old file.
 
-### Android — Google Play (artifacts READY)
-- TWA via Bubblewrap: `/app/android-build/twa-project`. Package
-  `com.nice2meechu.app`, versionName 1.0.1, versionCode 2.
-- **Signing keystore: `/app/android-build/twa-project/android.keystore` (alias
-  `android`) — BACK IT UP; losing it forces a new package id.**
-- Downloads at `/store-assets/` (frontend/public): `nice2meechu-play.aab`,
-  `play-icon-512.png`, `feature-graphic-1024x500.png`, `play-listing.md`
-  (copy-paste listing text + content-rating + data-safety cheat sheets).
-- `/.well-known/assetlinks.json` holds the LOCAL keystore SHA-256. When the owner
-  eventually uploads to Play, Google re-signs → the *App signing key certificate*
-  SHA-256 from Play Console must be appended to assetlinks.json + redeployed,
-  or the installed app shows a browser URL bar.
+### Storage access
+- The server authenticates to Google Cloud Storage with service account **`nice2meechu-video-uploader@gen-lang-client-0271718241.iam.gserviceaccount.com`**, using a JSON key stored as a Render **Secret File** named `gcs-credentials.json` (mounted at `/etc/secrets/gcs-credentials.json`, pointed to by `GOOGLE_APPLICATION_CREDENTIALS`). Exactly **one** key should exist at a time.
+- Videos are read directly from `storage.googleapis.com` by browsers.
 
-### iOS — App Store (project READY; first cloud build never run)
-- Wrapper at `/app/ios-build/ios-app/` (khmyznikov/ios-pwa-wrap template):
-  bundle `com.nice2meechu.app`, Team `J99N4XLB3D`, v1.0.0, loads nice2meechu.com,
-  auth popups allowed (appleid.apple.com, accounts.google.com), WKAppBoundDomains
-  set, icons generated (alpha-flattened), descriptive camera/mic/location strings,
-  ATS ArbitraryLoads=false, arm64, no remote-notification bg mode.
-- **HealthKit fully removed** (rejection risk). Placeholder
-  `GoogleService-Info.plist` present AND git-trackable (the template .gitignore
-  that hid it was removed — it broke clean-checkout builds).
-- **NOT COMPILE-TESTED** (no Xcode on Linux) — babysit the first Codemagic build.
-- Pipeline: `/app/codemagic.yaml` — workflow `ios-appstore`: pod install → auto
-  signing via ASC API key integration named **exactly `nice2meechu-asc`** →
-  build-ipa → auto-publish to TestFlight.
-- Owner's eventual steps are written out in `/app/ios-build/README.md`
-  (Save to GitHub → ASC app record → ASC API key → Codemagic → TestFlight).
-- Review posture: SIWA ✔, in-app account deletion ✔, UGC report/block ✔,
-  permission strings ✔.
+### Share cards
+`GET /og/{handle}` renders a branded PNG with Pillow (LiberationSans font). Results are cached in memory (bounded at 500 entries, oldest evicted first). Unknown handles are not cached.
+
+### Playback
+`FeedCard.js` renders one `<video><source>` with a query-string-safe type check.
 
 ---
 
-## 12. Credentials & Env Inventory (current)
+## 16. Messaging and translation
 
-**Render → nice2meechu-api → Environment.** Plain values live in `render.yaml` and sync automatically: `DB_NAME=nice2meechu`, `CORS_ORIGINS`, `GOOGLE_CLIENT_ID`, `APPLE_SERVICE_ID`, `ADMIN_EMAILS`, `LLM_MODEL`, `GCP_PROJECT_ID`, `GCS_BUCKET`, `GOOGLE_APPLICATION_CREDENTIALS=/etc/secrets/gcs-credentials.json`, `MONGO_USERNAME`, `VAPID_PUBLIC_KEY`, `VAPID_SUBJECT`, `PYTHON_VERSION`.
-
-Secrets entered by hand in the Render dashboard (never in git):
-- `MONGO_URL` — Atlas address **without** a password (`mongodb+srv://cluster0.rkhvgso.mongodb.net/...`).
-- `MONGO_PASSWORD` — the Atlas database user's password, passed to the driver separately (see `core.py`).
-- `OPENAI_API_KEY`
-- `VAPID_PRIVATE_KEY`
-- **Secret file** `gcs-credentials.json` — JSON key for service account `nice2meechu-video-uploader` (key created 2026-11-04; all older keys deleted).
-- A leftover `IMPORT_TOKEN` may still be listed; it does nothing (the import page was removed) and can be deleted.
-
-**Netlify:** public build values live in `netlify.toml` (`REACT_APP_GOOGLE_CLIENT_ID`, `REACT_APP_APPLE_SERVICE_ID`, empty `REACT_APP_BACKEND_URL`). No secrets on Netlify.
-
-**MongoDB Atlas:** database user `localfiveguy_db_user`; Network Access allows `0.0.0.0/0` (Render has no fixed IPs; the password protects it).
-
-**Google sign-in client** (`780373908792-…` in project `gen-lang-client-0271718241`): allowed origins and redirect URIs include `nice2meechu.com`, `www.nice2meechu.com`, and `nice2meechu.netlify.app`, plus old Emergent entries that can be removed.
-
-**Owner-held, not in repo:** the Atlas password, OpenAI key, Network Solutions login, Apple Developer and Google Play accounts, Android keystore passwords.
-
-**Safety/privacy contact:** Google Form (no domain email exists) — constant `SAFETY_CONTACT_URL` in `LegalPages.jsx`; auto-notifies localfiveguy@gmail.com.
+- `GET /messages/{match_id}` and `POST /messages` — only members of the match can read or write. A new message sends a push to the recipient (§17).
+- `POST /translate` — auth required, maximum 2,000 characters, translates via OpenAI using the reader's language. If OpenAI is unavailable, the original text is returned unchanged.
 
 ---
 
-## 13. Security Posture (audited + code-reviewed 2026-06, fixes verified)
+## 17. Push notifications (VAPID Web Push)
 
-- CORS: explicit origin allowlist, credentials on. (Preview ingress injects
-  `ACAO:*`, harmless — browsers reject wildcard+credentials.)
-- `/translate` auth-required + 2000-char cap; message/transcript caps.
-- OG cache bounded (500, FIFO); bogus handles uncached.
-- Auth errors generic to clients; details in server logs only.
-- `/users/video` URL-prefix validation (GCS / user-videos only).
+- Keys: `VAPID_PUBLIC_KEY` and `VAPID_SUBJECT` (`mailto:localfiveguy@gmail.com`) are plain values in `render.yaml`; `VAPID_PRIVATE_KEY` is a Render secret. If the key pair is ever replaced, existing subscriptions stop working and users must re-enable notifications.
+- `push.py` uses pywebpush. Subscriptions are stored in `db.push_subscriptions` (unique endpoint). The opt-in switch is `users.notify_new_nearby` (legacy name — it controls match and message pushes only).
+- **Events:** new match ("💌 It's a match…", tag `match-<id>`) and new message ("💬 New message from…", tag `chat-<match_id>`). Both deep-link to `/?chat=<match_id>`.
+- **Removed on owner request — do not re-add unprompted:** the "👋 Someone new just joined near <City>" broadcast.
+- UI: a single toggle on the Profile screen, "Notify me: matches & messages" (`notify-me-toggle`).
+- iPhone web push works only for Home-Screen-installed web apps on iOS 16.4 or newer. The native iOS wrapper's push is stubbed (§25).
+
+---
+
+## 18. Admin tools
+
+All are restricted to `ADMIN_EMAILS` (currently localfiveguy@gmail.com and steavinrice@gmail.com). Most are simple GET links the owner can open in a signed-in browser.
+
+| Endpoint | What it does |
+|---|---|
+| `GET /api/admin/funnel` | Sign-up funnel counts (signed in → onboarded → rules → video). |
+| `GET /api/admin/diagnose-feed` | Dumps the viewer's location state, geocode-cache entry, browse center, raw label locals and same-town candidates, and build stamp. First stop for any "wrong people in my feed" report. |
+| `GET /api/admin/find-user?q=…` | Search users by name, email, handle, or codename. Results include a ready-made `delete_url`. |
+| `GET /api/admin/delete-user?id=…&confirm=DELETE` | Full wipe of one user, including their video in storage. Refuses demos and admin-listed emails. |
+| `GET /api/admin/set-home-city?id=…&city=…&confirm=…` | Corrects a user's home town (fresh geocode, no cache). |
+| `POST /api/admin/inactive-cleanup?days=90&dry_run=true` | Shows (or, with `dry_run=false`, performs) the inactive-video cleanup. Minimum 14 days. The same job also runs automatically once a day (§8). |
+
+---
+
+## 19. Configuration and secrets inventory
+
+### Render → nice2meechu-api → Environment
+**Plain values, defined in `render.yaml` and synced automatically:**
+`PYTHON_VERSION=3.11.9`, `DB_NAME=nice2meechu`, `MONGO_USERNAME=localfiveguy_db_user`, `CORS_ORIGINS=https://nice2meechu.com,https://www.nice2meechu.com`, `GOOGLE_CLIENT_ID`, `APPLE_SERVICE_ID=nice2meechu.app.web`, `ADMIN_EMAILS`, `LLM_MODEL=gpt-4o-mini`, `GCP_PROJECT_ID=gen-lang-client-0271718241`, `GCS_BUCKET=nicemeechu`, `GOOGLE_APPLICATION_CREDENTIALS=/etc/secrets/gcs-credentials.json`, `VAPID_PUBLIC_KEY`, `VAPID_SUBJECT`.
+
+**Secrets, entered by hand in the Render dashboard (never in git):**
+| Name | What it is |
+|---|---|
+| `MONGO_URL` | Atlas address **without** a password: `mongodb+srv://cluster0.rkhvgso.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0` |
+| `MONGO_PASSWORD` | Password of Atlas database user `localfiveguy_db_user`. `core.py` passes it to the driver separately, so it never has to be spliced into the URL. |
+| `OPENAI_API_KEY` | OpenAI key named "Nice2Meechu". |
+| `VAPID_PRIVATE_KEY` | Private half of the push key pair. |
+| Secret File `gcs-credentials.json` | Service-account key for video storage (§15). |
+
+A leftover variable named `IMPORT_TOKEN` may still be listed. It does nothing and can be deleted.
+
+**Important Blueprint behavior:** a variable with a plain `value` in `render.yaml` is overwritten from the file on every push. Change those in `render.yaml`, not in the dashboard. Variables marked `sync: false` are kept as entered in the dashboard. A newly added `sync: false` variable must be created by hand in the dashboard.
+
+### Netlify
+No secrets. Public build values are in `netlify.toml` (§9).
+
+### MongoDB Atlas
+- Database user `localfiveguy_db_user` (Atlas Admin role).
+- Network Access: `0.0.0.0/0` (allow from anywhere), because Render has no fixed outbound IP; the long random password protects the database. A second entry allows the owner's home IP.
+- Free tier: no automatic backups (§22).
+
+### Local development
+`server.py` loads `backend/.env` if one exists. A local `.env` would hold the same names as the Render list above (plus `MONGO_URL` pointing at a local or Atlas database). `.env` files and `gcs-credentials.json` are git-ignored.
+
+### Held only by the owner
+Atlas password, OpenAI key, Network Solutions login, Render/Netlify/GitHub logins, Apple Developer and Google Play accounts, Android keystore passwords.
+
+---
+
+## 20. Security posture
+
+- CORS: explicit origin allowlist with credentials. **Never use `*`.**
+- `/translate` requires auth and caps input at 2,000 characters; messages and transcripts are capped too.
+- Share-card cache is bounded (500); unknown handles are not cached.
+- Auth errors are generic to clients; details go to server logs only.
+- `/users/video` accepts only Google Cloud Storage or `/api/user-videos/` URLs.
 - Apple email linking requires `email_verified`.
-- Unique user indexes + insert race guard.
-- Upload pipeline: MIME allowlist (webm/mp4, codec-suffix normalized), 25 MB cap,
-  spooled read (no OOM), transcode in temp dir with cleanup.
-- **Accepted risks** (deliberate — do not "fix"):
-  localStorage token fallback (iOS Safari), no per-user rate limiting yet (P3).
-- `.env`, `gcs-credentials.json`, `memory/test_credentials.md` are NOT git-tracked
-  → safe for the GitHub push Codemagic needs.
+- Unique user indexes plus an insert race guard prevent duplicate accounts.
+- Upload pipeline: MIME allowlist, 25 MB cap, spooled read, transcode in a temp folder with cleanup.
+- `/api/handoff.md` is admin-only, because this document maps the hosting accounts.
+- **Accepted risks (deliberate — do not "fix"):** the localStorage token fallback (needed for iPhone Safari), and no per-user rate limiting yet (backlog).
+- Secrets live only in Render's dashboard; nothing secret is committed. The repository is public, so keep it that way.
+- Google automatically disables any service-account key it finds in a public repository — another reason never to commit `gcs-credentials.json`.
 
 ---
 
-## 14. Testing
+## 21. Testing
 
-- Backend: `/app/backend/tests/` — 9 files, **109 tests, all passing**. Run:
+- Suite: `backend/tests/` — 15 files, **121 tests**. They are integration tests that call a running API with a real session:
   ```
-  cd /app/backend
-  export TEST_SESSION_TOKEN=<from /app/memory/test_credentials.md>
-  export REACT_APP_BACKEND_URL=<from /app/frontend/.env>   # some suites need it
+  cd backend
+  export TEST_SESSION_TOKEN=<a valid session token for the QA account>
+  export REACT_APP_BACKEND_URL=<base URL of the API under test>
   python3 -m pytest tests/ -q
   ```
-- Notable suites: `test_home_town_feed.py` (8 km same-town rules, Evesham↔Marlton
-  absorption, no-leak to Cherry Hill/Erial, nearby-radius endpoint 404),
-  `test_webm_transcode.py` (BYTE-LEVEL: uploaded webm must serve `ftyp` mp4 with
-  h264+aac — this catches the "URL renamed but bytes not transcoded" class of bug),
-  `test_home_city.py`, `test_refactor_regression.py`, etc.
-- QA account: `qa-tester@nice2meechu.local`, id `2b0f5a67-…` — **fixture
-  contract**: home_city MUST stay "Tokyo, Japan" (test_home_city.py asserts it);
-  browsing city Marlton NJ; has `age`, `agreed_to_rules_at`, `handle`, and a real
-  `video_url` so a cookie login lands directly on the Feed.
-- Persistent fixtures: `test-john-erial` (Erial), `test-kathy-cherryhill`
-  (Cherry Hill) — now have REAL playable mp4s at
-  `gs://nicemeechu/user_videos/test-john-erial.mp4` / `test-kathy-cherryhill.mp4`
-  (the old placeholder `storage.googleapis.com/test-fixtures/intro.mp4` is a 403
-  and rendered as a black card — don't reuse it for anything user-visible).
-  GCS-style URLs keep the ghost purge away; if a fixture vanishes, the purge ate
-  it: re-seed with a GCS-style URL.
+  Point them at a **local or staging** API and database — several tests create and delete data, so do not run them against production.
+- Notable suites: `test_home_town_feed.py` (8 km same-town rules, Marlton↔Evesham merging, no leak to Cherry Hill or Erial, removed radius endpoint returns 404), `test_webm_transcode.py` (byte-level: an uploaded webm must be served as an `ftyp` mp4 with h264 and aac), `test_home_city.py`, `test_unique_codenames.py` (uniqueness plus multi-device sessions), `test_admin_tools.py`, `test_likes_you.py`, `test_first_match.py`, `test_auth_surface.py`, `test_refactor_regression.py`.
+- QA fixtures used by the suite: a QA account (`qa-tester@nice2meechu.local`, home city must stay "Tokyo, Japan") and two persistent fixtures, `test-john-erial` and `test-kathy-cherryhill`, with real playable mp4s in `gs://nicemeechu/user_videos/`. These fixtures do not exist in the production database; create them in whatever database the tests run against.
 - Rules learned the hard way:
-  - Never use demo-NN users as mutable test subjects (healing resets them mid-test).
-  - Tests needing a specific browse city must set it themselves (no file-order deps).
-  - **Headless Chromium (Playwright) has NO H.264 codec** — every mp4 (demos
-    included) reports MediaError 4 / readyState 0 in automation. That is a
-    test-browser limitation, NOT an app bug. Verify codecs with ffprobe instead.
-- Testing-agent artifacts: `/app/test_reports/iteration_1..24.json`, `/app/test_result.md`.
-- iOS Swift has no CI until Codemagic is connected.
+  - Never use `demo-NN` users as mutable test subjects.
+  - Tests needing a particular browse city must set it themselves (no reliance on file order).
+  - **Headless Chromium (Playwright) has no H.264 codec**, so every mp4 reports MediaError 4 in automation. That is a test-browser limit, not an app bug — verify codecs with ffprobe.
+  - Verify **content**, not just status codes and file names (§24).
+- There is no CI yet; wiring the suite into GitHub Actions is in the backlog.
 
 ---
 
-## 15. Incident History & Hard-Won Lessons
+## 22. Runbooks
 
-1. **"Tokyo users in Marlton" — 5 layers, RESOLVED (user-confirmed on v1.6.4)**
-   - R1 code: feed coordinate mixing → haversine guardrails.
-   - R2 input: poisoned popular-cities coords → Photon validation on writes.
-   - R3 data (prod): demos seeded into viewers' cities by an old build →
-     per-request location healing.
-   - R4 data (prod): **ghost demos** without `is_demo` flags → purge by
-     video-URL fingerprint; align/heal by id, not flag.
-   - R5 data (prod, the persistence engine): **poisoned geocode cache**
-     (`city_geo`: "marlton→Tokyo", cached forever). `_browse_center` trusted it
-     AND wrote it back onto user docs. Fix: flush cache every startup + one-shot
-     user-coord repair migration + cache-free heal writes.
-   - Lessons: (a) "cached forever" + "trust the cache" = poison-persistence
-     machine; (b) preview/prod DBs diverge — reproduce with prod-shaped data
-     before declaring victory; (c) self-healing code can propagate disease —
-     validate the source; (d) build stamps end deploy ambiguity; (e) when stuck,
-     ship a diagnostic endpoint and get direct evidence.
-2. **Real videos black on iPhone — RESOLVED (v1.6.5/v1.6.6, deployed)**
-   - 16/20 real intros in GCS were `.webm` (Chrome/Android MediaRecorder);
-     iOS Safari cannot decode webm. Demo videos are mp4 → they always played,
-     which disguised the pattern.
-   - Fix: server-side webm→mp4 transcode on upload + one-shot URL-repoint
-     migration + pre-rendered mp4 siblings for all prod blobs (shared bucket).
-   - **Testing-agent save**: the first patch renamed the URL and set
-     Content-Type mp4 but uploaded the ORIGINAL webm bytes (a closure captured
-     `spool` instead of the transcoded handle). Byte-level assertions
-     (`body[4:8] == b'ftyp'`, ffprobe h264) are now in the suite. Lesson:
-     verify CONTENT, not just status codes and file names.
-3. Failed prod deploy: k8s probes need root `GET /health` — never remove.
-4. Apple Hide-My-Email duplicate: relay email ≠ Gmail → duplicate account.
-   Manual merge done for the operator; automated linking is backlog.
-5. iOS camera box crush: flex columns squeeze aspect-ratio boxes to 0 — the
-   `shrink-0`/minHeight on VideoPick is load-bearing.
-6. iOS Safari cookie drops: the Bearer/localStorage fallback exists because ITP
-   eats SameSite=None cookies during OAuth redirects.
-7. **Nearby-radius feature reversal (v1.6.6)**: the owner tried the 10/25/50 km
-   nearby system live and rejected it — he does not want a video appearing
-   outside its own town. It was REMOVED end-to-end (feed, endpoint, UI, chips,
-   widen prompts, join-nearby push). The 8 km `SAME_TOWN_KM` tolerance is the
-   only coordinate slack, and it exists solely for same-town naming variants
-   (Marlton↔Evesham). Do not resurrect radius spreading without his explicit ask.
-8. Placeholder fixture URLs look like real bugs: a dead `test-fixtures` video URL
-   rendered as a black card and the owner reported it as "videos not working".
-   Preview seed data must always be actually playable.
-9. iOS template landmine: the wrapper's `.gitignore` hid `GoogleService-Info.plist`
-   → clean-checkout builds fail. Removed; watch for it if re-generating.
+**Is everything up?**
+- Open `https://nice2meechu.com/api/` — shows the build stamp.
+- Open `https://nice2meechu-api.onrender.com/health` — should say `{"status":"ok"}`.
+- Render dashboard → nice2meechu-api should show "Live"; Netlify → Deploys should show "Published".
 
----
+**Logs**
+- API: Render → nice2meechu-api → Logs (search box supports text such as `POST /api/`).
+- Website builds: Netlify → Deploys → click a deploy.
 
-## 16. Runbooks (current)
+**Restart the API:** Render → nice2meechu-api → Manual Deploy → "Deploy latest commit".
 
-- **Is it up?** Open `https://nice2meechu.com/api/` (shows `build`) and `https://nice2meechu-api.onrender.com/health`.
-- **Logs:** Render dashboard → nice2meechu-api → Logs. Build problems: Netlify → Deploys.
-- **Restart the API:** Render → nice2meechu-api → Manual Deploy → "Deploy latest commit".
-- **Roll back:** Render → Events → pick an earlier deploy → Rollback. Netlify → Deploys → pick a deploy → "Publish deploy".
-- **Prod feed forensics:** sign in as an admin on nice2meechu.com, then open `https://nice2meechu.com/api/admin/diagnose-feed`.
-- **Force demo re-seed/heal/purge:** any authenticated `GET /api/feed`.
-- **Re-run a one-shot migration:** delete its marker doc from `db.migrations`, then restart the API.
-- **Database backups:** the Atlas free tier has no automatic backups. Before risky changes, export from the Atlas UI (Collections → Export) or upgrade the cluster.
-- **Full user wipe:** users + user_sessions + swipes (both sides) + matches (user_ids) + messages. `DELETE /api/users/me` does it for self.
+**Roll back**
+- API: Render → nice2meechu-api → Events → choose an earlier successful deploy → Rollback.
+- Website: Netlify → Deploys → choose an earlier deploy → "Publish deploy".
 
-### Things that will break the site if they lapse
-1. **Google Cloud billing** on project `gen-lang-client-0271718241` — if unlinked, every video 403s (happened 2026-10-20). The "B of A" billing account is at its 5-project limit.
-2. **OpenAI prepaid credit** — when it runs out, the face check fails open and translation returns the original text.
-3. **Render payment method** (Starter plan) and the **domain renewal** (2027-04-26).
+**A build failed**
+- Render: open the failed deploy's log. "bad auth: authentication failed" means `MONGO_PASSWORD` is wrong. "Exited with status 3" is an app startup error — read the traceback above it.
+- Netlify: open the deploy log. The frontend has no lockfile, so a new upstream package release can occasionally break a build; pin the offending package version in `package.json`.
+
+**Rotate the MongoDB password**
+1. Atlas → Database Access → `localfiveguy_db_user` → Edit → Edit Password → Autogenerate → Copy → Update User.
+2. Render → nice2meechu-api → Environment → Edit → paste into `MONGO_PASSWORD` → Save, rebuild, and deploy.
+
+**Rotate the storage key**
+1. Google Cloud → IAM & Admin → Service Accounts → `nice2meechu-video-uploader` → Keys → Add key → JSON (downloads a file).
+2. Render → Environment → Secret Files → edit `gcs-credentials.json` → paste the whole file → Save, rebuild, and deploy.
+3. After the new deploy is live, delete the old key in Google Cloud and delete the downloaded file.
+
+**Rotate the OpenAI key:** platform.openai.com → API keys → create → Render `OPENAI_API_KEY` → save and deploy → revoke the old key.
+
+**Videos stopped playing (403 errors):** check Google Cloud → Billing for project `gen-lang-client-0271718241`. It must be linked to an active billing account (§24, rule 4).
+
+**"Error 400: origin_mismatch" at Google sign-in:** the site's address is missing from the OAuth client's authorized JavaScript origins (§10).
+
+**Wrong people in a feed:** sign in as an admin and open `https://nice2meechu.com/api/admin/diagnose-feed`.
+
+**Fix someone's home town:** `/api/admin/find-user?q=<name>` → copy the id → `/api/admin/set-home-city?id=<id>&city=<Town, ST>&confirm=…`.
+
+**Remove a duplicate or abusive account:** `/api/admin/find-user?q=…` → open its `delete_url`.
+
+**Force demo re-seed, heal, and ghost purge:** any signed-in visit to the feed (`GET /api/feed`).
+
+**Re-run a one-shot migration:** delete its marker in Atlas → Browse Collections → `nice2meechu.migrations`, then restart the API.
+
+**Back up the database (free tier has no automatic backups):** before risky changes, export collections from Atlas (Browse Collections → each collection → Export), or upgrade the cluster to a tier with backups. Note: Atlas's free tier does not support `mongodump` restores of system collections, but plain collection exports and imports work.
+
+**Change DNS:** Network Solutions → Domains → nice2meechu.com → DNS. Keep the records in §4. TTL is 15 minutes, so changes spread quickly. After any DNS change, check Netlify → Domain management for a valid certificate and press "Renew certificate" if it shows an error.
 
 ---
 
-## 17. Current Status, Backlog & Etiquette
+## 23. Costs, renewals, and things that break if they lapse
 
-**Deployed & verified**
-- v1.6.6-home-town-only is LIVE on nice2meechu.com (build stamp checked).
-  It contains: webm→mp4 playback fix, home-town-only feed, nearby system removal,
-  join-nearby push removal, Apple-first iOS sign-in ordering.
-
-**Awaiting owner verification**
-- Owner to confirm on his iPhone that real videos now play in Erial / Egg Harbor /
-  Marlton on production. (They will only appear in each person's own home town now.)
-
-**Parked (owner-scheduled, months out — DO NOT nudge)**
-- Play Store publishing (AAB ready; assetlinks SHA-256 step documented in §11).
-- App Store / Codemagic first build (project ready; steps in /app/ios-build/README.md).
-
-**Backlog (P2/P3)**
-- Per-user rate limiting (swipes, messages, reports)
-- Apple↔Google account-linking flow (Hide-My-Email dedupe)
-- Native FCM push in the iOS wrapper
-- Referral/invite share flow polish (referral fields already in the data model) —
-  the main growth lever now that feeds are strictly home-town
-- "You're one of the first in <town> — invite a neighbor" empty-state welcome card
-- Component refactors: ChangeLocationScreen (~520 lines), VideoPick, FeedScreen, App.js
-- CI: wire the 109-test suite into GitHub Actions once the repo is on GitHub
-- Store listing screenshot polish; localized listings
-
-**Working etiquette with this owner**
-- Non-technical; give click-by-click, browser-only instructions.
-- Always clarify preview vs production before debugging a report.
-- He values honest hyperlocal behavior over engagement tricks — when in doubt,
-  choose "show only what's real and local" and confirm scope with him first.
-- Do not bring up store publishing unprompted.
-
+| Item | Approximate cost | If it lapses |
+|---|---|---|
+| Render Starter | ~$7/month | API goes down → the whole site stops working. |
+| Netlify | Free | Website goes down. |
+| MongoDB Atlas | Free (512 MB) | Database becomes read-only when full. Current data is under 1 MB plus indexes. |
+| Google Cloud Storage | Pennies per month | **If billing is unlinked, every video returns 403** Billing account "B of A" is at its 5-project limit — unlinking another project frees a slot. A budget alert is recommended. |
+| OpenAI | Prepaid credit | **When credit runs out, the face check fails open** (videos post unchecked) and translation returns original text. A low-balance alert is recommended. |
+| Domain (Network Solutions) | Yearly | Renews 2027-04-26. If it expires, the site disappears. |
+| Apple Developer | Yearly | Apple sign-in keeps working on the web for existing configuration; needed for any App Store release. |
 
 ---
 
-## 20. 2026-06 (later): v1.6.7 + v1.6.8 — account linking, town-label matching, admin tools
+## 24. Hard rules and gotchas (read before changing anything)
 
-- **v1.6.7-apple-google-link** (LIVE in prod): Apple Hide-My-Email sign-ins that would create a new account now get a LinkGoogleScreen ("/?link_google=1") to merge into an existing Google account. Popup: POST /api/auth/link-google; iOS: redirect mode with ?link=<one-time token> on /api/auth/google-redirect. Guard `_relay_mergeable`: only empty relay accounts merge. Signature blobs moved off user docs (db.signatures + one-shot migration move_signatures_v1) — /auth/me shrank from MBs to <1 KB.
-- **v1.6.8-town-label-match** (preview, needs deploy): `_same_town_candidates` matches by TOWN LABEL geocode (label center within SAME_TOWN_KM of browse center), NOT by house pin. Owner decision after prod diagnose showed Carlo (Cherry Hill label, pin 7.5 km from Marlton center) leaking into Marlton. Marlton↔Evesham still merge (6.5 km); Cherry Hill (center 9.5 km) never does.
-- **Admin founder tools** (GET, admin-gated): /api/admin/find-user?q=… (results include delete_url) and /api/admin/delete-user?id=…&confirm=DELETE (full wipe incl. GCS videos; refuses demos + admin-listed emails). Built so the non-technical owner can remove his two production duplicates ("Vivid Raven" 1a392641-9bc8-4571-bb10-b9a925e531db + an Apple relay account) from Safari.
-- **CRITICAL ops lesson**: production env vars live in deployment settings (Home → deployed app → Settings → Environment Variables) and DO NOT sync from workspace .env. Missing ADMIN_EMAILS in prod caused admin endpoints to return Forbidden for everyone until the owner added it there.
-- Prod data facts (from diagnose): owner's main account id 213fa357 (steavinrice@gmail.com, home Voorhees); John's account is label-homed Marlton (his video says Erial — owner chose to let John fix it in-app); duplicate codenames exist (two different users both "Ember Orbit") — codename generator is not unique.
-- Tests: 116/116 (test_admin_tools.py, border-house exclusion, self-seeding webm feed test).
-
-### v1.6.8 additions (same pending deploy): unique codenames + multi-device sessions
-- Codename pool was 100 combos → two real users were both "Ember Orbit". Now 1,600 combos; `core.generate_unique_codename()` enforces uniqueness at signup; migration `unique_codenames_v1` (`server.dedupe_codenames`, callable directly) renamed 7 preview dupes — demos keep canonical names, oldest real account keeps the name. created_at is datetime in old docs / ISO string in new: sort with `str()`.
-- SESSION_TTL 7→30 days (core.py). Sessions were already multi-device (per-token mint, per-token logout) — now proven by tests/test_unique_codenames.py. Suite: 120/120.
+1. **Never trust the geocode cache for writes.** `db.city_geo` is flushed on every boot, and anything written onto a user record must come from a fresh Photon geocode (`use_cache=False`). A wrong cached entry would otherwise be copied onto users and spread.
+2. **Validate every location at the source.** `POST /users/location` checks the label against Photon; coordinates more than 100 km from the label lose.
+3. **All real intros must be H.264/AAC mp4.** iPhone Safari cannot play webm. The upload pipeline transcodes webm, and tests check the actual file bytes (`ftyp`, h264, aac) — verify content, not just status codes or file names.
+4. **Google Cloud billing must stay linked** to project `gen-lang-client-0271718241`, or every video returns 403.
+5. **Never remove the root `GET /health` route.** Render's health check depends on it, and a deploy fails without it.
+6. **Keep the localStorage/Bearer token fallback.** iPhone Safari's tracking prevention drops SameSite=None cookies during sign-in redirects.
+7. **Keep `shrink-0`, the 360 px minimum, and the 50dvh maximum on the VideoPick camera box.** Without them, small iPhones crush the camera to nothing or push "Continue" off-screen.
+8. **The Profile shows and edits `home_city` only.** Showing the browsing `city` would display a town the person merely looked at, and saving would move their home.
+9. **No nearby radius.** The owner explicitly wants videos visible only in their own town. The 8 km same-town tolerance is the only slack. Do not add radius spreading without his explicit request.
+10. **Apple "Hide My Email" accounts** don't match a Gmail address, so they would create duplicates. The linking flow (§10) handles this — keep it.
+11. **Seed and test data must always be playable.** A dead test video renders as a black card that looks like a real bug.
+12. **Codenames must stay unique** (1,600 combinations, enforced at signup).
+13. **Every new web address** must be added to the Google OAuth client's authorized origins and redirect URIs, or sign-in shows "origin_mismatch".
+14. **After any DNS change,** check Netlify's certificate; if it shows an error once DNS points at Netlify, press "Renew certificate".
+15. **Self-healing code can spread bad data.** When something looks wrong in a feed, get direct evidence first with `/api/admin/diagnose-feed` before changing logic.
 
 ---
 
-## 21. 2026-10/11 — Migration off Emergent (Netlify + Render + Atlas)
+## 25. App store distribution (PARKED — the owner will publish months from now; do not nudge)
 
-- Code changes (branch `netlify-migration`): Emergent `LlmChat` replaced by the official OpenAI SDK (`backend/llm.py`); Emergent-only packages removed (`emergentintegrations`, private `litellm` wheel, `@emergentbase/visual-edits`); `/app/` hard-coded paths made relative; Emergent's tracking scripts removed from `index.html`; `MONGO_PASSWORD` support added; `netlify.toml` and `render.yaml` added.
-- Data: exported from Emergent production via a temporary admin-only export endpoint and loaded with a token-gated import page (both removed afterward). Final import on 2026-11-04: 109 users (31 real, 78 demo), 87 sessions, 34 age checks, 21 swipes, 19 signatures, 5 migration markers.
-- Fixes shipped during the move: Profile shows and edits **home_city** (it used to show the last-browsed feed city, e.g. "Mumbai, India"); intro recorder caps the camera box at 50dvh so "Continue" stays on screen; privacy-policy subprocessor list updated (Netlify, Render, Google Cloud Storage, Apple; Emergent and Cloudflare removed).
-- Verified live after the switch: HTTPS, Google sign-in, swipes, translation, intro upload plus AI face check, and video playback from GCS.
+### Android — Google Play (artifacts ready)
+- Trusted Web Activity built with Bubblewrap: `android-build/twa-project`. Package `com.nice2meechu.app`, versionName 1.0.1, versionCode 2.
+- Signing keystore `android-build/twa-project/android.keystore` (alias `android`). **Back it up — losing it forces a new package id.** Keystore passwords are held by the owner.
+- Downloads in `frontend/public/store-assets/`: `nice2meechu-play.aab`, `play-icon-512.png`, `feature-graphic-1024x500.png`, `play-listing.md` (listing text, content-rating and data-safety answers). `frontend/public/` also has `nice2meechu.aab` and `nice2meechu.apk`.
+- `/.well-known/assetlinks.json` holds the local keystore SHA-256. When the app is uploaded to Play, Google re-signs it: the **App signing key certificate** SHA-256 from Play Console must be **added** to `assetlinks.json` and deployed, or the installed app shows a browser address bar.
 
+### iOS — App Store (project ready; first cloud build never run)
+- Wrapper at `ios-build/ios-app/` (ios-pwa-wrap template): bundle `com.nice2meechu.app`, Team `J99N4XLB3D`, version 1.0.0, loads nice2meechu.com, allows the Apple and Google sign-in popups, App-Bound Domains set, icons generated, descriptive camera/microphone/location permission strings, App Transport Security strict, arm64.
+- HealthKit fully removed (rejection risk). A placeholder `GoogleService-Info.plist` is present and tracked in git.
+- **Not compile-tested** (no Xcode available) — watch the first Codemagic build closely.
+- Pipeline: `codemagic.yaml`, workflow `ios-appstore`: pod install → automatic signing through an App Store Connect API key integration named **exactly `nice2meechu-asc`** → build IPA → publish to TestFlight.
+- The owner's eventual steps are written in `ios-build/README.md`.
+- Review readiness: Sign in with Apple ✔, in-app account deletion ✔, report/block for user content ✔, permission strings ✔.
+
+---
+
+## 26. Backlog
+
+**Recommended soon**
+- Google Cloud budget alert and OpenAI low-balance alert (§23).
+- Delete the unused `IMPORT_TOKEN` variable in Render.
+- Remove the unused legacy `POST /auth/session` endpoint and old redirect entries from the Google OAuth client.
+- Database backups (paid Atlas tier, or a scheduled export).
+- Have a lawyer review the Privacy Policy and Terms (both still marked "Draft v1") before a public launch push.
+
+**Product and engineering (P2/P3)**
+- Per-user rate limiting (swipes, messages, reports).
+- Native push (FCM) in the iOS wrapper.
+- Referral/invite flow polish — the main growth lever now that feeds are strictly home-town (referral fields already exist).
+- "You're one of the first in <town> — invite a neighbor" empty-state card.
+- Component refactors: `ChangeLocationScreen` (~520 lines), `VideoPick`, `FeedScreen`, `App.js`.
+- CI: run the test suite in GitHub Actions against a disposable database.
+- Add a frontend lockfile for reproducible builds.
+- Store listing screenshots and localized listings.
