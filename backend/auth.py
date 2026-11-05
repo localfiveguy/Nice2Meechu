@@ -5,7 +5,6 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-import httpx
 import jwt as pyjwt
 from fastapi import APIRouter, Cookie, Depends, Form, Header, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
@@ -15,7 +14,6 @@ from pymongo.errors import DuplicateKeyError
 
 from core import (
     APPLE_SERVICE_ID,
-    EMERGENT_AUTH_SESSION_URL,
     GOOGLE_CLIENT_ID,
     SESSION_TTL,
     db,
@@ -23,7 +21,7 @@ from core import (
     generate_unique_codename,
     logger,
 )
-from models import AppleIdTokenReq, GoogleIdTokenReq, LinkGoogleReq, SessionExchangeReq
+from models import AppleIdTokenReq, GoogleIdTokenReq, LinkGoogleReq
 
 router = APIRouter()
 
@@ -81,14 +79,14 @@ async def current_user(
 
 
 # ---------------------------------------------------------------------------
-# Routes - meta + Google Auth (Emergent)
+# Routes - meta + Google Auth
 # ---------------------------------------------------------------------------
 @router.get("/")
 async def root():
     return {
         "app": "Nice2Meechu",
         "build": "v1.6.8-town-label-match",
-        "auth": "google-direct" if GOOGLE_CLIENT_ID else "google-emergent",
+        "auth": "google-direct" if GOOGLE_CLIENT_ID else "google-not-configured",
     }
 
 
@@ -179,7 +177,7 @@ async def _finalize_google_signin(
 ) -> dict:
     """Upsert the user, mint a session_token, set the httpOnly cookie, and
     return the standard auth payload. Shared by the direct-GIS endpoint,
-    the redirect-mode endpoint, and the legacy Emergent exchange."""
+    and the redirect-mode endpoint."""
     user = await _upsert_google_user(
         google_sub=google_sub, email=email, name=name, picture=picture, ref=ref
     )
@@ -294,38 +292,6 @@ async def auth_google_id_token(req: GoogleIdTokenReq, response: Response):
         name=idinfo.get("name"),
         picture=idinfo.get("picture"),
         ref=req.ref,
-    )
-
-
-@router.post("/auth/session")
-async def auth_session_exchange(req: SessionExchangeReq, response: Response):
-    """Legacy: Exchange a one-time Emergent session_id for a persistent session_token.
-    Kept temporarily for backwards compat — new sign-ins use POST /api/auth/google."""
-    async with httpx.AsyncClient(timeout=15) as http:
-        try:
-            r = await http.get(EMERGENT_AUTH_SESSION_URL, headers={"X-Session-ID": req.session_id})
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Emergent auth call failed")
-            raise HTTPException(502, f"Auth provider unreachable: {exc}")
-
-    if r.status_code != 200:
-        logger.warning("Emergent auth returned %s: %s", r.status_code, r.text)
-        raise HTTPException(401, "Invalid session_id")
-
-    data = r.json()
-    email = data.get("email")
-    session_token = data.get("session_token")
-    if not (email and session_token):
-        raise HTTPException(500, "Malformed auth response")
-
-    return await _finalize_google_signin(
-        response,
-        google_sub=None,
-        email=email,
-        name=data.get("name"),
-        picture=data.get("picture"),
-        ref=req.ref,
-        session_token=session_token,
     )
 
 

@@ -86,7 +86,7 @@ export function CommunityRulesScreen({ onDone, onOpenLegal }) {
         {loading ? "Saving…" : "Accept & Continue"}
       </button>
 
-      {/* Legal links — left-aligned so the "Made with Emergent" badge on the
+      {/* Legal links — left-aligned so a floating badge on the
           right side doesn't visually conflict with them on mobile. */}
       <div className="mt-4 flex justify-start gap-4 text-xs text-white/55">
         <button

@@ -28,7 +28,7 @@ export async function translate(text, target_lang, source_lang) {
   }
 }
 
-// Robust copy that works even in cross-origin iframes (Emergent preview) where
+// Robust copy that works even in cross-origin iframes (embedded previews) where
 // `navigator.clipboard.writeText` is blocked by the missing `clipboard-write`
 // permission. Falls back to a hidden <textarea> + document.execCommand('copy'),
 // which is deprecated but still the only thing that works in those sandboxes.

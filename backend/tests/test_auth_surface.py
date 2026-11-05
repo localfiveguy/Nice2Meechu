@@ -5,7 +5,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://hyperlocal-video.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001").rstrip("/")
 TEST_TOKEN = os.environ.get("TEST_SESSION_TOKEN", "sttest_SnTv9X5GmiggyZq5vKriLEqtcFmSMN4s")
 
 

@@ -15,10 +15,10 @@ import requests
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
-load_dotenv("/app/backend/.env")
+load_dotenv(str(__import__("pathlib").Path(__file__).resolve().parents[1] / ".env"))
 
 BASE_URL = os.environ.get(
-    "REACT_APP_BACKEND_URL", "https://hyperlocal-video.preview.emergentagent.com"
+    "REACT_APP_BACKEND_URL", "http://localhost:8001"
 ).rstrip("/")
 TOKEN = os.environ.get("TEST_SESSION_TOKEN", "")
 db = MongoClient(os.environ["MONGO_URL"])[os.environ["DB_NAME"]]

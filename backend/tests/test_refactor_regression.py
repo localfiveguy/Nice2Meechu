@@ -14,8 +14,8 @@ import requests
 from dotenv import dotenv_values
 from pymongo import MongoClient
 
-FRONTEND_ENV = dotenv_values("/app/frontend/.env")
-BACKEND_ENV = dotenv_values("/app/backend/.env")
+FRONTEND_ENV = dotenv_values(str(__import__("pathlib").Path(__file__).resolve().parents[2] / "frontend" / ".env"))
+BACKEND_ENV = dotenv_values(str(__import__("pathlib").Path(__file__).resolve().parents[1] / ".env"))
 BASE_URL = (FRONTEND_ENV.get("REACT_APP_BACKEND_URL") or "").rstrip("/")
 MONGO_URL = BACKEND_ENV.get("MONGO_URL")
 DB_NAME = BACKEND_ENV.get("DB_NAME")
@@ -328,7 +328,7 @@ def test_og_nonexisting(client):
 
 
 def test_static_video(client):
-    files = sorted(Path("/app/backend/videos").glob("*.mp4"))
+    files = sorted(Path(str(__import__("pathlib").Path(__file__).resolve().parents[1] / "videos")).glob("*.mp4"))
     if not files:
         pytest.skip("no video files")
     name = files[0].name

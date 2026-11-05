@@ -7,8 +7,8 @@ import asyncio
 import os
 from playwright.async_api import async_playwright
 
-APP_URL = "https://hyperlocal-video.preview.emergentagent.com"
-TOKEN = "sttest_SUQD-bH3lyJJOBLw-llOftxhxupA_9nU"
+APP_URL = os.environ.get("APP_URL", "http://localhost:3000")
+TOKEN = os.environ["TEST_SESSION_TOKEN"]
 
 
 async def main():
@@ -40,7 +40,7 @@ async def main():
                 await page.wait_for_selector('[data-testid="nav-profile"]', timeout=15000)
                 print("  OK: nav-profile visible → signed in")
             except Exception as e:
-                await page.screenshot(path="/app/.screenshots/vp_signin_fail.png", full_page=False)
+                await page.screenshot(path="screenshots/vp_signin_fail.png", full_page=False)
                 print(f"  FAIL signin: {e}")
                 return
 
@@ -74,7 +74,7 @@ async def main():
                 except Exception:
                     continue
             if not clicked:
-                await page.screenshot(path="/app/.screenshots/vp_no_change_intro.png", full_page=False)
+                await page.screenshot(path="screenshots/vp_no_change_intro.png", full_page=False)
                 # dump visible buttons for debugging
                 btns = await page.evaluate("() => Array.from(document.querySelectorAll('button')).map(b => b.textContent?.trim()).filter(Boolean)")
                 print(f"  FAIL: 'Change intro' button not found. Visible buttons: {btns[:20]}")
@@ -136,7 +136,7 @@ async def main():
             else:
                 print("  OK: no NotSupportedError")
 
-            await page.screenshot(path="/app/.screenshots/vp_playback.png", full_page=False)
+            await page.screenshot(path="screenshots/vp_playback.png", full_page=False)
 
             print("\n=== SUMMARY ===")
             print(f"stream_ready: assumed OK (record button worked)")

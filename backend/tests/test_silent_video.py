@@ -7,11 +7,11 @@ import imageio_ffmpeg
 import pytest
 import requests
 
-sys.path.insert(0, "/app/backend")
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1]))
 from transcode import SILENCE_MAX_DB, measure_max_volume  # noqa: E402
 
 BASE_URL = os.environ.get(
-    "REACT_APP_BACKEND_URL", "https://hyperlocal-video.preview.emergentagent.com"
+    "REACT_APP_BACKEND_URL", "http://localhost:8001"
 ).rstrip("/")
 TOKEN = os.environ.get("TEST_SESSION_TOKEN", "")
 AUTH = {"Authorization": f"Bearer {TOKEN}"}

@@ -264,7 +264,7 @@ export function FeedScreen({ user, setUser, unreadMatches, onMatch, onTab }) {
 
       {/* Left-edge playback controls (Back + Restart) — vertical stack mirroring
           the right-edge action stack. Lives at mid-height so it never collides
-          with the bottom-nav, Emergent's preview footer, or the captions card. */}
+          with the bottom-nav or the captions card. */}
       {!loading && feed.length > 0 && (
         <div
           className="absolute left-3 top-1/2 -translate-y-1/2 z-30 flex flex-col gap-3 pointer-events-none"

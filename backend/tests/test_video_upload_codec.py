@@ -15,7 +15,7 @@ import imageio_ffmpeg
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL") or "https://hyperlocal-video.preview.emergentagent.com"
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL") or "http://localhost:8001"
 BASE_URL = BASE_URL.rstrip("/")
 TOKEN = os.environ.get("TEST_SESSION_TOKEN", "")
 AUTH = {"Authorization": f"Bearer {TOKEN}"}

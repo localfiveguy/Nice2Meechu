@@ -1,4 +1,4 @@
-"""Thin OpenAI wrapper — replaces Emergent's `emergentintegrations` LlmChat.
+"""Thin OpenAI wrapper for the face/age check and chat translation.
 
 Uses the official `openai` SDK with the owner's own key (OPENAI_API_KEY), so
 the backend runs on any host (Render, Railway, ...). Callers check

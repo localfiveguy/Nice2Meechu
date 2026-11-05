@@ -229,15 +229,12 @@ async def og_card(handle: str):
 
 @router.get("/handoff.md")
 async def get_handoff_doc(user=Depends(current_user)):
-    """Serve the live engineering handoff doc as a download. Used when the
-    operator wants the latest fork notes saved locally without having to clone
-    the repo. The handoff lives at the repo root (/app/handoff.md) and is
-    rewritten in-place by the agent at the end of each fork — so this endpoint
-    always serves the freshest copy."""
+    """Serve the engineering handoff doc (repo-root handoff.md) as a download
+    so the owner can save the latest copy without cloning the repo."""
     # Admin-only: the doc maps out hosting accounts and admin emails.
     from admin import _require_admin
     _require_admin(user)
-    path = Path(__file__).resolve().parent.parent / "handoff.md"  # repo root (was hard-coded /app/)
+    path = Path(__file__).resolve().parent.parent / "handoff.md"  # repo root
     if not path.is_file():
         raise HTTPException(404, "handoff.md not found")
     return FileResponse(

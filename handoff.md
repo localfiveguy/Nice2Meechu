@@ -48,7 +48,7 @@ This document is written so that a new engineer, or a new AI assistant, can pick
 | Accounts | 31 real people plus 78 demo personas |
 | Repository | github.com/localfiveguy/Nice2Meechu (public) |
 | Live branch | `netlify-migration` |
-| Tests | 15 files, 121 backend tests (`backend/tests/`) |
+| Tests | 15 files, 120 backend tests (`backend/tests/`) |
 
 ---
 
@@ -149,8 +149,7 @@ Nameservers stay at Network Solutions (`ns43.worldnic.com`, `ns44.worldnic.com`)
 │   ├── auth.py  users.py  feed.py  messaging.py  media.py
 │   ├── demos.py  admin.py  push.py  transcode.py  models.py
 │   ├── videos/         79 demo mp4 files + demo_meta.json
-│   ├── tests/          pytest suite (121 tests)
-│   ├── scripts/        one-off maintenance scripts
+│   ├── tests/          pytest suite (120 tests)
 │   └── requirements.txt
 ├── frontend/           React app (Netlify builds from here)
 │   ├── src/            App.js, screens/, components/, lib/, legal/, constants/
@@ -160,13 +159,15 @@ Nameservers stay at Network Solutions (`ns43.worldnic.com`, `ns44.worldnic.com`)
 ├── android-build/      Android TWA project (Google Play)
 ├── ios-build/          iOS wrapper project (App Store)
 ├── codemagic.yaml      iOS cloud build pipeline
+├── tests/              Playwright UI test for the intro recorder
+├── scripts/            make_share_cards.py (renders the share-card PNGs)
 ├── share_cards/        generated share-card images
 ├── netlify.toml        website build + /api proxy
 ├── render.yaml         API service definition
 └── handoff.md          this document
 ```
 
-Other root files (`README.md`, `auth_testing.md`, `design_guidelines.json`, `EMAIL_ROUTING_SETUP.md`, `RESUME_DEMOS.md`, `memory/`, `test_reports/`, `test_result.md`) are older working notes and test artifacts. They are not used at runtime.
+`README.md` at the root is a short pointer to this document. `tests/` at the root holds one Playwright UI test for the intro recorder (set `APP_URL` and `TEST_SESSION_TOKEN` to run it).
 
 ---
 
@@ -180,7 +181,7 @@ All routes live under `/api` except the root-level `GET /health`.
 | `core.py` | Database client (`MONGO_URL`, `DB_NAME`, optional `MONGO_USERNAME` + `MONGO_PASSWORD`), constants (`SESSION_TTL` = **30 days**, **`SAME_TOWN_KM = 8`**, language names), `generate_unique_codename()` (1,600 combinations, uniqueness enforced at signup), `haversine_km()`, `_geocode_city(label, use_cache=True)` (Photon geocoder plus `db.city_geo` cache — **always pass `use_cache=False` for anything written onto a user record**), lazy Google Cloud Storage client, logger. |
 | `llm.py` | Thin wrapper over the official OpenAI SDK: `llm_enabled()`, `chat_text()`, `chat_vision()`. Reads `OPENAI_API_KEY` and `LLM_MODEL` (default `gpt-4o-mini`). Callers fail open when the key is missing. |
 | `models.py` | Pydantic request models; free-text fields are capped at 2,000 characters. `NearbyRadiusReq` is a leftover and unused. |
-| `auth.py` | Google sign-in (popup and redirect), Sign in with Apple (JWKS verification), Apple-to-Google account linking, session minting, `current_user` dependency, duplicate-account race guard (`_insert_user_or_get_existing`), **build stamp**. Also contains a legacy `POST /auth/session` exchange that no current client uses; it is safe to remove. |
+| `auth.py` | Google sign-in (popup and redirect), Sign in with Apple (JWKS verification), Apple-to-Google account linking, session minting, `current_user` dependency, duplicate-account race guard (`_insert_user_or_get_existing`), **build stamp**. |
 | `users.py` | Onboarding, community-rules signature, location change (geocoder-validated), city position memory, welcome-tour flag, account deletion and data export, report and block, intro upload (with webm→mp4 transcode) to Google Cloud Storage, video URL validation. |
 | `feed.py` | `/cities/popular`, `/feed` (home-town locals plus same-town candidates, browse-center healing, "likes you" flag), `/swipe` (like, pass, unlike, block; match creation), `/matches`, `/matches/unread`. |
 | `messaging.py` | Chat messages (with push to the recipient) and `/translate`. |
@@ -305,7 +306,6 @@ Everything is under `/api` except `/health`. "Auth" means a valid session (cooki
 - `POST /auth/link-google` — merge a fresh Apple relay account into a Google account.
 - `GET /auth/me` — current user.
 - `POST /auth/logout` — ends this device's session.
-- `POST /auth/session` — legacy, unused.
 
 **Users** (auth)
 - `POST /users/onboarding` — first name, home city, age, vibes, language, avatar; sets home coordinates.
@@ -380,7 +380,6 @@ FastAPI's automatic docs at `/docs` and `/redoc` are reachable on the Render add
   3. Alignment by id — codename, handle, name, transcript, the `is_demo` flag, and home location are reset to canonical values.
 - Demo cards show the "✨ AI DEMO" badge and a "HEAR ME SAY MY NAME" chip. They are never matchable; a demo auto-like is gated behind a real reverse-like check.
 - **Never use `demo-NN` users as mutable subjects in tests** — healing resets them mid-test.
-- `backend/scripts/generate_demo_videos.py` generates demo videos.
 
 ---
 
@@ -502,7 +501,7 @@ Atlas password, OpenAI key, Network Solutions login, Render/Netlify/GitHub login
 
 ## 21. Testing
 
-- Suite: `backend/tests/` — 15 files, **121 tests**. They are integration tests that call a running API with a real session:
+- Suite: `backend/tests/` — 15 files, **120 tests**. They are integration tests that call a running API with a real session:
   ```
   cd backend
   export TEST_SESSION_TOKEN=<a valid session token for the QA account>
@@ -630,7 +629,7 @@ Atlas password, OpenAI key, Network Solutions login, Render/Netlify/GitHub login
 **Recommended soon**
 - Google Cloud budget alert and OpenAI low-balance alert (§23).
 - Delete the unused `IMPORT_TOKEN` variable in Render.
-- Remove the unused legacy `POST /auth/session` endpoint and old redirect entries from the Google OAuth client.
+- Remove old, unused redirect entries from the Google OAuth client (keep the nice2meechu.com, www, and netlify.app ones).
 - Database backups (paid Atlas tier, or a scheduled export).
 - Have a lawyer review the Privacy Policy and Terms (both still marked "Draft v1") before a public launch push.
 

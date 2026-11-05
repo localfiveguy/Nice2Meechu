@@ -140,7 +140,7 @@ def test_marlton_feed_all_mp4():
     from dotenv import load_dotenv
     from pymongo import MongoClient
 
-    load_dotenv("/app/backend/.env")
+    load_dotenv(str(__import__("pathlib").Path(__file__).resolve().parents[1] / ".env"))
     mdb = MongoClient(os.environ["MONGO_URL"])[os.environ["DB_NAME"]]
     uid = f"tw-marlton-{_uuid.uuid4().hex[:8]}"
     mdb.users.insert_one({

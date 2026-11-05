@@ -276,8 +276,7 @@ async def block_user(req: BlockReq, user=Depends(current_user)):
 @router.post("/users/video/upload")
 async def upload_video_file(file: UploadFile = File(...), user=Depends(current_user)):
     """Persist a user-recorded intro to Google Cloud Storage and return a stable
-    public URL. Replaces the previous local-disk write — local disk in Emergent's
-    container is ephemeral, so videos would disappear on redeploy. Files are now
+    public URL. Server disk is ephemeral on the host, so videos are always
     stored under gs://nicemeechu/user_videos/<uid>.<ext> with a per-object
     publicRead ACL (bucket itself stays unlisted). Overwrites any previous
     recording for the same user."""

@@ -3,7 +3,7 @@ import asyncio
 import sys
 from unittest.mock import AsyncMock, patch
 
-sys.path.insert(0, "/app/backend")
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1]))
 import media  # noqa: E402
 
 
@@ -23,15 +23,14 @@ def test_prompt_keeps_safety_and_face_checks():
 
 def test_llm_parse_ok(monkeypatch):
     raw = '{"ok": true, "reason": "One clear face, casual tank top.", "estimated_age": 34}'
-    with patch.object(media.LlmChat, "send_message", new=AsyncMock(return_value=raw)):
-        monkeypatch.setattr(media, "EMERGENT_LLM_KEY", "test-key", raising=False)
+    with patch.object(media, "chat_vision", new=AsyncMock(return_value=raw)):
         ok, reason, age = asyncio.run(media._llm_review_frame("x" * 300))
     assert ok is True and age == 34
 
 
 def test_llm_parse_reject_nudity():
     raw = '```json\n{"ok": false, "reason": "Explicit nudity visible.", "estimated_age": null}\n```'
-    with patch.object(media.LlmChat, "send_message", new=AsyncMock(return_value=raw)):
+    with patch.object(media, "chat_vision", new=AsyncMock(return_value=raw)):
         ok, reason, age = asyncio.run(media._llm_review_frame("x" * 300))
     assert ok is False and age is None
 

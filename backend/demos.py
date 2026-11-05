@@ -1,5 +1,5 @@
 """AI-generated demo users (Sora 2 talking-head videos) — seeded from
-/app/backend/videos/demo_meta.json which the generator script produces.
+backend/videos/demo_meta.json.
 Demos are distributed across the top-12 metro cities; count per city
 equals (13 - rank), so #1 city gets 12 demos, #12 gets 1. Total = 78."""
 import json as _json

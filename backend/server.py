@@ -54,9 +54,9 @@ _USER_VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/api/user-videos", StaticFiles(directory=str(_USER_VIDEOS_DIR)), name="user_videos")
 
 # Pre-rendered social share cards (Instagram/Facebook story + feed). Generated
-# offline by /app/scripts/make_share_cards.py — served as static PNGs so the
+# offline by scripts/make_share_cards.py — served as static PNGs so the
 # operator can preview/download them at /api/share-cards/<name>.png.
-_SHARE_CARDS_DIR = ROOT_DIR.parent / "share_cards"  # repo-root/share_cards (was hard-coded /app/)
+_SHARE_CARDS_DIR = ROOT_DIR.parent / "share_cards"  # repo-root/share_cards
 if _SHARE_CARDS_DIR.is_dir():
     app.mount("/api/share-cards", StaticFiles(directory=str(_SHARE_CARDS_DIR)), name="share_cards")
 

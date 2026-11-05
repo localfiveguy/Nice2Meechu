@@ -4,11 +4,6 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
-class SessionExchangeReq(BaseModel):
-    session_id: str
-    ref: Optional[str] = None  # referrer's handle, if user landed via /?ref=<handle>
-
-
 class GoogleIdTokenReq(BaseModel):
     """Direct Google OAuth (GIS) — frontend posts the credential JWT here."""
     credential: str  # Google-issued ID token (JWT)

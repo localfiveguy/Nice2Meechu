@@ -32,17 +32,11 @@ import { MatchCelebration } from "./components/MatchCelebration";
 // reducing it. Previously refactored from 3090 lines → ~290 lines; the
 // remaining surface is just routing — leave as-is unless a real bug appears.
 export default function App() {
-  // Detect Google OAuth session_id in URL fragment SYNCHRONOUSLY (before any render decisions)
-  // to avoid races between AuthCallback and the splash/signin screens.
-  const initialHasSessionId =
-    typeof window !== "undefined" && window.location.hash?.includes("session_id=");
-
-  const [screen, setScreen] = useState(initialHasSessionId ? "auth-callback" : "splash");
+  const [screen, setScreen] = useState("splash");
   const [user, setUser] = useState(null);
   const [matchState, setMatchState] = useState(null);
   const [activeChat, setActiveChat] = useState(null);
   const [unreadMatches, setUnreadMatches] = useState(0);
-  const callbackProcessed = useRef(false);
 
   // Poll for unread match count whenever the user is signed in. We refresh:
   // - once when the user object is first set,
@@ -165,44 +159,8 @@ export default function App() {
     if (screen) pageview(screen);
   }, [screen]);
 
-  // Handle the OAuth callback (one-time: exchange session_id → session_token cookie)
+  // Standard mount-time hydration
   useEffect(() => {
-    if (!initialHasSessionId) return;
-    if (callbackProcessed.current) return;
-    callbackProcessed.current = true;
-
-    const hash = window.location.hash || "";
-    const params = new URLSearchParams(hash.replace(/^#/, ""));
-    const sessionId = params.get("session_id");
-    // Clean the URL immediately so the token is never visible to user / history
-    window.history.replaceState(null, "", window.location.pathname);
-
-    if (!sessionId) {
-      setScreen("signin");
-      return;
-    }
-    (async () => {
-      try {
-        const ref = localStorage.getItem("n2m_ref") || undefined;
-        const { data } = await api.post("/auth/session", { session_id: sessionId, ref });
-        if (data.token) localStorage.setItem("n2m_token", data.token); // fallback for non-cookie envs
-        localStorage.removeItem("n2m_ref"); // ref consumed
-        track("sign_in_completed", { onboarded: !!data.onboarded, referred: !!ref });
-        setUser(data.user);
-        if (!(await openPendingChat(data.user))) routeToNext(data.user);
-      } catch (err) {
-        console.error("session exchange failed", err);
-        track("sign_in_failed");
-        toast.error("Sign-in failed. Try again.");
-        setScreen("signin");
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Standard mount-time hydration when NOT coming back from OAuth callback
-  useEffect(() => {
-    if (initialHasSessionId) return; // AuthCallback flow handles auth instead
     // Redirect-mode Google sign-in also hands the session token back in the
     // URL fragment (#st=...) because some iOS Safari installs drop the cookie
     // set during the cross-site redirect. Store it as the Bearer fallback,

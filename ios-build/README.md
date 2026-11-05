@@ -25,7 +25,7 @@ automatically.
    - appstoreconnect.apple.com → Users and Access → Integrations → App Store Connect API → ➕
    - Name `codemagic`, Access `App Manager` → download the `.p8` file (only downloadable once!)
    - Note the **Issuer ID** and **Key ID** shown on that page
-3. **Push this repo to GitHub** — use the "Save to GitHub" button in Emergent
+3. **GitHub** — the code is already in `localfiveguy/Nice2Meechu` (branch `netlify-migration`); point Codemagic at that branch
 4. **Codemagic — connect and build**
    - codemagic.io → sign up with GitHub → add this repository
    - Team settings → Integrations → **Developer Portal** → add the API key

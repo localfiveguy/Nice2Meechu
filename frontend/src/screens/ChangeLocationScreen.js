@@ -174,7 +174,7 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
       toast.error("Geolocation isn't available in this browser");
       return;
     }
-    // Detect the iframe sandbox case (Emergent Preview, etc.) — geolocation
+    // Detect the iframe sandbox case (embedded previews, etc.) — geolocation
     // requires the parent <iframe> to set allow="geolocation" which most
     // preview shells don't. The production site at nice2meechu.com is
     // top-level, so the API works fine there.

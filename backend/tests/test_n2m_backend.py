@@ -1,7 +1,7 @@
-"""Nice2Meechu backend test suite (Google-OAuth / Emergent auth).
+"""Nice2Meechu backend test suite (Google / Apple sign-in).
 
-Auth is now Emergent-managed Google OAuth. For tests we seed a user + session
-directly into MongoDB (per /app/auth_testing.md) and authenticate via Bearer.
+Auth is Google (and Apple) sign-in. For tests we seed a user + session
+directly into MongoDB  and authenticate via Bearer.
 """
 import os
 import time
@@ -14,7 +14,7 @@ from pymongo import MongoClient
 
 BASE = os.environ["REACT_APP_BACKEND_URL"].rstrip("/") if os.environ.get("REACT_APP_BACKEND_URL") else None
 if not BASE:
-    with open("/app/frontend/.env") as f:
+    with open(str(__import__("pathlib").Path(__file__).resolve().parents[2] / "frontend" / ".env")) as f:
         for ln in f:
             if ln.startswith("REACT_APP_BACKEND_URL="):
                 BASE = ln.split("=", 1)[1].strip().strip('"').rstrip("/")
@@ -87,7 +87,7 @@ class TestRoot:
         d = r.json()
         assert d["app"] == "Nice2Meechu"
         # Direct GIS mode is active when GOOGLE_CLIENT_ID is configured.
-        assert d["auth"] in ("google-direct", "google-emergent")
+        assert d["auth"] in ("google-direct", "google-not-configured")
         assert d["auth"] == "google-direct", f"Expected google-direct (GOOGLE_CLIENT_ID set), got {d['auth']}"
 
 
@@ -97,9 +97,9 @@ class TestAuth:
         r = session.get(f"{API}/auth/me")
         assert r.status_code == 401
 
-    def test_session_exchange_bogus(self, session):
+    def test_legacy_session_exchange_removed(self, session):
         r = session.post(f"{API}/auth/session", json={"session_id": "bogus-not-real-xyz"})
-        assert r.status_code in (401, 502)
+        assert r.status_code in (404, 405)
 
     def test_me_with_bearer(self, session, auth):
         r = session.get(f"{API}/auth/me", headers=auth["headers"])
@@ -315,25 +315,20 @@ class TestOgCard:
         assert (width, height) == (1200, 630)
 
 
-# ---------- Referral capture on /api/auth/session ----------
+# ---------- Referral capture at sign-up ----------
 class TestReferral:
-    """Test that auth/session accepts `ref` and increments referral_count.
+    """Test that sign-up with a `ref` increments referral_count.
 
-    Since real Emergent OAuth would reject test session_ids, we simulate the
-    POST-OAuth side-effect by directly executing the same DB ops the endpoint
+    Real Google sign-in can't be driven from tests, so we simulate the
+    post-sign-in side-effect by directly executing the same DB ops the endpoint
     performs (model/structure verification). This validates the new user-doc
     fields exist and increment logic is correct.
     """
 
-    def test_session_endpoint_accepts_ref_field(self, session):
-        # The POST should not 422 on the `ref` field; it should fail at OAuth lookup (401/502).
-        r = session.post(f"{API}/auth/session", json={"session_id": "bogus-xyz", "ref": "alice"})
-        assert r.status_code in (401, 502), f"got {r.status_code}: {r.text}"
-
     def test_referral_count_increments_for_new_user(self, mongo):
         """Simulate: alice exists with handle, bob (new user) signs up with ref=alice.
 
-        We replicate the exact mongo ops from auth_session_exchange (lines ~178-221).
+        We replicate the mongo ops the sign-up path performs.
         """
         alice_id = f"test-alice-{uuid.uuid4().hex[:8]}"
         alice_handle = f"alice_{uuid.uuid4().hex[:6]}"
