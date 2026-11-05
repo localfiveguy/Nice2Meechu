@@ -79,12 +79,13 @@ export function PrivacyPolicyPage({ onBack }) {
 
       <H2>3. Who we share data with (subprocessors)</H2>
       <UL>
-        <li>Google (OAuth sign-in, Analytics)</li>
+        <li>Google (OAuth sign-in, Analytics, Cloud Storage for intro videos)</li>
+        <li>Apple (Sign in with Apple)</li>
         <li>OpenAI (content-safety face check, live translation, demo-video generation)</li>
         <li>Komoot / OpenStreetMap (geocoding via Photon)</li>
-        <li>Cloudflare (CDN & DNS)</li>
+        <li>Netlify (website hosting & CDN)</li>
+        <li>Render (application server hosting)</li>
         <li>MongoDB Atlas (managed database)</li>
-        <li>Emergent (hosting & platform)</li>
       </UL>
       <P>We do not sell personal data. We do not transfer data to advertisers.</P>
 
