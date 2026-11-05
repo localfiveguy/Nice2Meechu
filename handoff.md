@@ -1,6 +1,8 @@
 # Nice2Meechu — Complete Engineering Handoff
-_Last updated: 2026-06 · production build **v1.6.6-home-town-only** (verified live via `GET https://nice2meechu.com/api/`)_
-_Download the freshest copy anytime: `GET /api/handoff.md` (served from `/app/handoff.md`)_
+_Last updated: 2026-11-05 · **Hosting moved off Emergent on 2026-11-04** — website on Netlify, API on Render, data on MongoDB Atlas (see §2, §12, §16, §21)._
+_Live build check: `GET https://nice2meechu.com/api/` · Source of truth: GitHub `localfiveguy/Nice2Meechu`, branch **`netlify-migration`** (this is what's live)._
+
+> **Read first:** sections written before 2026-11 describe Emergent paths such as `/app/backend` and supervisor commands. The code layout is unchanged (`backend/`, `frontend/` at the repo root), but nothing runs on Emergent anymore. The Emergent project was unpublished on 2026-11-05.
 
 ---
 
@@ -43,31 +45,25 @@ Tagline: **"Meet the world. Video-first. Anonymous until the spark."**
 
 ---
 
-## 2. Environments & Deploy Workflow
+## 2. Environments & Deploy Workflow (current, since 2026-11-04)
 
-| | Preview | Production |
+| Piece | Service | Where to manage it |
 |---|---|---|
-| URL | hyperlocal-video.preview.emergentagent.com | nice2meechu.com |
-| DB | local MongoDB (MONGO_URL in backend/.env) | Emergent-managed (separate!) |
-| GCS bucket | `nicemeechu` — **SHARED with production** | same bucket |
-| Agent access | full | **NONE** — code-only fixes, user must redeploy |
+| Website (React build) | **Netlify** project `nice2meechu` | app.netlify.com/projects/nice2meechu |
+| API (FastAPI) | **Render** web service `nice2meechu-api` (Starter plan, Virginia) | dashboard.render.com → nice2meechu-api |
+| Database | **MongoDB Atlas** free cluster `Cluster0` (AWS N. Virginia), database `nice2meechu` | cloud.mongodb.com → Project 0 |
+| Intro videos | **Google Cloud Storage** bucket `nicemeechu` in project `gen-lang-client-0271718241` (billing account "B of A") | console.cloud.google.com |
+| AI face check + translation | **OpenAI** API, model `gpt-4o-mini` (prepaid credit) | platform.openai.com |
+| Domain + DNS | **Network Solutions** — A `@` → `75.2.60.5`, CNAME `www` → `nice2meechu.netlify.app` (renews 2027-04-26) | networksolutions.com → Domains |
+| HTTPS | Let's Encrypt via Netlify (auto-renews) | Netlify → Domain management |
 
-- **ALWAYS ask which environment a bug is on.** The two databases diverge
-  completely: real signups (the actual people from Erial / Egg Harbor / Marlton NJ)
-  exist ONLY in production. Preview holds fixtures + the owner's own account.
-  Several "bugs" have turned out to be exactly this data split.
-- **The GCS video bucket is shared.** Preview code can read/repair production
-  video files (this is how the webm→mp4 pre-render worked). NEVER delete
-  non-test objects from preview.
-- **Build stamp**: `GET /api/` returns `{"build": "v1.6.6-home-town-only", ...}`
-  (defined in `auth.py`; the admin diagnose endpoint carries its own copy in
-  `admin.py`). Bump BOTH on every meaningful change — it definitively answers
-  "did my deploy include the fix?".
-- Deploys: user clicks **Deploy** in the Emergent UI (agent cannot).
-- k8s health probes hit root-level `GET /health` on backend port 8001 — the route
-  in `server.py` MUST NOT be removed (its absence once failed a prod deploy).
-- Supervisor: backend `0.0.0.0:8001`, frontend `3000`. Restart only for .env or
-  dependency changes: `sudo supervisorctl restart backend frontend`.
+**How a change goes live:** push to branch `netlify-migration` on GitHub → Netlify rebuilds the site and Render rebuilds the API automatically (Render is a Blueprint driven by `render.yaml`; Netlify is configured by `netlify.toml`). Nobody clicks "Deploy".
+
+- **One origin.** The browser only ever talks to `nice2meechu.com`. Netlify proxies `/api/*` to `https://nice2meechu-api.onrender.com` (status-200 rewrite in `netlify.toml`), so the httpOnly `session_token` cookie and the Google redirect URI keep working. `REACT_APP_BACKEND_URL` is intentionally **empty** so API calls are same-origin `/api`.
+- **No separate preview database anymore.** There is one database. `nice2meechu.netlify.app` is the same site and same data as `nice2meechu.com`.
+- **Build stamp:** `GET /api/` returns `{"build": ...}` (in `auth.py`; `admin.py` has its own copy). Bump both on meaningful changes.
+- **Health check:** Render probes `GET /health` (root level, not under `/api`) — keep that route in `server.py`.
+- `main` on GitHub holds Emergent's last saved copy (2026-11-05) and is **not** deployed. Everything from it is already in `netlify-migration`.
 
 ---
 
@@ -109,7 +105,7 @@ Tagline: **"Meet the world. Video-first. Anonymous until the spark."**
 ### Key dependencies
 Backend: fastapi, motor, pywebpush/py-vapid, PyJWT (Apple), google-auth (Google),
 httpx (Photon geocoder), google-cloud-storage, **imageio-ffmpeg** (bundled ffmpeg),
-emergentintegrations (LLM), Pillow.
+openai (LLM, via backend/llm.py), Pillow.
 Frontend: react-router-dom, framer-motion, leaflet, axios, sonner, lucide-react, radix/shadcn.
 
 ---
@@ -216,7 +212,7 @@ items have NO `near_km` — both removed) · `POST /swipe` (like|pass|unlike|blo
 mutual like → match + push) · `GET /matches` · `GET /matches/unread`
 
 **Messaging**: `GET /messages/{match_id}` · `POST /messages` (push to recipient) ·
-`POST /translate` (auth, ≤2000 chars, Emergent LLM)
+`POST /translate` (auth, ≤2000 chars, OpenAI gpt-4o-mini)
 
 **Media**: `POST /video/face-check` (LLM face + age gate) · `GET /og/{handle}`
 (share-card PNG) · `GET /handoff.md`
@@ -307,7 +303,7 @@ mutual like → match + push) · `GET /matches` · `GET /matches/unread`
   (transcodes if the sibling is missing, reuses if present). Webm originals are
   KEPT (the other environment's un-migrated URLs must not 404). Ran in both
   environments; all production webm blobs have mp4 siblings.
-- Face/age check: `POST /video/face-check` — GPT-4o vision confirms one real face,
+- Face/age check: `POST /video/face-check` — OpenAI `gpt-4o-mini` vision (via `backend/llm.py`, key `OPENAI_API_KEY`) confirms one real face,
   content safety, and an age-assurance gate (hard block <16; block 16–17 claiming
   adult). Fail-open when the LLM key is missing. Audit trail in `db.age_checks`.
 - Share cards: `GET /og/{handle}` renders branded PNGs with PIL (LiberationSans).
@@ -319,7 +315,7 @@ mutual like → match + push) · `GET /matches` · `GET /matches/unread`
 
 ## 10. Push Notifications (VAPID Web Push)
 
-- Keys in backend/.env; `push.py` via pywebpush; subs in `db.push_subscriptions`
+- Keys in Render env vars (`VAPID_PUBLIC_KEY` in `render.yaml`, `VAPID_PRIVATE_KEY` secret). **A new key pair was generated for the 2026-11 move** — there were zero push subscriptions at the time, so nobody lost notifications. `push.py` via pywebpush; subs in `db.push_subscriptions`
   (unique endpoint index); opt-in flag `users.notify_new_nearby` (LEGACY NAME —
   it now gates match & message pushes only).
 - **Events (current)**: new match ("💌 It's a match…", tag `match-<id>`) and new
@@ -370,27 +366,27 @@ mutual like → match + push) · `GET /matches` · `GET /matches/unread`
 
 ---
 
-## 12. Credentials & Env Inventory
+## 12. Credentials & Env Inventory (current)
 
-**backend/.env** (never git-tracked): `MONGO_URL`, `DB_NAME`, `CORS_ORIGINS`
-(explicit allowlist — NEVER `*`), `EMERGENT_LLM_KEY`, `GOOGLE_CLIENT_ID`,
-`ADMIN_EMAILS`, `GCP_PROJECT_ID`, `GCS_BUCKET=nicemeechu`,
-`GOOGLE_APPLICATION_CREDENTIALS=/app/backend/gcs-credentials.json`,
-`VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_SUBJECT`, `APPLE_SERVICE_ID`,
-`INACTIVE_CLEANUP_*` tunables.
+**Render → nice2meechu-api → Environment.** Plain values live in `render.yaml` and sync automatically: `DB_NAME=nice2meechu`, `CORS_ORIGINS`, `GOOGLE_CLIENT_ID`, `APPLE_SERVICE_ID`, `ADMIN_EMAILS`, `LLM_MODEL`, `GCP_PROJECT_ID`, `GCS_BUCKET`, `GOOGLE_APPLICATION_CREDENTIALS=/etc/secrets/gcs-credentials.json`, `MONGO_USERNAME`, `VAPID_PUBLIC_KEY`, `VAPID_SUBJECT`, `PYTHON_VERSION`.
 
-**frontend/.env**: `REACT_APP_BACKEND_URL`, `REACT_APP_GOOGLE_CLIENT_ID`,
-`REACT_APP_APPLE_SERVICE_ID`.
+Secrets entered by hand in the Render dashboard (never in git):
+- `MONGO_URL` — Atlas address **without** a password (`mongodb+srv://cluster0.rkhvgso.mongodb.net/...`).
+- `MONGO_PASSWORD` — the Atlas database user's password, passed to the driver separately (see `core.py`).
+- `OPENAI_API_KEY`
+- `VAPID_PRIVATE_KEY`
+- **Secret file** `gcs-credentials.json` — JSON key for service account `nice2meechu-video-uploader` (key created 2026-11-04; all older keys deleted).
+- A leftover `IMPORT_TOKEN` may still be listed; it does nothing (the import page was removed) and can be deleted.
 
-**User-held, not in repo**: Apple Developer account, ASC API .p8, Google Play
-account, Android keystore passwords, GCS JSON key (file git-ignored).
+**Netlify:** public build values live in `netlify.toml` (`REACT_APP_GOOGLE_CLIENT_ID`, `REACT_APP_APPLE_SERVICE_ID`, empty `REACT_APP_BACKEND_URL`). No secrets on Netlify.
 
-**Test credentials**: `/app/memory/test_credentials.md` (git-ignored) — includes
-`TEST_SESSION_TOKEN` (365-day QA session) and the QA fixture-state contract.
+**MongoDB Atlas:** database user `localfiveguy_db_user`; Network Access allows `0.0.0.0/0` (Render has no fixed IPs; the password protects it).
 
-**Safety/privacy contact**: Google Form (no domain email exists) —
-constant `SAFETY_CONTACT_URL` in `LegalPages.jsx`; auto-notifies
-localfiveguy@gmail.com.
+**Google sign-in client** (`780373908792-…` in project `gen-lang-client-0271718241`): allowed origins and redirect URIs include `nice2meechu.com`, `www.nice2meechu.com`, and `nice2meechu.netlify.app`, plus old Emergent entries that can be removed.
+
+**Owner-held, not in repo:** the Atlas password, OpenAI key, Network Solutions login, Apple Developer and Google Play accounts, Android keystore passwords.
+
+**Safety/privacy contact:** Google Form (no domain email exists) — constant `SAFETY_CONTACT_URL` in `LegalPages.jsx`; auto-notifies localfiveguy@gmail.com.
 
 ---
 
@@ -499,24 +495,22 @@ localfiveguy@gmail.com.
 
 ---
 
-## 16. Runbooks
+## 16. Runbooks (current)
 
-- Restart: `sudo supervisorctl restart backend frontend`
-- Logs: `tail -n 100 /var/log/supervisor/backend.*.log`
-- Smoke: `curl $API/api/` (check `build`), `curl localhost:8001/health`
-- Prod feed forensics: sign in as an admin on nice2meechu.com, then open
-  `https://nice2meechu.com/api/admin/diagnose-feed` in the same browser
-  (shows locals + same_town candidates, browse center, geocache, build).
-- Force demo re-seed/heal/purge: any authenticated `GET /api/feed`.
-- Re-run a one-shot migration: delete its marker doc from `db.migrations`
-  (`repair_user_coords_v1` or `transcode_webm_videos_v1`), restart backend.
-  The webm migration is idempotent and safe to re-run (skips existing mp4s).
-- Mint a test session: insert into `user_sessions`, or copy `n2m_token` from
-  localStorage after a UI sign-in. (Recipe in /app/memory/test_credentials.md.)
-- Manually transcode a video: `python3 -c "from transcode import transcode_to_mp4;
-  transcode_to_mp4('in.webm','out.mp4')"` from `/app/backend`.
-- Full user wipe: users + user_sessions + swipes (both sides) + matches
-  (user_ids) + messages. `DELETE /api/users/me` does it for self.
+- **Is it up?** Open `https://nice2meechu.com/api/` (shows `build`) and `https://nice2meechu-api.onrender.com/health`.
+- **Logs:** Render dashboard → nice2meechu-api → Logs. Build problems: Netlify → Deploys.
+- **Restart the API:** Render → nice2meechu-api → Manual Deploy → "Deploy latest commit".
+- **Roll back:** Render → Events → pick an earlier deploy → Rollback. Netlify → Deploys → pick a deploy → "Publish deploy".
+- **Prod feed forensics:** sign in as an admin on nice2meechu.com, then open `https://nice2meechu.com/api/admin/diagnose-feed`.
+- **Force demo re-seed/heal/purge:** any authenticated `GET /api/feed`.
+- **Re-run a one-shot migration:** delete its marker doc from `db.migrations`, then restart the API.
+- **Database backups:** the Atlas free tier has no automatic backups. Before risky changes, export from the Atlas UI (Collections → Export) or upgrade the cluster.
+- **Full user wipe:** users + user_sessions + swipes (both sides) + matches (user_ids) + messages. `DELETE /api/users/me` does it for self.
+
+### Things that will break the site if they lapse
+1. **Google Cloud billing** on project `gen-lang-client-0271718241` — if unlinked, every video 403s (happened 2026-10-20). The "B of A" billing account is at its 5-project limit.
+2. **OpenAI prepaid credit** — when it runs out, the face check fails open and translation returns the original text.
+3. **Render payment method** (Starter plan) and the **domain renewal** (2027-04-26).
 
 ---
 
@@ -568,3 +562,13 @@ localfiveguy@gmail.com.
 ### v1.6.8 additions (same pending deploy): unique codenames + multi-device sessions
 - Codename pool was 100 combos → two real users were both "Ember Orbit". Now 1,600 combos; `core.generate_unique_codename()` enforces uniqueness at signup; migration `unique_codenames_v1` (`server.dedupe_codenames`, callable directly) renamed 7 preview dupes — demos keep canonical names, oldest real account keeps the name. created_at is datetime in old docs / ISO string in new: sort with `str()`.
 - SESSION_TTL 7→30 days (core.py). Sessions were already multi-device (per-token mint, per-token logout) — now proven by tests/test_unique_codenames.py. Suite: 120/120.
+
+---
+
+## 21. 2026-10/11 — Migration off Emergent (Netlify + Render + Atlas)
+
+- Code changes (branch `netlify-migration`): Emergent `LlmChat` replaced by the official OpenAI SDK (`backend/llm.py`); Emergent-only packages removed (`emergentintegrations`, private `litellm` wheel, `@emergentbase/visual-edits`); `/app/` hard-coded paths made relative; Emergent's tracking scripts removed from `index.html`; `MONGO_PASSWORD` support added; `netlify.toml` and `render.yaml` added.
+- Data: exported from Emergent production via a temporary admin-only export endpoint and loaded with a token-gated import page (both removed afterward). Final import on 2026-11-04: 109 users (31 real, 78 demo), 87 sessions, 34 age checks, 21 swipes, 19 signatures, 5 migration markers.
+- Fixes shipped during the move: Profile shows and edits **home_city** (it used to show the last-browsed feed city, e.g. "Mumbai, India"); intro recorder caps the camera box at 50dvh so "Continue" stays on screen; privacy-policy subprocessor list updated (Netlify, Render, Google Cloud Storage, Apple; Emergent and Cloudflare removed).
+- Verified live after the switch: HTTPS, Google sign-in, swipes, translation, intro upload plus AI face check, and video playback from GCS.
+
