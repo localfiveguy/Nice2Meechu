@@ -30,6 +30,8 @@ SKIP_WORDS = ("mall", "census designated", "(historical)")
 # Places whose GeoNames point is a different, smaller spot with the same name.
 # GeoNames' "Voorhees, NJ" is a hamlet near New Brunswick; people mean
 # Voorhees Township in Camden County.
+# Spell out leading numbers so the city files under a letter in the A-Z list.
+NAME_OVERRIDES = {"6th of October City": "Sixth of October City"}
 COORD_OVERRIDES = {("voorhees", "NJ"): (39.8447, -74.9614)}
 
 
@@ -47,7 +49,7 @@ def main(data_dir: str) -> None:
                 continue
         elif pop < WORLD_MIN_POP:
             continue
-        name = c["name"].strip()
+        name = NAME_OVERRIDES.get(c["name"].strip(), c["name"].strip())
         if not name or any(w in name.lower() for w in SKIP_WORDS):
             continue
         region = (c.get("admin1code") or "") if cc == "US" else ""

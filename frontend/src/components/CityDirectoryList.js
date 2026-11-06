@@ -20,8 +20,11 @@ const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 const NAME_ALIASES = { "new york": "new york city" };
 
 // Accent- and punctuation-insensitive key ("São Paulo" -> "sao paulo").
+// Letters with no accent-free form in Unicode ("Đà Lạt", "Łódź", "Diyarbakır").
+const SPECIAL_LETTERS = { "Đ": "D", "đ": "d", "Ð": "D", "ð": "d", "Ł": "L", "ł": "l", "ı": "i", "Ø": "O", "ø": "o", "ß": "ss", "Æ": "AE", "æ": "ae" };
 const fold = (s) =>
   (s || "")
+    .replace(/[ĐđÐðŁłıØøßÆæ]/g, (ch) => SPECIAL_LETTERS[ch])
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .replace(/^[^A-Za-z0-9]+/, "")
