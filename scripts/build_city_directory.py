@@ -3,7 +3,8 @@ Change Location screen.
 
 Source: GeoNames city data (CC BY 4.0, https://www.geonames.org), as bundled in
 the `geonamescache` pip package. Included:
-  * every US city/town with population >= 10,000
+  * every US city/town with population >= 1,000 (low enough to catch places
+    like Voorhees, NJ, whose GeoNames point counts only the village center)
   * every city outside the US with population >= 100,000
 
 Run (from the repo root):
@@ -21,16 +22,20 @@ import os
 import sys
 from pathlib import Path
 
-US_MIN_POP = 10_000
+US_MIN_POP = 1_000
 WORLD_MIN_POP = 100_000
 COUNTRY_SHORT = {"US": "USA", "GB": "UK", "AE": "UAE"}
 # GeoNames "populated places" that aren't towns people live in.
 SKIP_WORDS = ("mall", "census designated", "(historical)")
+# Places whose GeoNames point is a different, smaller spot with the same name.
+# GeoNames' "Voorhees, NJ" is a hamlet near New Brunswick; people mean
+# Voorhees Township in Camden County.
+COORD_OVERRIDES = {("voorhees", "NJ"): (39.8447, -74.9614)}
 
 
 def main(data_dir: str) -> None:
     data = Path(data_dir)
-    cities = json.loads((data / "cities5000.json").read_text())
+    cities = json.loads((data / "cities1000.json").read_text())
     countries = json.loads((data / "countries.json").read_text())
 
     rows, seen = [], set()
@@ -51,8 +56,8 @@ def main(data_dir: str) -> None:
         if key in seen:
             continue
         seen.add(key)
-        rows.append([name, region, country, cc.lower(),
-                     round(float(c["latitude"]), 4), round(float(c["longitude"]), 4)])
+        lat, lng = COORD_OVERRIDES.get((name.lower(), region), (c["latitude"], c["longitude"]))
+        rows.append([name, region, country, cc.lower(), round(float(lat), 4), round(float(lng), 4)])
 
     rows.sort(key=lambda r: (r[0].lower(), r[2], r[1]))
     out = Path(__file__).resolve().parent.parent / "frontend" / "public" / "cities.json"
