@@ -92,6 +92,60 @@ async def admin_delete_user(id: str = "", confirm: str = "", user=Depends(curren
     return {"ok": True, "deleted": uid, "codename": target.get("codename"), "email": target.get("email")}
 
 
+@router.get("/admin/restore-video")
+async def admin_restore_video(id: str = "", confirm: str = "", user=Depends(current_user)):
+    """Founder tool: bring back a real user's intro when their mp4 is gone but
+    the original recording (user_videos/<id>.webm) is still in the bucket —
+    what the inactive cleanup leaves behind. Re-encodes the webm to H.264 mp4,
+    uploads it, and points video_url at it again.
+    Open signed-in: /api/admin/restore-video?id=<user id>&confirm=RESTORE"""
+    _require_admin(user)
+    target = await db.users.find_one({"id": id}, {"_id": 0, "id": 1, "is_demo": 1, "video_url": 1, "first_name": 1})
+    if not target:
+        raise HTTPException(404, "No user with that id")
+    if target.get("is_demo"):
+        raise HTTPException(400, "That's a demo persona")
+    if target.get("video_url"):
+        return {"ok": True, "already_has_video": True, "video_url": target["video_url"]}
+    if confirm != "RESTORE":
+        raise HTTPException(400, "Add &confirm=RESTORE to the address to restore this video")
+
+    import tempfile
+
+    from transcode import transcode_to_mp4
+
+    bucket = _get_gcs_bucket()
+    stem = f"user_videos/{id}"
+
+    def _rebuild_mp4() -> str:
+        mp4_blob = bucket.blob(f"{stem}.mp4")
+        if mp4_blob.exists():
+            return "existing"
+        webm_blob = bucket.blob(f"{stem}.webm")
+        if not webm_blob.exists():
+            return "missing"
+        with tempfile.TemporaryDirectory() as td:
+            src, dst = f"{td}/in.webm", f"{td}/out.mp4"
+            webm_blob.download_to_filename(src)
+            transcode_to_mp4(src, dst)
+            mp4_blob.cache_control = "public, max-age=31536000"
+            mp4_blob.upload_from_filename(dst, content_type="video/mp4", predefined_acl="publicRead", timeout=120)
+        return "rebuilt"
+
+    result = await run_in_threadpool(_rebuild_mp4)
+    if result == "missing":
+        raise HTTPException(404, "No original recording for this user in storage — they'll need to re-record")
+    now = datetime.now(timezone.utc)
+    url = f"https://storage.googleapis.com/{bucket.name}/{stem}.mp4?v={int(now.timestamp())}"
+    await db.users.update_one(
+        {"id": id},
+        {"$set": {"video_url": url, "video_restored_at": now.isoformat()},
+         "$unset": {"inactivity_cleaned_at": ""}},
+    )
+    logger.warning("admin restore-video: %s (%s) by %s", id, result, user.get("email"))
+    return {"ok": True, "user": target.get("first_name"), "mp4": result, "video_url": url}
+
+
 @router.get("/admin/set-home-city")
 async def admin_set_home_city(id: str = "", city: str = "", confirm: str = "", user=Depends(current_user)):
     """Founder tool: correct a user's saved home town (where their video shows
