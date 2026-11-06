@@ -153,14 +153,14 @@ Nameservers stay at Network Solutions (`ns43.worldnic.com`, `ns44.worldnic.com`)
 │   └── requirements.txt
 ├── frontend/           React app (Netlify builds from here)
 │   ├── src/            App.js, screens/, components/, lib/, legal/, constants/
-│   ├── public/         index.html, manifest.json, sw.js, icons, store-assets/, .well-known/
+│   ├── public/         index.html, manifest.json, sw.js, cities.json, icons, store-assets/, .well-known/
 │   ├── craco.config.js
 │   └── package.json    (no lockfile — dependencies resolve fresh on each build)
 ├── android-build/      Android TWA project (Google Play)
 ├── ios-build/          iOS wrapper project (App Store)
 ├── codemagic.yaml      iOS cloud build pipeline
 ├── tests/              Playwright UI test for the intro recorder
-├── scripts/            make_share_cards.py (renders the share-card PNGs)
+├── scripts/            make_share_cards.py (share-card PNGs), build_city_directory.py (regenerates public/cities.json)
 ├── share_cards/        generated share-card images
 ├── netlify.toml        website build + /api proxy
 ├── render.yaml         API service definition
@@ -232,8 +232,9 @@ To re-run one: delete its marker document from `db.migrations` and restart the A
   3. Missing `video_url` → **VideoPick** (record intro).
   4. Otherwise → **Feed**.
 - **`lib/`** — `api.js` (axios; base URL `${REACT_APP_BACKEND_URL}/api`; sends `Authorization: Bearer <n2m_token>` from localStorage), `push.js`, `constants.js`, `cityFormat.js`, `ua.js` (device detection).
-- **`screens/`** — `Splash`, `SignInScreen` (Apple first on iPhone/iPad), `AuthCallback`, `LinkGoogleScreen`, `Onboarding`, `CommunityRulesScreen`, `VideoPick`, `FeedScreen`, `ChangeLocationScreen` (Leaflet map), `MatchesScreen`, `ChatScreen`, `ProfileScreen`.
+- **`screens/`** — `Splash`, `SignInScreen` (Apple first on iPhone/iPad), `AuthCallback`, `LinkGoogleScreen`, `Onboarding`, `CommunityRulesScreen`, `VideoPick`, `FeedScreen`, `ChangeLocationScreen` (Leaflet map plus the full A–Z city list, `components/CityDirectoryList.js`), `MatchesScreen`, `ChatScreen`, `ProfileScreen`.
 - **`components/`** — `FeedCard` (one mp4 `<source>`, query-string-safe type check), `AppleSignInButton`, `CityAutocomplete`, `BottomNav`, `MatchCelebration`, `ShareCard`, `AvatarThumb`, `VideoEl`, `EmptyFeedState`, `NotifyMeButton`, `IOSInstallSheet`, `SignaturePad`, `WelcomeTour`, `DemoPeekWidget`, and `ui/` (shadcn components).
+- **City list on Change Location** — `CityDirectoryList.js` loads the static `/cities.json` (about 10,500 rows: every US town of 10,000+ people and every city elsewhere of 100,000+, from GeoNames, CC BY 4.0 — credit shown under the list) and merges in live people counts from `GET /api/cities/popular`. Default sort A–Z, with a "Most people" toggle and an A–Z letter bar; rows render 60 at a time as you scroll. A town with people browses exactly the label and coordinates the server returned; towns with people that aren't in the file (for example Voorhees, NJ, which GeoNames lists as a township) are added as their own rows. Rebuild the file with `python3 scripts/build_city_directory.py` after `pip install geonamescache`.
 - **`legal/LegalPages.jsx`** — Privacy Policy, Terms, and the safety contact link (`SAFETY_CONTACT_URL`, a Google Form that emails the owner).
 - **`public/sw.js`** — push-only service worker: handles push, notification clicks, and resubscribe. **It does no caching on purpose.**
 - **`public/index.html`** — contains only first-party code. Google Analytics 4 loads only after the visitor accepts the cookie banner.

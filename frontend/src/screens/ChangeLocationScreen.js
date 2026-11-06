@@ -3,10 +3,11 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { ArrowRight, MapPin, Sparkles, X } from "lucide-react";
+import { MapPin, Sparkles, X } from "lucide-react";
 import { api } from "../lib/api";
 import { dedupeCitySuggestions, formatCityLabel, stripCityNoise } from "../lib/cityFormat";
 import { useDropdownPlacement } from "../lib/useDropdownDirection";
+import { CityDirectoryList } from "../components/CityDirectoryList";
 import { track } from "../analytics";
 
 export function ChangeLocationScreen({ user, onClose, onChanged }) {
@@ -207,12 +208,12 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
         if (code === 1) {
           // PERMISSION_DENIED — could be user-blocked OR iframe sandboxing
           msg = inIframe
-            ? "Geolocation is blocked in the preview window. It works on nice2meechu.com — or enter a city, tap the map, or pick a popular city below."
-            : "Location permission denied. Enter a city, tap the map, or pick a popular city below.";
+            ? "Geolocation is blocked in the preview window. It works on nice2meechu.com — or enter a city, tap the map, or pick a city from the list below."
+            : "Location permission denied. Enter a city, tap the map, or pick a city from the list below.";
         } else if (code === 2) {
-          msg = "Location unavailable right now. Enter a city, tap the map, or pick a popular city below.";
+          msg = "Location unavailable right now. Enter a city, tap the map, or pick a city from the list below.";
         } else if (code === 3) {
-          msg = "Locating timed out. Enter a city, tap the map, or pick a popular city below.";
+          msg = "Locating timed out. Enter a city, tap the map, or pick a city from the list below.";
         }
         toast.error(msg);
         setBusy(null);
@@ -473,43 +474,8 @@ export function ChangeLocationScreen({ user, onClose, onChanged }) {
           </div>
         </div>
 
-        {/* Popular cities */}
-        <div className="mt-1">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <span className="text-base">🔥</span>
-              <h3 className="font-display text-base font-black">Popular cities</h3>
-            </div>
-            <span className="text-[10px] uppercase tracking-widest font-bold text-white/40">tap to jump</span>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            {popular.length === 0 && (
-              <div className="text-xs text-white/40 py-3">Loading hotspots…</div>
-            )}
-            {popular.map((c, i) => (
-              <button
-                key={`${c.city}-${c.country}-${i}`}
-                onClick={() => pickPopular(c)}
-                disabled={busy !== null || c.lat == null}
-                className="flex items-center gap-3 rounded-2xl px-3 py-2.5 bg-white/5 hover:bg-white/10 active:scale-[0.99] transition text-left disabled:opacity-50"
-                data-testid={`change-location-popular-${i}`}
-              >
-                <div className="text-2xl shrink-0">{c.flag}</div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-display text-base font-black truncate">{c.city}</div>
-                  <div className="text-xs text-white/45 truncate">{c.country || "—"}</div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className={`text-[10px] uppercase tracking-widest font-bold px-2 py-1 rounded-full ${c.people > 0 ? "bg-[#FF4D4D]/20 text-white" : "bg-white/8 text-white/55"}`}>
-                    {c.people === 1 ? "1 person" : `${c.people} people`}
-                  </span>
-                  <ArrowRight size={14} className="text-white/35" />
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
+        {/* Every city A-Z (with live people counts), sortable */}
+        <CityDirectoryList popular={popular} onPick={pickPopular} disabled={busy !== null} />
       </div>
     </motion.div>
   );
