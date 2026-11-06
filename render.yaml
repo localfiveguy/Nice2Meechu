@@ -59,5 +59,10 @@ services:
         value: BC3Go8QcJYM2tjFNXhafw5eO9zQitupQCBMXG8y7JZKhJINFZfZ_0OCwu3X9BlFBwoUjZ561UOzUhVjR3OFAPoI
       - key: VAPID_PRIVATE_KEY
         sync: false
+      # --- Inactive-video cleanup (deletes intros of people away 90+ days) ---
+      # Paused: it removed real users' videos after the hosting move. Set to
+      # "true" to turn it back on.
+      - key: INACTIVE_CLEANUP_ENABLED
+        value: "false"
       - key: VAPID_SUBJECT
         value: mailto:localfiveguy@gmail.com
