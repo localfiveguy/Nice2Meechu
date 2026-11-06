@@ -3,6 +3,7 @@ import asyncio
 import os
 import re
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
@@ -147,11 +148,15 @@ async def admin_restore_video(id: str = "", confirm: str = "", user=Depends(curr
 
 
 @router.get("/admin/set-home-city")
-async def admin_set_home_city(id: str = "", city: str = "", confirm: str = "", user=Depends(current_user)):
+async def admin_set_home_city(id: str = "", city: str = "", confirm: str = "",
+                              lat: Optional[float] = None, lng: Optional[float] = None,
+                              user=Depends(current_user)):
     """Founder tool: correct a user's saved home town (where their video shows
     in feeds). GET so it runs from a phone browser, e.g.:
     /api/admin/set-home-city?id=<uid>&city=Erial,%20NJ,%20USA&confirm=SET
-    The label is geocoded fresh (no cache) so home coords stay honest."""
+    The label is geocoded fresh (no cache) so home coords stay honest.
+    Optional &lat=..&lng=.. pins exact coordinates when the geocoder picks the
+    wrong spot (e.g. "New York, NY, USA" resolving to upstate New York)."""
     _require_admin(user)
     city = city.strip()[:120]
     if not id or len(city) < 2:
@@ -164,7 +169,11 @@ async def admin_set_home_city(id: str = "", city: str = "", confirm: str = "", u
         raise HTTPException(404, "No user with that id")
     if target.get("is_demo"):
         raise HTTPException(403, "Demo accounts are managed automatically")
-    lat, lng = await _geocode_city(city, use_cache=False)
+    if lat is not None and lng is not None:
+        if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+            raise HTTPException(400, "lat/lng out of range")
+    else:
+        lat, lng = await _geocode_city(city, use_cache=False)
     if lat is None:
         raise HTTPException(422, f"Could not geocode '{city}' — check spelling, include state/country")
     await db.users.update_one(
