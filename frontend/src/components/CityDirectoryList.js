@@ -61,6 +61,7 @@ function mergeCities(directoryRows, popular) {
   (popular || []).forEach((p) => {
     const n = fold(p.city);
     let idx = byLabel.get(`${n}|${fold(p.country)}`);
+    if (idx === undefined && NAME_ALIASES[n]) idx = byLabel.get(`${NAME_ALIASES[n]}|${fold(p.country)}`);
     if (idx === undefined && p.country_code) {
       idx = byCode.get(`${NAME_ALIASES[n] || n}|${p.country_code}`);
     }
