@@ -209,7 +209,7 @@ Run by `server.py` every time the API boots:
 - Create unique partial indexes on `users.email`, `users.google_sub`, `users.apple_sub`, and other collection indexes. (Each index is created idempotently, so boots are safe.)
 - **Flush the geocode cache** (`db.city_geo`) — deliberately, on every boot (§24, rule 1).
 - Retire legacy demo records.
-- Start the **inactive-video cleanup loop** (§18): once a day, users who have not been active for 90 days have their intro video deleted from storage and must re-record when they return. Their account is kept. Controlled by `INACTIVE_CLEANUP_ENABLED` (default true), `INACTIVE_CLEANUP_DAYS` (default 90), `INACTIVE_CLEANUP_INTERVAL_SECONDS` (default one day).
+- Start the **inactive-video cleanup loop** (§18): once a day, users who have not been active for 90 days have their intro video deleted from storage and must re-record when they return. Their account is kept. **Currently paused:** `render.yaml` sets `INACTIVE_CLEANUP_ENABLED=false` (the code default is true). It deletes only the mp4 named in `video_url`; the original `user_videos/<id>.webm` stays, so a cleaned video can be rebuilt with `/api/admin/restore-video`. Accounts with no `last_seen_at` count as inactive. Other settings: `INACTIVE_CLEANUP_DAYS` (default 90), `INACTIVE_CLEANUP_INTERVAL_SECONDS` (default one day).
 
 One-shot migrations, each recorded in `db.migrations` so they run only once:
 | Marker id | What it did |
@@ -444,6 +444,7 @@ All are restricted to `ADMIN_EMAILS` (currently localfiveguy@gmail.com and steav
 | `GET /api/admin/find-user?q=…` | Search users by name, email, handle, or codename. Results include a ready-made `delete_url`. |
 | `GET /api/admin/delete-user?id=…&confirm=DELETE` | Full wipe of one user, including their video in storage. Refuses demos and admin-listed emails. |
 | `GET /api/admin/set-home-city?id=…&city=…&confirm=…` | Corrects a user's home town (fresh geocode, no cache). |
+| `GET /api/admin/restore-video?id=…&confirm=RESTORE` | Rebuilds a lost intro: re-encodes the surviving `user_videos/<id>.webm` to mp4, uploads it, and relinks `video_url`. Large files can outlast the website's 26-second proxy limit and show a 504, but the server still finishes; check with `find-user` (`has_video`). |
 | `POST /api/admin/inactive-cleanup?days=90&dry_run=true` | Shows (or, with `dry_run=false`, performs) the inactive-video cleanup. Minimum 14 days. The same job also runs automatically once a day (§8). |
 
 ---
